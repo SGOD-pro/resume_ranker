@@ -1,0 +1,130 @@
+[
+  "Python", "Java", "JavaScript", "TypeScript", "C", "C++", "C#", "Go", "Rust", "PHP",
+  "Swift", "Kotlin", "Ruby", "Scala", "R", "MATLAB", "Perl", "Haskell", "Elixir", "Dart",
+  "Lua", "Groovy", "Shell", "Bash", "PowerShell", "Assembly", "COBOL", "Fortran", "Julia",
+
+  "React", "Next.js", "Angular", "Vue.js", "Svelte", "Nuxt.js", "Remix", "Astro",
+  "React Native", "Electron", "Ionic", "Flutter", "Qwik", "SolidJS",
+  "Bootstrap", "Tailwind CSS", "Material UI", "Chakra UI", "Ant Design",
+  "HTML", "CSS", "SASS", "SCSS", "Less", "WebAssembly",
+
+  "Node.js", "Express", "Django", "Flask", "FastAPI", "Spring Boot", "Laravel",
+  "Ruby on Rails", "ASP.NET", "NestJS", "Hono", "Fiber", "Gin", "Echo", "Phoenix",
+  "GraphQL", "REST", "gRPC", "WebSocket", "SOAP", "tRPC",
+
+  "PostgreSQL", "MySQL", "SQLite", "MongoDB", "Redis", "Cassandra", "DynamoDB",
+  "Firebase", "Supabase", "CockroachDB", "MariaDB", "Oracle", "SQL Server",
+  "Elasticsearch", "Qdrant", "Pinecone", "Weaviate", "Chroma", "Milvus",
+  "Vector DB", "Neo4j", "InfluxDB", "TimescaleDB",
+
+  "Docker", "Kubernetes", "Helm", "Terraform", "Ansible", "Puppet", "Chef",
+  "Jenkins", "GitHub Actions", "GitLab CI", "CircleCI", "Travis CI", "ArgoCD",
+  "AWS", "GCP", "Azure", "Vercel", "Netlify", "Heroku", "Railway", "Fly.io",
+  "AWS Lambda", "AWS S3", "AWS EC2", "AWS RDS", "AWS ECS", "AWS EKS",
+  "CloudFormation", "CDK", "Pulumi", "Serverless Framework",
+
+  "TensorFlow", "PyTorch", "Keras", "Scikit-learn", "XGBoost", "LightGBM",
+  "Hugging Face", "LangChain", "LangGraph", "LlamaIndex", "OpenAI", "Anthropic",
+  "LLM", "RAG", "RLHF", "Fine-tuning", "Embeddings", "Vector Search",
+  "Pandas", "NumPy", "Matplotlib", "Seaborn", "Plotly", "SciPy", "Statsmodels",
+  "OpenCV", "NLTK", "spaCy", "Transformers", "Diffusers",
+  "MLflow", "Weights & Biases", "DVC", "Airflow", "Prefect", "Dagster",
+  "Spark", "Hadoop", "Kafka", "Flink", "Hive", "Presto", "dbt",
+
+  "Git", "GitHub", "GitLab", "Bitbucket", "SVN", "Mercurial",
+  "Jira", "Confluence", "Notion", "Linear", "Trello", "Asana",
+  "Figma", "Sketch", "Adobe XD", "InVision", "Zeplin",
+  "Postman", "Insomnia", "Swagger", "OpenAPI",
+
+  "Linux", "Ubuntu", "CentOS", "Debian", "macOS", "Windows Server",
+  "Nginx", "Apache", "Caddy", "HAProxy", "Traefik",
+  "RabbitMQ", "Apache Kafka", "ActiveMQ", "NATS", "ZeroMQ",
+  "OAuth", "JWT", "SAML", "OpenID Connect", "Keycloak",
+
+  "Agile", "Scrum", "Kanban", "SAFe", "Waterfall", "XP",
+  "CI/CD", "DevOps", "GitOps", "SRE", "TDD", "BDD", "DDD",
+  "Microservices", "Monolith", "Event-Driven", "CQRS", "Event Sourcing",
+  "Design Patterns", "SOLID", "Clean Architecture", "Hexagonal Architecture",
+
+  "Excel", "Google Sheets", "Tableau", "Power BI", "Looker", "Metabase",
+  "SAP", "Salesforce", "HubSpot", "Zendesk", "ServiceNow",
+  "QuickBooks", "NetSuite", "Workday", "Oracle ERP",
+
+  "Selenium", "Playwright", "Cypress", "Jest", "Vitest", "Pytest",
+  "JUnit", "Mocha", "Chai", "Testing Library", "Storybook",
+
+  "Photoshop", "Illustrator", "After Effects", "Premiere Pro", "Lightroom",
+  "Blender", "Maya", "Unity", "Unreal Engine",
+
+  "Blockchain", "Ethereum", "Solidity", "Web3.js", "Hardhat", "Foundry",
+  "IPFS", "Smart Contracts",
+
+  "JSON", "XML", "YAML", "TOML", "Protobuf", "Avro", "Parquet", "Arrow",
+  "Regex", "UNIX", "SSH", "SSL/TLS", "HTTP/2", "TCP/IP", "DNS", "CDN",
+
+  "SQL", "NoSQL", "ORM", "Prisma", "SQLAlchemy", "Sequelize", "TypeORM",
+  "Mongoose", "Drizzle",
+
+  "Zustand", "Redux", "MobX", "Recoil", "Jotai", "Pinia", "Vuex",
+  "Context API", "React Query", "SWR", "TanStack Query",
+
+  "Vercel AI SDK", "Crew AI", "AutoGen", "Semantic Kernel",
+  "Prompt Engineering", "AI Agents", "Function Calling",
+
+  "Webpack", "Vite", "Rollup", "esbuild", "Turbopack", "Parcel", "Bun",
+
+  "Three.js", "D3.js", "Chart.js", "Leaflet", "Mapbox",
+
+  "Socket.io", "Pusher", "Ably",
+
+  "Stripe", "PayPal", "Razorpay",
+
+  "Twilio", "SendGrid", "Mailgun",
+
+  "Auth0", "Firebase Auth", "Clerk", "NextAuth",
+
+  "Contentful", "Strapi", "Sanity", "WordPress", "Ghost",
+
+  "Celery", "Sidekiq", "Bull", "BullMQ",
+
+  "Prometheus", "Grafana", "Datadog", "New Relic", "Sentry",
+
+  "Wireshark", "Nmap", "Burp Suite", "OWASP", "Snyk",
+
+  "CUDA", "OpenCL", "FPGA", "Embedded Systems", "Arduino", "Raspberry Pi",
+  "IoT", "MQTT", "Zigbee",
+
+  "Figma", "Canva", "Miro", "Lucidchart",
+
+  "Power Automate", "Zapier", "Make", "n8n",
+
+  "SharePoint", "Dynamics 365", "SAP HANA",
+
+  "Snowflake", "BigQuery", "Redshift", "Databricks", "Delta Lake",
+
+  "Data Modeling", "ETL", "Data Warehouse", "Data Lake", "Data Pipeline",
+
+  "Machine Learning", "Deep Learning", "NLP", "Computer Vision",
+  "Reinforcement Learning", "Generative AI", "Stable Diffusion",
+
+  "Unit Testing", "Integration Testing", "E2E Testing", "Load Testing",
+  "Performance Testing", "A/B Testing",
+
+  "API Gateway", "Service Mesh", "Istio", "Envoy", "Consul",
+
+  "Vagrant", "VirtualBox", "VMware", "Proxmox",
+
+  "Rust", "Zig", "Nim", "Crystal", "OCaml", "F#", "Clojure", "Erlang",
+
+  "NumPy", "Pandas", "Polars", "Dask", "Vaex",
+
+  "FastHTML", "HTMX", "Alpine.js", "Stimulus", "Livewire", "Hotwire",
+
+  "Expo", "Capacitor", "Tauri",
+
+  "ROS", "PCL", "Open3D",
+
+  "JIRA", "Monday.com", "ClickUp", "Basecamp",
+
+  "Slack", "Discord", "Microsoft Teams"
+]
