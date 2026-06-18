@@ -94,15 +94,20 @@ class ContactParser:
     """
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
-              sidebar_text: str = "") -> Dict[str, Any]:
+              sidebar_text: str = "",
+              hyperlinks: list = None) -> Dict[str, Any]:
         combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
+        # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub
+        if hyperlinks:
+            link_text = "\n".join(h.get('uri', '') for h in hyperlinks if h.get('uri'))
+            combined = combined + "\n" + link_text
         return {
             "name":     self._extract_name(full_width_text, raw_text, sidebar_text),
             "email":    self._extract_email(combined),
             "phone":    self._extract_phone(combined),
             "linkedin": self._extract_linkedin(combined),
             "github":   self._extract_github(combined),
-            "location": self._extract_location(combined),
+            "location": self._extract_location(combined, sidebar_text),
         }
 
     def _extract_name(self, full_width_text: str, raw_text: str,
@@ -160,6 +165,12 @@ class ContactParser:
                 result = m.group(0).strip()
                 if len(re.sub(r'\D', '', result)) >= 7:
                     return result
+        # Fallback: extract from tel: hyperlink URIs
+        tel_m = re.search(r'tel:(\+?[\d\s\-().]+)', text)
+        if tel_m:
+            phone = tel_m.group(1).strip()
+            if len(re.sub(r'\D', '', phone)) >= 7:
+                return phone
         return None
 
     def _extract_linkedin(self, text: str) -> Optional[str]:
@@ -174,15 +185,86 @@ class ContactParser:
                 return f"github.com/{username}"
         return None
 
-    def _extract_location(self, text: str) -> Optional[str]:
+    def _extract_location(self, text: str, sidebar_text: str = "") -> Optional[str]:
+        # First search sidebar text (often has location early)
+        if sidebar_text:
+            result = self._extract_location_from_text(sidebar_text)
+            if result:
+                return result
+        return self._extract_location_from_text(text)
+
+    def _extract_location_from_text(self, text: str) -> Optional[str]:
         lines = [l.strip() for l in text.split('\n') if l.strip()]
+
+        # Strategy 1: "City, ST" pattern (US format) — only in header area
         city_state_re = re.compile(
             r'\b([A-Z][a-zA-Z\s]{2,25}),\s*([A-Z]{2}|\b[A-Z][a-zA-Z]{3,20})\b'
         )
-        for line in lines[:20]:
+        # Section headers/keywords that should NOT be searched for locations
+        _section_kw_re = re.compile(
+            r'(?:programming|languages?|frameworks?|libraries|tools|skills|'
+            r'databases?|education|experience|projects|certific)[:\s]', re.I)
+        _tag_re = re.compile(r'\[/?[A-Z_]+\]')
+        for line in lines[:10]:
             if _EMAIL_RE.search(line) or _LINKEDIN_RE.search(line):
                 continue
-            m = city_state_re.search(line)
+            if _section_kw_re.search(line):
+                continue
+            # Skip lines that are primarily tags (JOB_TITLE, NAME, etc.)
+            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+                continue
+            # Strip tags before matching
+            clean_line = _tag_re.sub('', line).strip()
+            if not clean_line:
+                continue
+            m = city_state_re.search(clean_line)
             if m:
                 return m.group(0).strip()
+
+        # Strategy 2: Nationality/Place of Birth/Address labels
+        # Use inline (?i:...) for keywords only; capture group is case-sensitive
+        label_re = re.compile(
+            r'(?i:Nationality|Place\s+of\s+Birth|Address|Location|City)'
+            r'\s*[:\|\s]\s*([A-Z][a-zA-Z\s,]+)')
+        for line in lines[:30]:
+            # Strip tags first
+            clean = _tag_re.sub('', line).strip()
+            m = label_re.search(clean)
+            if m:
+                val = m.group(1).strip().rstrip(',').strip()
+                # Remove trailing noise like "Driving license Full"
+                val = re.sub(r'\s+Driving\s+license.*$', '', val, flags=re.I).strip()
+                # Remove trailing dates/numbers
+                val = re.sub(r'\s+\d{4}.*$', '', val).strip()
+                if val and 3 < len(val) < 60:
+                    return val
+
+        # Strategy 3: Sidebar [ADDRESS] or [PLACE] section
+        addr_section_re = re.compile(
+            r'\[(ADDRESS|PLACE|LOCATION|NATIONALITY|CITY)\]\s*\n(.+?)(?:\n\[|$)',
+            re.I | re.DOTALL)
+        m = addr_section_re.search(text)
+        if m:
+            addr_lines = [l.strip() for l in m.group(2).strip().split('\n') if l.strip()]
+            if addr_lines:
+                return ', '.join(addr_lines[:2])  # first 2 lines as location
+
+        # Strategy 4: contact line with pipe/bar separator containing a place name
+        # e.g., "email@email.com | 938212857 | Mejia"
+        for line in lines[:5]:
+            if '|' in line:
+                parts = [p.strip() for p in line.split('|')]
+                for part in parts:
+                    # Skip emails, numbers, URLs, and known link text
+                    if (_EMAIL_RE.search(part) or part.isdigit() or
+                        _URL_RE.search(part) or part.lower() in
+                        {'github', 'linkedin', 'portfolio', 'website', 'link'}):
+                        continue
+                    # Must be 1-3 words, starts with uppercase, no digits
+                    words = part.split()
+                    if (1 <= len(words) <= 3 and words[0][0:1].isupper()
+                            and not any(c.isdigit() for c in part)
+                            and len(part) > 2):
+                        return part
+
         return None

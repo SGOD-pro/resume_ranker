@@ -117,12 +117,16 @@ class LayoutAwarePDFExtractor:
 
     def extract(self, pdf_path: str) -> 'DocumentStructure':
         all_classified: List[ClassifiedLine] = []
+        all_hyperlinks: List[Dict[str, str]] = []
 
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 words = self._get_words(page)
                 if not words:
                     continue
+
+                # Extract hyperlinks from PDF annotations
+                all_hyperlinks.extend(self._get_hyperlinks(page))
 
                 page_width = float(page.width)
                 split_x = self._find_column_split(words, page_width)
@@ -134,7 +138,9 @@ class LayoutAwarePDFExtractor:
                 )
                 all_classified.extend(classified)
 
-        return self._build_document(all_classified)
+        doc = self._build_document(all_classified)
+        doc.hyperlinks = all_hyperlinks
+        return doc
 
     # ─────────────────────────────────────────────────────────
     # Step 1: Get words with metadata
@@ -148,7 +154,7 @@ class LayoutAwarePDFExtractor:
         )
         return [
             Word(
-                text=w["text"],
+                text=self._clean_cid(w["text"]),
                 x0=float(w["x0"]), x1=float(w["x1"]),
                 top=float(w["top"]), bottom=float(w["bottom"]),
                 fontname=str(w.get("fontname") or ""),
@@ -156,6 +162,24 @@ class LayoutAwarePDFExtractor:
             )
             for w in (raw or [])
         ]
+
+    @staticmethod
+    def _clean_cid(text: str) -> str:
+        """Remove (cid:XX) artifacts from PDF text.
+        Common patterns: (cid:28)ltering → filtering, speci(cid:28)c → specific"""
+        return re.sub(r'\(cid:\d+\)', '', text)
+
+    def _get_hyperlinks(self, page) -> List[Dict[str, str]]:
+        """Extract hyperlinks from PDF page annotations."""
+        links = []
+        try:
+            for annot in (page.hyperlinks or []):
+                uri = annot.get('uri', '')
+                if uri:
+                    links.append({'uri': uri})
+        except Exception:
+            pass
+        return links
 
     # ─────────────────────────────────────────────────────────
     # Step 2: Find column split x-coordinate
@@ -575,6 +599,7 @@ class DocumentStructure:
     sidebar_text: str
     main_text: str
     classified_lines: List[ClassifiedLine] = field(default_factory=list)
+    hyperlinks: List[Dict[str, str]] = field(default_factory=list)
 
     @property
     def layout(self) -> str:

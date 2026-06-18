@@ -105,6 +105,8 @@ class PDFPipelineV3:
 
         # ── Step 3: Domain detection ──────────────────────────────────────
         combined_text = doc.full_width_text + '\n' + doc.main_text + '\n' + doc.sidebar_text
+        # Clean (cid:XX) artifacts from combined text
+        combined_text = re.sub(r'\(cid:\d+\)', '', combined_text)
         domain = self.domain_detector.detect(combined_text)
 
         # Override: force resume if strong resume structure signals are present
@@ -209,6 +211,7 @@ class PDFPipelineV3:
             full_width_text = doc.full_width_text,
             raw_text        = combined_text,
             sidebar_text    = doc.sidebar_text,
+            hyperlinks      = getattr(doc, 'hyperlinks', []),
         )
         asm_info = assembler_result.get('personal_info', {})
 
@@ -297,8 +300,8 @@ class PDFPipelineV3:
         skills_section_text = assembler_result.get('skills_section_text', '')
         sidebar_skills = assembler_result.get('skills_raw', [])
         sidebar_skills_text = '\n'.join(sidebar_skills) if sidebar_skills else ''
-        # Also grab skills from plain-text detection
-        plain_skills_text = plain_sections.get('skills', '')
+        # Also grab skills from plain-text detection (strip tags first)
+        plain_skills_text = self._strip_tags(plain_sections.get('skills', ''))
         all_skills_text = '\n'.join(filter(None, [
             skills_section_text, sidebar_skills_text, plain_skills_text
         ]))
@@ -339,6 +342,14 @@ class PDFPipelineV3:
             if exp_text:
                 experience = self.experience_parser.parse(exp_text)
 
+        # ── Experience fallback 3: pattern-based from main_text ───────────
+        #    For two-column resumes with no "Experience" header,
+        #    the main text often has "Role, Company, Location\nDATE" patterns.
+        if not experience:
+            experience = self._extract_experience_by_pattern(
+                self._strip_tags(doc.main_text)
+            )
+
         # ── Phase 7: Education ────────────────────────────────────────────
         if asm_has_education:
             education = [
@@ -375,7 +386,10 @@ class PDFPipelineV3:
             projects_raw_text = assembler_result['projects_raw_text']
         else:
             projects_raw_text = plain_sections.get('projects', '')
-        projects = self.project_parser.parse(projects_raw_text)
+        projects = self.project_parser.parse(
+            projects_raw_text,
+            hyperlinks=getattr(doc, 'hyperlinks', [])
+        )
 
         # ── Summary ───────────────────────────────────────────────────────
         summary = assembler_result.get('profile')
@@ -389,6 +403,12 @@ class PDFPipelineV3:
             for c in (courses_raw or [])
         ] if courses_raw else []
 
+        # Fallback: parse from plain-text section detection
+        if not certifications:
+            cert_text = plain_sections.get('certifications', '')
+            if cert_text:
+                certifications = self._parse_certifications_text(cert_text)
+
         # ── Languages ─────────────────────────────────────────────────────
         languages = assembler_result.get('languages', [])
         lang_section_text = assembler_result.get('languages_section', '')
@@ -398,16 +418,26 @@ class PDFPipelineV3:
                 combined_text + '\n' + lang_section_text + '\n' + lang_plain
             )
 
+        # ── Build raw text fallback for ranking ────────────────────────────
+        raw_text_sections = self._build_raw_fallback(
+            plain_sections, combined_text, doc.sidebar_text)
+
+        # ── Compute extraction quality score ───────────────────────────────
+        extraction_quality = self._compute_quality(
+            personal_info, skills, experience, education)
+
         # ── Phase 10: Normalized JSON (with tag stripping) ────────────────
         return self._clean_output({
-            "personal_info":   personal_info,
-            "summary":         summary,
-            "skills":          skills,
-            "experience":      experience,
-            "education":       education,
-            "projects":        projects,
-            "certifications":  certifications,
-            "languages":       languages,
+            "personal_info":     personal_info,
+            "summary":           summary,
+            "skills":            skills,
+            "experience":        experience,
+            "education":         education,
+            "projects":          projects,
+            "certifications":    certifications,
+            "languages":         languages,
+            "raw_text_sections": raw_text_sections,
+            "extraction_quality": extraction_quality,
         })
 
     def _extract_languages(self, text: str) -> List[str]:
@@ -417,6 +447,107 @@ class PDFPipelineV3:
             if re.search(r'\b' + re.escape(lang) + r'\b', text, re.I):
                 found.append(lang.title())
         return found
+
+    def _parse_certifications_text(self, text: str) -> List[Dict[str, Any]]:
+        """Parse certifications from plain-text section content."""
+        certs = []
+        # Split by bullet markers or newlines
+        lines = re.split(r'\n|[•·▪▸►✓✔]', text)
+        for line in lines:
+            line = line.strip().lstrip('-* ').strip()
+            if not line or len(line) < 5:
+                continue
+            # Skip pure dates or numbers
+            if re.match(r'^[\d\s/\-.]+$', line):
+                continue
+            # Try to split "Name - Issuer" or "Name, Issuer"
+            name, issuer = line, None
+            for sep in [' - ', ' – ', ' — ', ', ']:
+                if sep in line:
+                    parts = line.split(sep, 1)
+                    if len(parts[0]) > 5 and len(parts[1]) > 2:
+                        name = parts[0].strip()
+                        issuer = parts[1].strip()
+                        break
+            certs.append({"name": name, "issuer": issuer, "date": None})
+        return certs
+
+    @staticmethod
+    def _clean_text_for_ranking(text: str) -> str:
+        """Clean text for ranking fallback: remove tags, emojis, special chars."""
+        if not text:
+            return ''
+        # Remove tags like [SECTION], [/SECTION]
+        text = re.sub(r'\[/?[A-Z_]+\]', '', text)
+        # Remove (cid:XX) artifacts
+        text = re.sub(r'\(cid:\d+\)', '', text)
+        # Remove emojis and non-ASCII special chars (keep basic accented letters)
+        text = re.sub(r'[^\x20-\x7E\n\t]', ' ', text)
+        # Remove excessive special characters but keep basic punctuation
+        text = re.sub(r'[^\w\s.,;:!?\-\'\"()/&@#+%]', ' ', text)
+        # Collapse whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
+    def _build_raw_fallback(self, plain_sections: Dict[str, str],
+                            combined_text: str, sidebar_text: str) -> Dict[str, str]:
+        """Build cleaned raw text sections for ranking fallback.
+        This ensures even poorly-structured PDFs contribute keywords for TF-IDF."""
+        raw = {}
+        for section_name in ['summary', 'skills', 'experience', 'education',
+                             'projects', 'certifications', 'languages']:
+            text = plain_sections.get(section_name, '')
+            if text:
+                raw[section_name] = self._clean_text_for_ranking(text)
+
+        # Always include full cleaned text for TF-IDF fallback
+        full = self._clean_text_for_ranking(combined_text)
+        if sidebar_text:
+            full += '\n' + self._clean_text_for_ranking(sidebar_text)
+        raw['full_text'] = full
+
+        return raw
+
+    @staticmethod
+    def _compute_quality(personal_info: dict, skills: list,
+                         experience: list, education: list) -> float:
+        """Compute extraction quality score (0.0 to 1.0).
+        Higher = more structured data was successfully extracted.
+        Used by ranker to decide how much to weight structured vs raw text."""
+        score = 0.0
+        total = 6.0
+
+        # Name (most basic field)
+        if personal_info.get('name'):
+            score += 1.0
+
+        # Email
+        if personal_info.get('email'):
+            score += 1.0
+
+        # Skills (critical for ranking)
+        if skills and len(skills) >= 3:
+            score += 1.0
+        elif skills:
+            score += 0.5
+
+        # Experience
+        if experience and len(experience) >= 1:
+            # Check quality: at least one entry has both role and company
+            good = any(e.get('role') and e.get('company') for e in experience)
+            score += 1.0 if good else 0.5
+
+        # Education
+        if education and len(education) >= 1:
+            good = any(e.get('degree') and e.get('institution') for e in education)
+            score += 1.0 if good else 0.5
+
+        # Location or phone (supporting info)
+        if personal_info.get('location') or personal_info.get('phone'):
+            score += 1.0
+
+        return round(score / total, 2)
 
     def _extract_dob(self, main_sections: Dict[str, str], combined_text: str) -> Optional[str]:
         """
@@ -648,6 +779,112 @@ class PDFPipelineV3:
 
         return entries
 
+    def _extract_experience_by_pattern(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Pattern-based experience extraction for resumes without section headers.
+        Looks for: Role [at|,] Company, Location\\nDATE_RANGE\\n bullets
+        """
+        if not text:
+            return []
+
+        entries = []
+        lines = text.split('\n')
+
+        # Date pattern: "January 2020 — February 2022" or "Jan 2020 - Present"
+        date_re = re.compile(
+            r'(?:(?:January|February|March|April|May|June|July|August|September|'
+            r'October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+            r'\s+\d{4})\s*[—–\-]+\s*'
+            r'(?:(?:January|February|March|April|May|June|July|August|September|'
+            r'October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+            r'\s+\d{4}|Present|Current)',
+            re.I
+        )
+
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line:
+                i += 1
+                continue
+
+            # Check if this line or the next line has a date range
+            date_match = None
+            date_line_idx = None
+
+            # Check current line for embedded date
+            dm = date_re.search(line)
+            if dm:
+                date_match = dm.group(0)
+                date_line_idx = i
+            # Check next line for date
+            elif i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                dm2 = date_re.search(next_line)
+                if dm2:
+                    date_match = dm2.group(0)
+                    date_line_idx = i + 1
+
+            if not date_match:
+                i += 1
+                continue
+
+            # Parse the date range
+            parts = re.split(r'\s*[—–\-]+\s*', date_match, maxsplit=1)
+            start_date = parts[0].strip() if len(parts) > 0 else None
+            end_date = parts[1].strip() if len(parts) > 1 else None
+
+            # The role/company line
+            role_line = line if date_line_idx == i + 1 else line.replace(date_match, '').strip()
+            role_line = date_re.sub('', role_line).strip().rstrip(',').strip()
+
+            # Parse role and company
+            role, company, location = None, None, None
+            at_match = re.match(r'^(.+?)\s+at\s+(.+?)(?:,\s*(.+))?$', role_line, re.I)
+            if at_match:
+                role = at_match.group(1).strip()
+                company = at_match.group(2).strip()
+                location = at_match.group(3).strip() if at_match.group(3) else None
+            elif ',' in role_line:
+                role_parts = [p.strip() for p in role_line.split(',')]
+                role = role_parts[0]
+                company = role_parts[1] if len(role_parts) > 1 else None
+                location = role_parts[2] if len(role_parts) > 2 else None
+            else:
+                role = role_line
+
+            # Collect description bullets
+            desc_lines = []
+            j = (date_line_idx or i) + 1
+            while j < len(lines):
+                bl = lines[j].strip()
+                if not bl:
+                    j += 1
+                    continue
+                if date_re.search(bl):
+                    break
+                if (not bl.startswith(('•', '-', '·', '*', '–', '►'))
+                        and re.match(r'^[A-Z][a-z].*(?:at|,)\s+[A-Z]', bl)):
+                    break
+                desc_lines.append(re.sub(r'^[•\-·▪►✓✔\*]\s*', '', bl))
+                j += 1
+
+            description = ' '.join(desc_lines).strip() if desc_lines else None
+
+            entries.append({
+                "role": role,
+                "company": company,
+                "start": start_date,
+                "end": end_date,
+                "location": location,
+                "description": description,
+                "achievements": [],
+            })
+
+            i = j
+
+        return entries
+
     @staticmethod
     def _strip_tags(text: str) -> str:
         """Remove all [TAG]...[/TAG] markup from text, keeping inner content."""
@@ -670,10 +907,8 @@ class PDFPipelineV3:
         loc = pi.get('location')
         name = pi.get('name', '') or ''
         if loc:
-            # Reject location if it contains the person's name
             if name and name.lower() in loc.lower():
                 pi['location'] = None
-            # Reject location if it looks like a job title or contains role keywords
             elif re.search(r'(?:Developer|Designer|Engineer|Manager|Associate|Consultant|'
                           r'Analyst|Director|Coordinator|Specialist|Assistant|Lawyer|'
                           r'Marketer|Accountant|Writer|Editor|Nurse|Teacher|Chef|'
@@ -683,7 +918,203 @@ class PDFPipelineV3:
                           loc, re.I):
                 pi['location'] = None
 
+        # ── Fix experience entries ──────────────────────────────────────
+        cleaned['experience'] = self._fix_experience(cleaned.get('experience', []))
+
+        # ── Fix education entries ───────────────────────────────────────
+        cleaned['education'] = self._fix_education(cleaned.get('education', []))
+
+        # ── Fix certifications ──────────────────────────────────────────
+        cleaned['certifications'] = self._fix_certifications(
+            cleaned.get('certifications', []))
+
+        # ── Fix skills: remove garbled entries ──────────────────────────
+        cleaned['skills'] = self._fix_skills(cleaned.get('skills', []))
+
         return cleaned
+
+    @staticmethod
+    def _fix_skills(skills: list) -> list:
+        """Remove garbled or invalid skills."""
+        _VALID_SINGLE = {'C', 'R'}  # Known single-char programming languages
+        fixed = []
+        for sk in skills:
+            # Must be string
+            if not isinstance(sk, str):
+                continue
+            sk = sk.strip()
+
+            # Skip empty
+            if not sk:
+                continue
+
+            # Skip single-char unless it's a known language
+            if len(sk) == 1 and sk not in _VALID_SINGLE:
+                continue
+
+            # Skip if contains non-printable or garbled chars
+            if re.search(r'[^\x20-\x7E]', sk):
+                continue
+
+            # Skip if mostly special chars (garbled text)
+            alpha_count = sum(1 for c in sk if c.isalpha())
+            if alpha_count < len(sk) * 0.4:
+                continue
+
+            fixed.append(sk)
+        return fixed
+
+    def _fix_experience(self, entries: list) -> list:
+        """Clean up experience entries: split 'Role at Company, City' patterns,
+        fix empty roles/companies, clean bullet markers."""
+        fixed = []
+        for exp in entries:
+            role = (exp.get('role') or '').strip()
+            company = (exp.get('company') or '').strip()
+
+            # Fix: company starts with bullet marker or description text
+            company = re.sub(r'^[•·▪▸►✓✔*\-]\s*', '', company)
+
+            # Fix: company is actually a description (starts with verb phrase, %)
+            if company and re.match(r'^(?:onboarding|reducing|improving|managing|'
+                                    r'assisted|supervised|maintaining|developed|'
+                                    r'implemented|responsible)', company, re.I):
+                # This is a description leak, not a company
+                if not exp.get('description'):
+                    exp['description'] = company
+                company = ''
+
+            # Fix: "Role at Company, City" in the role field
+            if role and not company:
+                m = re.match(r'^(.+?)\s+at\s+(.+)$', role, re.I)
+                if m:
+                    role = m.group(1).strip()
+                    company = m.group(2).strip()
+
+            # Fix: "Role, Company, City" all in role (with comma separators)
+            if role and not company and role.count(',') >= 1:
+                parts = [p.strip() for p in role.split(',')]
+                if len(parts) >= 2:
+                    role = parts[0]
+                    company = ', '.join(parts[1:])
+
+            # Fix: "Role at Company, City" in the company field (role is empty)
+            if not role and company:
+                m = re.match(r'^(.+?)\s+at\s+(.+)$', company, re.I)
+                if m:
+                    role = m.group(1).strip()
+                    company = m.group(2).strip()
+
+            # Fix: company is too long (likely includes description)
+            if company and len(company) > 80:
+                # Try to cut at first period or newline
+                cut = re.search(r'[.\n]', company)
+                if cut:
+                    company = company[:cut.start()].strip()
+
+            # Skip entries that look like education, not experience
+            if role and re.search(r'\b(?:Bachelor|Master|Associate|Diploma|Certificate'
+                                  r'|B\.?S\.?C|M\.?S\.?C|B\.?A\.?|M\.?A\.?|Ph\.?D)\b',
+                                  role, re.I):
+                continue
+
+            # Clean up: strip trailing commas, periods
+            role = role.rstrip(',.').strip() if role else None
+            company = company.rstrip(',.').strip() if company else None
+
+            exp['role'] = role or None
+            exp['company'] = company or None
+
+            # Only keep entries that have at least role or company
+            if role or company:
+                fixed.append(exp)
+        return fixed
+
+    def _fix_education(self, entries: list) -> list:
+        """Clean up education entries: fix garbled degrees, remove prefixes."""
+        fixed = []
+        seen = set()
+        for edu in entries:
+            degree = (edu.get('degree') or '').strip()
+            institution = (edu.get('institution') or '').strip()
+
+            # Fix: "Bachelor in 's Degree" → "Bachelor's Degree"
+            degree = re.sub(r"(\w+)\s+in\s+'s\s+Degree", r"\1's Degree", degree)
+
+            # Fix: "Master in 's Degree" → "Master's Degree"
+            degree = re.sub(r"(\w+)\s+in\s+'s\s+", r"\1's ", degree)
+
+            # Fix: "Degree: Bachelor's Degree" → "Bachelor's Degree"
+            degree = re.sub(r'^Degree:\s*', '', degree, flags=re.I)
+
+            # Fix: truncated "ravel and Tourism" → "Travel and Tourism"
+            if degree.startswith('ravel'):
+                degree = 'T' + degree
+
+            # Fix: institution contains year prefixes like "2015 –"
+            institution = re.sub(r'^\d{4}\s*[–—\-]\s*', '', institution).strip()
+
+            # Clean brackets/tags from institution
+            institution = re.sub(r'\[/?[A-Z_]+\]', '', institution).strip()
+
+            # Dedup key
+            key = (degree.lower(), institution.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+
+            edu['degree'] = degree or None
+            edu['institution'] = institution or None
+
+            if degree or institution:
+                fixed.append(edu)
+        return fixed
+
+    def _fix_certifications(self, entries: list) -> list:
+        """Clean up certifications: remove noise, limit count, clean special chars."""
+        fixed = []
+        # Patterns that indicate this is an achievement/description, not a cert
+        _noise_re = re.compile(
+            r'(?:theft|reduced|improved|managed|responsible|ensuring|'
+            r'improving|installed|detection|monitoring|procedures|'
+            r'techniques|introduced|inventive|entrance|exit|building|'
+            r'announcement|notification|declined|employees?|'
+            r'vigilance|strategies|aisles|storerooms|scanning|'
+            r'cameras|having \d|turnover|onboarding)\s', re.I)
+        for cert in entries:
+            name = (cert.get('name') or '').strip()
+
+            # Skip very short or obviously wrong entries
+            if len(name) < 5:
+                continue
+
+            # Skip entries that are just dates like "May 2011"
+            if re.match(r'^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}$', name, re.I):
+                continue
+
+            # Skip entries that look like experience descriptions, not certs
+            if _noise_re.search(name):
+                continue
+
+            # Skip if starts with a lowercase word (achievement text)
+            if name[0].islower():
+                continue
+
+            # Clean garbled characters (cid artifacts already cleaned)
+            name = re.sub(r'[^\w\s\-&/+.#(),:\'\"]', '', name).strip()
+
+            # Truncate overly long cert names
+            if len(name) > 120:
+                cut = name.find('•')
+                if cut > 10:
+                    name = name[:cut].strip()
+                else:
+                    name = name[:120].strip()
+
+            if len(name) >= 5:
+                cert['name'] = name
+                fixed.append(cert)
+        return fixed
 
     def _recursive_strip(self, obj):
         """Recursively strip tags from strings in dict/list structures."""

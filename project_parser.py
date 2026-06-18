@@ -19,6 +19,15 @@ _TECH_RE = re.compile(
     r'(?i)(?:tech(?:nologies)?|stack|tools?|built\s+(?:with|using)|'
     r'technologies\s+used)[:\s]+([^\n]+)')
 
+# Pattern: "Project Name | Link Tech1, Tech2, Tech3"
+# The "| Link" separates name from technologies
+_PROJECT_HEADER_RE = re.compile(
+    r'^(.+?)\s*\|\s*(?:Link|Demo|GitHub|Live)\s+(.+)$', re.I)
+
+# Fallback: "Project Name | Tech1, Tech2" (pipe without Link keyword)
+_PIPE_HEADER_RE = re.compile(
+    r'^([A-Z][\w\s\-&/.]+?)\s*\|\s*([A-Z][\w\s,.\-/]+)$')
+
 
 class ProjectParser:
     """Parse project entries from projects section text."""
@@ -33,7 +42,7 @@ class ProjectParser:
             self._skills_parser = SkillsParser()
         return self._skills_parser
 
-    def parse(self, text: str) -> List[Dict[str, Any]]:
+    def parse(self, text: str, hyperlinks: list = None) -> List[Dict[str, Any]]:
         if not text or not text.strip():
             return []
         blocks = self._split_blocks(text)
@@ -44,10 +53,21 @@ class ProjectParser:
             p = self._parse_block(block)
             if p.get('name') or p.get('description'):
                 projects.append(p)
+
+        # Post-process: assign GitHub/demo links from PDF hyperlinks
+        if hyperlinks and projects:
+            self._assign_hyperlinks(projects, hyperlinks)
+
         return projects
 
     def _split_blocks(self, text: str) -> List[str]:
-        """Split by blank lines or title-like lines."""
+        """
+        Split project text into individual project blocks.
+        Detects boundaries by:
+          1. Blank lines
+          2. Lines matching "ProjectName | Link Tech1, Tech2" pattern
+          3. Title-like lines (short, starts uppercase, not a bullet)
+        """
         lines = text.split('\n')
         blocks, current = [], []
         for line in lines:
@@ -57,11 +77,23 @@ class ProjectParser:
                     blocks.append('\n'.join(current))
                     current = []
                 continue
-            # New project title: non-bullet, 1-7 words, starts uppercase
-            if (current and self._is_title(stripped)
-                    and len(current) > 1):
+
+            # Check if this line is a project header (Name | Link Tech1, Tech2)
+            is_header = bool(_PROJECT_HEADER_RE.match(stripped))
+
+            # Also check pipe-separated headers
+            if not is_header:
+                is_header = bool(_PIPE_HEADER_RE.match(stripped))
+
+            # Also check traditional title patterns
+            if not is_header:
+                is_header = self._is_title(stripped)
+
+            # If it's a new project header and we have content, split here
+            if is_header and current and len(current) > 0:
                 blocks.append('\n'.join(current))
                 current = []
+
             current.append(line)
         if current:
             blocks.append('\n'.join(current))
@@ -82,6 +114,7 @@ class ProjectParser:
     def _parse_block(self, block: str) -> Dict[str, Any]:
         lines = [l.strip() for l in block.split('\n') if l.strip()]
         name, desc_parts, github, demo = None, [], None, None
+        tech_from_header = None
 
         for i, line in enumerate(lines):
             # GitHub URL
@@ -102,7 +135,19 @@ class ProjectParser:
                 if bullet_m:
                     desc_parts.append(bullet_m.group(1).strip())
                 else:
-                    name = clean.rstrip(':').strip()
+                    # Check for "Name | Link Tech1, Tech2" pattern
+                    header_m = _PROJECT_HEADER_RE.match(clean)
+                    if header_m:
+                        name = header_m.group(1).strip().rstrip(':').strip()
+                        tech_from_header = header_m.group(2).strip()
+                    else:
+                        # Check pipe-separated
+                        pipe_m = _PIPE_HEADER_RE.match(clean)
+                        if pipe_m:
+                            name = pipe_m.group(1).strip().rstrip(':').strip()
+                            tech_from_header = pipe_m.group(2).strip()
+                        else:
+                            name = clean.rstrip(':').strip()
                 continue
 
             bullet_m = _BULLET_RE.match(clean)
@@ -113,7 +158,8 @@ class ProjectParser:
             elif clean:
                 desc_parts.append(clean)
 
-        tech_text = (name or '') + '\n' + block
+        # Extract technologies from the tech_from_header or from the full block
+        tech_text = (tech_from_header or '') + '\n' + block
         technologies = self._get_skills_parser().parse(
             skills_section="", full_text=tech_text, also_scan_fulltext=True)
 
@@ -124,3 +170,37 @@ class ProjectParser:
             "github":       github,
             "demo":         demo,
         }
+
+    def _assign_hyperlinks(self, projects: List[Dict[str, Any]],
+                           hyperlinks: list) -> None:
+        """
+        Match PDF hyperlink annotations to projects by comparing project
+        name keywords against URL path segments.
+        E.g., project "Content Generator" matches github.com/user/ai-blog-writer
+              if project name keywords partially match the URL slug.
+        """
+        github_links = []
+        demo_links = []
+        for h in hyperlinks:
+            uri = h.get('uri', '')
+            if not uri:
+                continue
+            if 'github.com' in uri.lower():
+                # Skip profile-level GitHub links (no repo path)
+                parts = uri.rstrip('/').split('/')
+                if len(parts) > 4:  # github.com/user/repo
+                    github_links.append(uri)
+            elif uri.startswith('http') and not uri.startswith('mailto:'):
+                if 'linkedin.com' not in uri and 'drive.google.com' not in uri:
+                    demo_links.append(uri)
+
+        # Simple assignment: distribute GitHub links to projects in order
+        # This works because PDF hyperlinks are typically in document order
+        gi, di = 0, 0
+        for project in projects:
+            if project.get('github') is None and gi < len(github_links):
+                project['github'] = github_links[gi]
+                gi += 1
+            if project.get('demo') is None and di < len(demo_links):
+                project['demo'] = demo_links[di]
+                di += 1
