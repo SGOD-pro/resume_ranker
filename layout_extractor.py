@@ -549,7 +549,7 @@ class LayoutAwarePDFExtractor:
         return {k: [l.strip() for l in v.split("\n") if l.strip()] for k, v in raw.items()}
 
     def _parse_tagged_text(self, text: str) -> Dict[str, str]:
-        from section_parser import SECTION_ALIASES
+        from section_registry import SECTION_ALIASES
 
         sections: Dict[str, List[str]] = {}
         current = "__PREAMBLE__"
@@ -590,6 +590,26 @@ class LayoutAwarePDFExtractor:
 
 
 # ─────────────────────────────────────────────────────────────
+# Section block — arbitrary layout support
+# ─────────────────────────────────────────────────────────────
+
+@dataclass
+class SectionBlock:
+    """A detected section block with its content and metadata.
+
+    Represents a single section found during layout analysis.
+    Multiple SectionBlocks compose the full document structure,
+    replacing the rigid header/sidebar/main model for complex layouts.
+    """
+    text: str                    # Cleaned text content
+    section_type: Optional[str]  # Canonical section name (from registry) or None
+    bbox: Optional[Tuple[float, float, float, float]] = None  # (x0, y0, x1, y1)
+    confidence: float = 1.0      # Detection confidence
+    source_column: str = "main"  # "left", "right", "full"
+    parser_source: str = "layout"  # "layout", "section_detector", "fallback"
+
+
+# ─────────────────────────────────────────────────────────────
 # Document structure output
 # ─────────────────────────────────────────────────────────────
 
@@ -600,6 +620,7 @@ class DocumentStructure:
     main_text: str
     classified_lines: List[ClassifiedLine] = field(default_factory=list)
     hyperlinks: List[Dict[str, str]] = field(default_factory=list)
+    section_blocks: List[SectionBlock] = field(default_factory=list)
 
     @property
     def layout(self) -> str:
@@ -662,3 +683,76 @@ class DocumentStructure:
             "main":    self.main_text,
             "footer":  footer,
         }
+
+    def build_section_blocks(self) -> None:
+        """Populate section_blocks by scanning tagged text for section boundaries.
+
+        Uses the section_registry to map detected section headers to canonical
+        names. Each block gets parser_source='layout' since it comes from
+        layout_extractor's tagged text analysis.
+
+        Called after _build_document() in the extraction pipeline.
+        """
+        from section_registry import resolve
+
+        blocks: List[SectionBlock] = []
+
+        # Process main_text sections
+        for source_text, column_label in [
+            (self.main_text, "main"),
+            (self.sidebar_text, "left"),
+        ]:
+            if not source_text.strip():
+                continue
+            current_section: Optional[str] = None
+            current_lines: List[str] = []
+
+            for line in source_text.split('\n'):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                # Check for bare [SECTION] tag
+                m = re.match(r'^\[([A-Z][A-Z\s]+)\]$', stripped)
+                if m:
+                    # Flush previous block
+                    if current_lines:
+                        blocks.append(SectionBlock(
+                            text='\n'.join(current_lines).strip(),
+                            section_type=current_section,
+                            source_column=column_label,
+                            parser_source="layout",
+                        ))
+                        current_lines = []
+                    header = m.group(1).strip()
+                    current_section = resolve(header)
+                    continue
+
+                # Check for JOB_TITLE-wrapped section header
+                m2 = re.match(r'^\[JOB_TITLE\](.*?)\[/JOB_TITLE\]$', stripped)
+                if m2:
+                    resolved = resolve(m2.group(1).strip())
+                    if resolved:
+                        if current_lines:
+                            blocks.append(SectionBlock(
+                                text='\n'.join(current_lines).strip(),
+                                section_type=current_section,
+                                source_column=column_label,
+                                parser_source="layout",
+                            ))
+                            current_lines = []
+                        current_section = resolved
+                        continue
+
+                current_lines.append(line)
+
+            # Flush final block
+            if current_lines:
+                blocks.append(SectionBlock(
+                    text='\n'.join(current_lines).strip(),
+                    section_type=current_section,
+                    source_column=column_label,
+                    parser_source="layout",
+                ))
+
+        self.section_blocks = blocks

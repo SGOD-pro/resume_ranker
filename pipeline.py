@@ -103,10 +103,19 @@ class PDFPipelineV3:
         # ── Step 2: Block detection ───────────────────────────────────────
         blocks = self.block_detector.detect(doc)
 
-        # ── Step 3: Domain detection ──────────────────────────────────────
+        # Build section blocks for structured section analysis
+        doc.build_section_blocks()
+
+        # ── Step 3: Text quality + dedup ──────────────────────────────────
         combined_text = doc.full_width_text + '\n' + doc.main_text + '\n' + doc.sidebar_text
         # Clean (cid:XX) artifacts from combined text
         combined_text = re.sub(r'\(cid:\d+\)', '', combined_text)
+        # Compute text quality before any processing
+        text_quality_score = self._compute_text_quality(combined_text)
+        # Remove duplicate blocks
+        combined_text = self._remove_duplicate_blocks(combined_text)
+
+        # ── Step 4: Domain detection ──────────────────────────────────────
         domain = self.domain_detector.detect(combined_text)
 
         # Override: force resume if strong resume structure signals are present
@@ -152,6 +161,28 @@ class PDFPipelineV3:
             round(l.top / 800) for l in doc.classified_lines
         )) or 1  # estimate page count from y-positions
 
+        # ── Extraction telemetry ──────────────────────────────────────────
+        from section_registry import CANONICAL_SECTIONS
+        sections_found = []
+        sections_missing = []
+        section_sources = {}
+
+        if domain.domain == 'resume':
+            # Merge tagged + plain sections to see coverage
+            plain_for_telemetry = self.section_detector.detect(doc.main_text)
+            tagged_for_telemetry = self.section_detector.detect_from_tagged(main_sections)
+            merged_telemetry = self._merge_sections(tagged_for_telemetry, plain_for_telemetry)
+
+            for sec in CANONICAL_SECTIONS:
+                if sec in merged_telemetry and merged_telemetry[sec].strip():
+                    sections_found.append(sec)
+                    if sec in tagged_for_telemetry:
+                        section_sources[sec] = "layout"
+                    else:
+                        section_sources[sec] = "section_detector"
+                else:
+                    sections_missing.append(sec)
+
         return ExtractionResult(
             document_id=os.path.basename(pdf_path),
             domain=domain.domain,
@@ -162,15 +193,27 @@ class PDFPipelineV3:
             fields=fields,
             warnings=warnings,
             metadata={
-                "pdf_path":       pdf_path,
-                "domain_signals": domain.signals[:5],
-                "layout_type":    layout_type,
+                "pdf_path":             pdf_path,
+                "domain_signals":       domain.signals[:5],
+                "layout_type":          layout_type,
+                "text_quality_score":   text_quality_score,
                 "blocks": {
-                    "header_len":  len(blocks.get("header", "")),
-                    "sidebar_len": len(blocks.get("sidebar", "")),
-                    "main_len":    len(blocks.get("main", "")),
-                    "footer":      blocks.get("footer", ""),
+                    "header_len":       len(blocks.get("header", "")),
+                    "sidebar_len":      len(blocks.get("sidebar", "")),
+                    "main_len":         len(blocks.get("main", "")),
+                    "footer":           blocks.get("footer", ""),
                 },
+                # Extraction telemetry
+                "section_count":        len(sections_found),
+                "sections_found":       sections_found,
+                "sections_missing":     sections_missing,
+                "section_sources":      section_sources,
+                # Field-level telemetry (for debugging)
+                "summary_found":        bool(fields.get('summary')) if isinstance(fields, dict) else False,
+                "skills_count":         len(fields.get('skills', [])) if isinstance(fields, dict) else 0,
+                "experience_count":     len(fields.get('experience', [])) if isinstance(fields, dict) else 0,
+                "education_count":      len(fields.get('education', [])) if isinstance(fields, dict) else 0,
+                "certifications_count": len(fields.get('certifications', [])) if isinstance(fields, dict) else 0,
             },
         )
 
@@ -201,16 +244,69 @@ class PDFPipelineV3:
         asm_has_education  = bool(assembler_result.get('education'))
         asm_has_projects   = bool(assembler_result.get('projects_raw_text', '').strip())
 
-        # Plain-text fallback: use section_detector on raw main text
+        # Plain-text fallback: use section_detector on raw text
+        # Strategy: try main text → sidebar text → sidebar-header-split-main
         plain_sections: Dict[str, str] = {}
         if not (asm_has_experience and asm_has_education):
+            # Strategy 1: detect sections in main text
             plain_sections = self.section_detector.detect(doc.main_text)
+
+            # Strategy 2: if main text yielded few sections, try sidebar
+            # (some two-column resumes put headers + content in sidebar)
+            if len(plain_sections) < 2 and doc.sidebar_text.strip():
+                sidebar_plain = self.section_detector.detect(doc.sidebar_text)
+                if len(sidebar_plain) > len(plain_sections):
+                    # Merge: sidebar sections fill gaps, but only if content
+                    # is substantial (not just dates/labels from header column)
+                    for k, v in sidebar_plain.items():
+                        if k not in plain_sections and len(v.strip()) > 100:
+                            plain_sections[k] = v
+
+            # Strategy 3: sidebar has headers only (no content), main has
+            # content only (no headers). Use sidebar headers as boundary
+            # markers to split the combined text.
+            if len(plain_sections) < 2 and doc.sidebar_text.strip():
+                combined_for_detect = doc.sidebar_text + '\n' + doc.main_text
+                combined_plain = self.section_detector.detect(combined_for_detect)
+                total_combined_len = sum(len(v) for v in combined_plain.values())
+                if len(combined_plain) > len(plain_sections):
+                    # Only use combined sections with substantial content
+                    # AND not disproportionately large (likely entire text dumped)
+                    for k, v in combined_plain.items():
+                        content_len = len(v.strip())
+                        is_proportional = (
+                            total_combined_len == 0
+                            or content_len / total_combined_len < 0.6
+                        )
+                        if (k not in plain_sections
+                                and content_len > 100
+                                and is_proportional):
+                            plain_sections[k] = v
+
+            # Strategy 4: sidebar-ordered section splitting
+            # When sidebar has section headers and main has content,
+            # use sidebar header ORDER to split main content into sections.
+            # ONLY use for summary — proportional splitting is too noisy for
+            # structured sections (experience, education) that need exact content.
+            quality_sections = sum(
+                1 for v in plain_sections.values() if len(v.strip()) > 100
+            )
+            if quality_sections < 2 and doc.sidebar_text.strip():
+                sidebar_split = self._split_main_by_sidebar_headers(
+                    doc.sidebar_text, doc.main_text, doc.full_width_text)
+                if sidebar_split:
+                    # Only inject summary from sidebar split (reliable first section)
+                    if 'summary' in sidebar_split and 'summary' not in plain_sections:
+                        summary_text = sidebar_split['summary']
+                        if len(summary_text.strip()) > 40:
+                            plain_sections['summary'] = summary_text
 
         # ── Phase 4: Contact (regex-only, no NER) ────────────────────────
         contact = self.contact_parser.parse(
             full_width_text = doc.full_width_text,
             raw_text        = combined_text,
             sidebar_text    = doc.sidebar_text,
+            main_text       = doc.main_text,
             hyperlinks      = getattr(doc, 'hyperlinks', []),
         )
         asm_info = assembler_result.get('personal_info', {})
@@ -382,6 +478,28 @@ class PDFPipelineV3:
             if edu_text:
                 education = self.edu_parser.parse(edu_text)
 
+        # ── Education fallback 3: extract from [EDU_LINE] tags ────────────
+        if not education:
+            edu_line_matches = re.findall(
+                r'\[EDU_LINE\](.*?)\[/EDU_LINE\]', doc.main_text)
+            if edu_line_matches:
+                edu_text_from_tags = '\n'.join(edu_line_matches)
+                education = self.edu_parser.parse(edu_text_from_tags)
+
+        # ── Education fallback 4: degree keywords in raw text ─────────────
+        if not education:
+            clean_main = self._strip_tags(doc.main_text)
+            degree_pattern = re.compile(
+                r"((?:Bachelor|Master|Associate|Doctor|PhD|MBA|B\.?S\.?c?|M\.?S\.?c?|"
+                r"B\.?A\.?|M\.?A\.?|B\.?C\.?A\.?|M\.?C\.?A\.?|Diploma|LLB|LLM|MBBS|MD)"
+                r"[^.\n]{5,80})",
+                re.IGNORECASE,
+            )
+            edu_matches = degree_pattern.findall(clean_main)
+            if edu_matches:
+                edu_text_raw = '\n'.join(edu_matches)
+                education = self.edu_parser.parse(edu_text_raw)
+
         # ── Phase 8: Projects ─────────────────────────────────────────────
         if asm_has_projects:
             projects_raw_text = assembler_result['projects_raw_text']
@@ -397,6 +515,58 @@ class PDFPipelineV3:
         if not summary:
             summary = plain_sections.get('summary')
 
+        # Fallback 1: Profile tagged as [TITLE] in full_width_text
+        # (some layouts misclassify Profile as a title due to font size)
+        if not summary:
+            title_profile_m = re.search(
+                r'\[TITLE\]\s*(?:Profile|Summary|Professional\s+Summary|'
+                r'Career\s+Objective|Objective|About\s+Me)\s*\[/TITLE\]\s*'
+                r'(\[TITLE\](.*?)\[/TITLE\])',
+                doc.full_width_text,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if title_profile_m:
+                candidate = title_profile_m.group(2).strip()
+                # Must be a substantial paragraph (not just a name or section title)
+                if len(candidate) > 40:
+                    summary = candidate
+
+        # Fallback 2: Profile in sidebar as plain labeled text
+        # (two-column resumes where sidebar has "Profile\n<content>")
+        if not summary and doc.sidebar_text.strip():
+            sidebar_sections_for_summary = self.section_detector.detect(
+                doc.sidebar_text)
+            sidebar_summary = sidebar_sections_for_summary.get('summary', '')
+            if sidebar_summary and len(sidebar_summary.strip()) > 40:
+                summary = sidebar_summary.strip()
+
+        # Fallback 3: [TITLE] content after [NAME] in full_width_text
+        # (resumes with name + profile in full_width header band, no label)
+        if not summary:
+            name_end_m = re.search(r'\[/NAME\]', doc.full_width_text)
+            if name_end_m:
+                after_name = doc.full_width_text[name_end_m.end():]
+                # Collect all [TITLE]...[/TITLE] blocks that follow
+                title_blocks = re.findall(
+                    r'\[TITLE\](.*?)\[/TITLE\]', after_name, re.DOTALL)
+                # Filter out section headers, job titles, etc.
+                profile_lines = []
+                for block in title_blocks:
+                    block = block.strip()
+                    # Skip if it resolves to a section header
+                    from section_registry import resolve
+                    if resolve(block):
+                        break
+                    # Skip if it's a section-like keyword
+                    if re.match(r'^(?:Employment|Education|Skills|Projects|'
+                                r'Certifications|Courses|Languages)', block, re.I):
+                        break
+                    profile_lines.append(block)
+                if profile_lines:
+                    candidate = ' '.join(profile_lines)
+                    if len(candidate) > 40:
+                        summary = candidate
+
         # ── Certifications ────────────────────────────────────────────────
         courses_raw = assembler_result.get('courses', [])
         certifications = [
@@ -406,7 +576,13 @@ class PDFPipelineV3:
 
         # Fallback: parse from plain-text section detection
         if not certifications:
+            # Check certifications, awards, achievements sections
+            # (section_registry separates these into distinct canonical keys)
             cert_text = plain_sections.get('certifications', '')
+            for fallback_key in ('awards', 'achievements'):
+                extra = plain_sections.get(fallback_key, '')
+                if extra:
+                    cert_text = (cert_text + '\n' + extra).strip() if cert_text else extra
             if cert_text:
                 certifications = self._parse_certifications_text(cert_text)
 
@@ -440,6 +616,145 @@ class PDFPipelineV3:
             "raw_text_sections": raw_text_sections,
             "extraction_quality": extraction_quality,
         })
+
+    def _split_main_by_sidebar_headers(
+        self,
+        sidebar_text: str,
+        main_text: str,
+        full_width_text: str,
+    ) -> Dict[str, str]:
+        """Split main content into sections using sidebar header order.
+
+        For two-column layouts where the sidebar has ONLY section labels
+        (PROFILE, EMPLOYMENT HISTORY, EDUCATION, SKILLS) and the main
+        column has the actual content without any headers.
+
+        Algorithm:
+        1. Extract ordered section headers from sidebar
+        2. Strip tags from main text
+        3. Use content heuristics to find section boundaries in main text
+        4. Map content blocks to sidebar headers by order
+
+        Returns:
+            Dict of canonical_section → content_text
+        """
+        from section_registry import resolve
+
+        # Step 1: Find ordered headers in sidebar
+        ordered_headers: List[str] = []
+        for line in sidebar_text.split('\n'):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            canonical = resolve(stripped)
+            if canonical and canonical not in [h for h, _ in ordered_headers]:
+                ordered_headers.append((canonical, stripped))
+
+        if len(ordered_headers) < 2:
+            return {}
+
+        # Step 2: Clean main text (strip layout tags)
+        clean_main = self._strip_tags(main_text)
+        # Also include full_width_text if it has substantial content
+        clean_full = self._strip_tags(full_width_text)
+
+        # Combine: full_width first (often has name + profile), then main
+        all_content = (clean_full + '\n' + clean_main).strip()
+        content_lines = all_content.split('\n')
+
+        if not content_lines:
+            return {}
+
+        # Step 3: Try to find section keywords in the content as boundaries
+        # Some content lines may contain the section keywords themselves
+        section_starts: List[tuple] = []  # (line_idx, canonical)
+        for i, line in enumerate(content_lines):
+            stripped = line.strip()
+            canonical = resolve(stripped)
+            if canonical:
+                section_starts.append((i, canonical))
+
+        # If we found section markers in content, use them directly
+        if len(section_starts) >= 2:
+            result: Dict[str, str] = {}
+            for idx in range(len(section_starts)):
+                start_line = section_starts[idx][0] + 1  # skip the header line
+                end_line = section_starts[idx + 1][0] if idx + 1 < len(section_starts) else len(content_lines)
+                section_text = '\n'.join(content_lines[start_line:end_line]).strip()
+                if section_text:
+                    canonical = section_starts[idx][1]
+                    if canonical not in result:
+                        result[canonical] = section_text
+                    else:
+                        result[canonical] += '\n' + section_text
+            return result
+
+        # Step 4: No section markers in content → split by proportional
+        # content length relative to sidebar header positions.
+        # Heuristic: distribute content lines evenly among sections
+        header_canonicals = [h for h, _ in ordered_headers]
+        n_sections = len(header_canonicals)
+        n_lines = len(content_lines)
+
+        # Skip first few lines (usually name, contact info)
+        skip_lines = 0
+        for i, line in enumerate(content_lines[:8]):
+            stripped = line.strip()
+            # Contact-like lines (email, phone, address patterns)
+            if re.search(r'@|phone|license|driving|nationality|\d{4,}', stripped, re.I):
+                skip_lines = i + 1
+            # Common resume noise
+            elif re.search(r'make this resume|resume templates|build this', stripped, re.I):
+                skip_lines = i + 1
+
+        remaining_lines = content_lines[skip_lines:]
+        if not remaining_lines:
+            return {}
+
+        # Split evenly
+        lines_per_section = max(1, len(remaining_lines) // n_sections)
+        result: Dict[str, str] = {}
+        for i, canonical in enumerate(header_canonicals):
+            start = i * lines_per_section
+            end = (i + 1) * lines_per_section if i < n_sections - 1 else len(remaining_lines)
+            section_text = '\n'.join(remaining_lines[start:end]).strip()
+            if section_text:
+                result[canonical] = section_text
+
+        return result
+
+    def _merge_sections(
+        self,
+        tagged_sections: Dict[str, str],
+        plain_sections: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Merge tagged (layout) and plain-text (detector) sections.
+
+        Prefer tagged sections when available (higher priority because they
+        come from layout analysis with font/position signals). Fill gaps
+        from plain-text detection.
+
+        Args:
+            tagged_sections: Sections from layout_extractor, keyed by canonical name
+            plain_sections: Sections from section_detector, keyed by canonical name
+
+        Returns:
+            Dict keyed by canonical section names with best-available text.
+        """
+        merged: Dict[str, str] = {}
+
+        # 1. Add tagged sections (higher priority — from layout analysis)
+        for canonical, content in tagged_sections.items():
+            if content and content.strip():
+                if canonical not in merged or len(content) > len(merged[canonical]):
+                    merged[canonical] = content
+
+        # 2. Fill gaps from plain-text detection
+        for canonical, content in plain_sections.items():
+            if canonical not in merged and content and content.strip():
+                merged[canonical] = content
+
+        return merged
 
     def _extract_languages(self, text: str) -> List[str]:
         """Find known human languages in text."""
@@ -549,6 +864,113 @@ class PDFPipelineV3:
             score += 1.0
 
         return round(score / total, 2)
+
+    @staticmethod
+    def _compute_text_quality(text: str) -> float:
+        """Compute text extraction quality score (0.0 to 1.0).
+
+        Detects corrupted PDF text extraction by checking:
+        - Alphabetic character ratio (< 0.4 = likely corrupt)
+        - Average word length (< 2.0 = likely garbled)
+        - Excessive non-printable characters
+        - Known corruption patterns (cid: references)
+
+        Returns:
+            0.0-1.0 where < 0.5 indicates likely corruption
+        """
+        if not text or len(text) < 10:
+            return 0.0
+
+        # Strip tags for analysis
+        clean = re.sub(r'\[/?[A-Z_]+\]', '', text)
+        if not clean.strip():
+            return 0.0
+
+        total_chars = len(clean)
+        alpha_chars = sum(1 for c in clean if c.isalpha())
+        alpha_ratio = alpha_chars / total_chars
+
+        # Average word length
+        words = clean.split()
+        valid_words = [w for w in words if len(w) > 0]
+        avg_word_len = sum(len(w) for w in valid_words) / len(valid_words) if valid_words else 0
+
+        # Non-printable characters (excluding newlines, tabs)
+        non_print = sum(1 for c in clean if not c.isprintable() and c not in '\n\r\t')
+        non_print_ratio = non_print / total_chars
+
+        # (cid:XX) pattern count
+        cid_count = len(re.findall(r'\(cid:\d+\)', clean))
+        cid_penalty = min(cid_count * 0.1, 0.5)
+
+        # Garbled pattern: consecutive non-alpha characters (3+)
+        garbled_runs = len(re.findall(r'[^a-zA-Z\s,.\-:;()]{3,}', clean))
+        garbled_penalty = min(garbled_runs * 0.02, 0.3)
+
+        # Compose score
+        score = 1.0
+        if alpha_ratio < 0.4:
+            score -= 0.5
+        elif alpha_ratio < 0.6:
+            score -= 0.2
+
+        if avg_word_len < 2.0:
+            score -= 0.3
+        elif avg_word_len < 3.0:
+            score -= 0.1
+
+        score -= non_print_ratio * 2
+        score -= cid_penalty
+        score -= garbled_penalty
+
+        return round(max(0.0, min(1.0, score)), 2)
+
+    @staticmethod
+    def _remove_duplicate_blocks(text: str) -> str:
+        """Remove duplicate content blocks from text.
+
+        Some PDFs produce repeated sections (e.g., sidebar + main overlap).
+        This deduplicates by comparing normalized line blocks.
+
+        Returns text with duplicate blocks removed.
+        """
+        lines = text.split('\n')
+        if len(lines) < 10:
+            return text  # too short to have meaningful duplicates
+
+        # Normalize and hash blocks of 3+ consecutive non-empty lines
+        seen_blocks: set = set()
+        result_lines: List[str] = []
+        block: List[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                if block:
+                    block_key = ' '.join(
+                        re.sub(r'\s+', ' ', l.strip().lower()) for l in block
+                    )
+                    if len(block_key) > 50 and block_key in seen_blocks:
+                        # Duplicate — skip this block
+                        block = []
+                        result_lines.append('')  # keep blank line
+                        continue
+                    seen_blocks.add(block_key)
+                    result_lines.extend(block)
+                    block = []
+                result_lines.append(line)
+            else:
+                block.append(line)
+
+        # Flush final block
+        if block:
+            block_key = ' '.join(
+                re.sub(r'\s+', ' ', l.strip().lower()) for l in block
+            )
+            if not (len(block_key) > 50 and block_key in seen_blocks):
+                result_lines.extend(block)
+
+        return '\n'.join(result_lines)
 
     def _extract_dob(self, main_sections: Dict[str, str], combined_text: str) -> Optional[str]:
         """
@@ -1363,8 +1785,9 @@ class PDFPipelineV3:
                 warnings.append("No experience entries found")
             if not fields.get('skills'):
                 warnings.append("No skills detected")
-            if not fields.get('projects'):
-                warnings.append("No projects section found (developer resumes should have this)")
+            quality = fields.get('extraction_quality', 1.0)
+            if quality < 0.3:
+                warnings.append("Limited structured data extracted — PDF may need OCR or manual review")
         return warnings
 
 

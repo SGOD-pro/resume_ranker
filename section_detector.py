@@ -1,54 +1,14 @@
 """
 section_detector.py — Phase 3: Standalone section detection
 ============================================================
-SECTION_HEADERS dictionary + SectionDetector class.
+Uses section_registry as the single source of truth for section names.
 Maps any raw section header to its canonical name.
 """
 
 import re
 from typing import Dict, List, Optional
 
-
-SECTION_HEADERS: Dict[str, List[str]] = {
-    "summary": ["summary", "profile", "about", "about me", "objective",
-                "career objective", "professional summary", "personal statement", "overview"],
-    "experience": ["experience", "employment", "employment history", "work experience",
-                   "professional experience", "career history", "work history",
-                   "job history", "relevant experience"],
-    "education": ["education", "academic background", "academic history",
-                  "qualifications", "educational background", "academics"],
-    "projects": ["projects", "personal projects", "open source", "open-source",
-                 "project experience", "key projects", "notable projects", "portfolio",
-                 "side projects", "technical projects", "academic projects",
-                 "projects / open-source", "projects / open source",
-                 "projects/open-source", "projects/open source"],
-    "skills": ["skills", "technical skills", "core competencies", "competencies",
-               "expertise", "technologies", "tools", "tools & technologies",
-               "technical expertise", "programming languages"],
-    "certifications": ["certifications", "certificates", "courses", "licenses",
-                       "credentials", "training", "professional development",
-                       "achievements", "awards", "accomplishments", "honors",
-                       "certification"],
-    "languages": ["languages", "language skills", "spoken languages"],
-}
-
-_ALIAS_MAP: Dict[str, str] = {}
-for _canonical, _aliases in SECTION_HEADERS.items():
-    for _alias in _aliases:
-        _ALIAS_MAP[_alias.upper()] = _canonical
-
-
-def resolve_section_name(raw_name: str) -> Optional[str]:
-    """Map raw section header to canonical name. None if unrecognized."""
-    cleaned = raw_name.strip().upper()
-    # Exact match
-    if cleaned in _ALIAS_MAP:
-        return _ALIAS_MAP[cleaned]
-    # Try removing trailing special chars and re-matching
-    cleaned2 = re.sub(r'[/\-|&]+\s*\S*$', '', cleaned).strip()
-    if cleaned2 in _ALIAS_MAP:
-        return _ALIAS_MAP[cleaned2]
-    return None
+from section_registry import SECTION_ALIASES, resolve as resolve_section_name
 
 
 class SectionDetector:

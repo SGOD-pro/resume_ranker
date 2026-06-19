@@ -562,73 +562,23 @@ class SidebarExtractor:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Resume Assembler — top-level entry point
+# Section aliases — imported from central registry
 # ─────────────────────────────────────────────────────────────────────────────
+# The registry uses schema-level canonical keys (experience, summary, certifications).
+# ResumeAssembler internally uses its own keys (employment, profile, courses).
+# SECTION_ALIASES keeps the registry's mapping for external consumers.
+# _ASSEMBLER_ALIASES converts to assembler-internal keys.
 
-# Known section names → canonical key
-SECTION_ALIASES = {
-    # Employment
-    'EMPLOYMENT HISTORY': 'employment',
-    'EXPERIENCE': 'employment',
-    'WORK EXPERIENCE': 'employment',
-    'PROFESSIONAL EXPERIENCE': 'employment',
-    'CAREER HISTORY': 'employment',
-    'WORK HISTORY': 'employment',
-    'JOB HISTORY': 'employment',
-    'RELEVANT EXPERIENCE': 'employment',
-    # Education
-    'EDUCATION': 'education',
-    'ACADEMIC BACKGROUND': 'education',
-    'QUALIFICATIONS': 'education',
-    'ACADEMIC HISTORY': 'education',
-    'EDUCATIONAL BACKGROUND': 'education',
-    # Profile
-    'PROFILE': 'profile',
-    'SUMMARY': 'profile',
-    'OBJECTIVE': 'profile',
-    'ABOUT ME': 'profile',
-    'ABOUT': 'profile',
-    'PROFESSIONAL SUMMARY': 'profile',
-    'CAREER OBJECTIVE': 'profile',
-    'PERSONAL STATEMENT': 'profile',
-    'OVERVIEW': 'profile',
-    # Courses / Certifications
-    'COURSES': 'courses',
-    'CERTIFICATIONS': 'courses',
-    'CERTIFICATES': 'courses',
-    'TRAINING': 'courses',
-    'LICENSES': 'courses',
-    'CREDENTIALS': 'courses',
-    'PROFESSIONAL DEVELOPMENT': 'courses',
-    # Accomplishments
-    'ACCOMPLISHMENTS': 'accomplishments',
-    'ACHIEVEMENTS': 'accomplishments',
-    'KEY ACHIEVEMENTS': 'accomplishments',
-    'AWARDS': 'accomplishments',
-    'HONORS': 'accomplishments',
-    # Projects
-    'PROJECTS': 'projects',
-    'PERSONAL PROJECTS': 'projects',
-    'OPEN SOURCE': 'projects',
-    'PROJECT EXPERIENCE': 'projects',
-    'KEY PROJECTS': 'projects',
-    'NOTABLE PROJECTS': 'projects',
-    'PORTFOLIO': 'projects',
-    'SIDE PROJECTS': 'projects',
-    'TECHNICAL PROJECTS': 'projects',
-    'ACADEMIC PROJECTS': 'projects',
-    # Skills
-    'SKILLS': 'skills',
-    'TECHNICAL SKILLS': 'skills',
-    'CORE COMPETENCIES': 'skills',
-    'COMPETENCIES': 'skills',
-    'EXPERTISE': 'skills',
-    'TECHNOLOGIES': 'skills',
-    'TOOLS': 'skills',
-    'TOOLS & TECHNOLOGIES': 'skills',
-    # Languages
-    'LANGUAGES': 'languages',
-    'LANGUAGE SKILLS': 'languages',
+from section_registry import (
+    SECTION_ALIASES,
+    ASSEMBLER_KEY_MAP,
+    to_assembler_key,
+)
+
+# Build assembler-specific alias map: UPPERCASE header → assembler internal key
+_ASSEMBLER_ALIASES: Dict[str, str] = {
+    header: to_assembler_key(canonical)
+    for header, canonical in SECTION_ALIASES.items()
 }
 
 class ProjectsSectionParser:
@@ -762,7 +712,7 @@ class ResumeAssembler:
         """
         result: Dict[str, List[Token]] = {}
         for raw_key, tagged_text in main_sections.items():
-            canonical = SECTION_ALIASES.get(raw_key.upper())
+            canonical = _ASSEMBLER_ALIASES.get(raw_key.upper())
             if canonical:
                 tokens = tokenize(tagged_text)
                 # Merge into canonical (multiple raw keys may map to same canonical)

@@ -1,0 +1,54 @@
+{
+  "personal_info": {
+    "name": "Sarah West",
+    "email": "email@email.com",
+    "phone": "3056478349",
+    "linkedin": null,
+    "github": null,
+    "location": "San Antonio",
+    "dob": null
+  },
+  "summary": "Network Engineer bringing 8 years of experience in network design, network administration,\nescalation support, and systems administration. Adept in delivering technical support, managing\nnetwork operations, and maintaining enterprise-wide area networks across multi-platforms and\nhigh uptime Data Center environments.\nSenior Network Engineer\nStandard Bank\nResponsible for optimizing network performance and increased reliability by maintaining\nhardware and software, analyzing technical issues, and ensuring system users' availability for a\n1500 user facility.",
+  "skills": [
+    "Access Control",
+    "Cisco",
+    "Communication",
+    "Electrical Engineering",
+    "Juniper",
+    "Network Administration",
+    "Network Design",
+    "Organization",
+    "Sales",
+    "Technical Support",
+    "Translation",
+    "Troubleshooting"
+  ],
+  "experience": [],
+  "education": [
+    {
+      "degree": "Master of Science in Computer Engineering",
+      "institution": null,
+      "start": null,
+      "end": null,
+      "grade": null
+    },
+    {
+      "degree": "Bachelor of Science (MS)",
+      "institution": "Electrical Engineering (Computer Networks)",
+      "start": null,
+      "end": null,
+      "grade": null
+    }
+  ],
+  "projects": [],
+  "certifications": [],
+  "languages": [
+    "English",
+    "Spanish"
+  ],
+  "raw_text_sections": {
+    "summary": "PLACE OF BIRTH San Antonio\nNetwork Engineer bringing 8 years of experience in network design, network administration,\nescalation support, and systems administration. Adept in delivering technical support, managing\nnetwork operations, and maintaining enterprise-wide area networks across multi-platforms and\nhigh uptime Data Center environments.\nSenior Network Engineer\nStandard Bank\nResponsible for optimizing network performance and increased reliability by maintaining\nhardware and software, analyzing technical issues, and ensuring system users' availability for a\n1500 user facility.",
+    "full_text": "Network Engineer\nAve PHONE 3056478349\nCA 90291\nPLACE OF BIRTH San Antonio\nNetwork Engineer bringing 8 years of experience in network design, network administration,\nescalation support, and systems administration. Adept in delivering technical support, managing\nnetwork operations, and maintaining enterprise-wide area networks across multi-platforms and\nhigh uptime Data Center environments.\nSenior Network Engineer\nStandard Bank\nResponsible for optimizing network performance and increased reliability by maintaining\nhardware and software, analyzing technical issues, and ensuring system users' availability for a\n1500 user facility.\n Managed the development, installation, and management of organization-wide local area\nnetwork, network segment, wide area network, and internet system.\n Delivered Tier 1 network ticketing support to resolve all issues for 550+ users\n Executed the maintenance window changes for multiple locations, performing\ntroubleshooting of routing, and switching issues.\n Implemented and migrated a major client to VPLS circuits, which resulted in robust and\nseamless connectivity between two different carriers.\n Inherited an MPLS project that was off-track; liaised with the parent company to deliver a\nsolution with increased availability, security, and visibility ahead of the project schedule.\nNetwork Engineer\nWells Fargo\nResponsible for Upgrading Windows NT/2000 and Novell NetWare 5.1 environments and\ninstalling configuring, and maintaining Cisco routing and switching equipment in a 1500 user\nenvironment.\n Ensured smooth end-to-end communication by delivering support for Video Conferencing\nSystem (Cisco VCS/TMS).\n Designed, configured, and installed all Data Center Network Devices to support 1500+\nusers, including ran cables, routers, ports,\n Successfully resolved routing issues within multiple contexts of the Cisco ASA firewall.\n Maintained BIG IP F5 APM VPN and provided solutions for complex issues.\n Operational tasks included solving VPN, switching, Bluecoat proxy, and routing issues.\nUniversity of Florida\nMaster of Science in Computer Engineering\nniversity of Southern California\nBachelor of Science (MS), Electrical Engineering (Computer Networks)\nRelevant coursework:\n Computer Systems Organization\n Design and Analysis of Computer Communication Network\n Optical Fiber Communication Systems\n Stochastic Network Optimization\n Mobile Communications\nPort Address Translation Wireshark\n(PAT)\nMPLS\nNetwork Address\nTranslation (NAT)\nAccess Control List (ACL)\n Detected 27+ network vulnerabilities by testing infrastructure security and tracking\npotential threats to the network.\n Implemented and managed 370+ node network and client database for four years as\nSenior Network Engineer.\n Re-design a network infrastructure of over 130 Cisco devices which resulted in revenue\nsavings of over 150,000 a year due to elimination of unneeded WAN circuits.\n Skilled in tracking details, communicating deadlines, and following up with key personnel\nresulting in 10 medium to large scale projects being completed on time or ahead of\nschedule and to standard.\nJuniper Networks Sales Specialist Wireless\nJuniper Academy, Online.\nRock Climbing, Music, Drama\nSpanish\nSarah West\nADDRESS 1515 Pacific\nLos Angeles,\nUnited States\nEMAIL email@email.com\nDRIVING LICENSE Full\nProfile\nEmployment History\nJan 2021 Present\nARKALYK\nJan 2018 Nov 2020\nKNOXVILLE\nEducation\nJan 2020 Jan 2021\nJACKSONVILLE BEACH\nJan 2016 Nov 2019\nLOS ANGELES\nSkills\nAchievements\nCourses\nJan 2021 Jan 2021\nHobbies\nLanguages English\nSarah West\nADDRESS 1515 Pacific\nLos Angeles,\nUnited States\nEMAIL email@email.com\nDRIVING LICENSE Full\nProfile\nEmployment History\nJan 2021 Present\nARKALYK\nJan 2018 Nov 2020\nKNOXVILLE\nEducation\nJan 2020 Jan 2021\nJACKSONVILLE BEACH\nJan 2016 Nov 2019\nLOS ANGELES\nSkills\nAchievements\nCourses\nJan 2021 Jan 2021\nHobbies\nLanguages English"
+  },
+  "extraction_quality": 0.83
+}

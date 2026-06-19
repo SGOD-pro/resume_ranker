@@ -29,6 +29,7 @@ class BlockDetector:
             "sidebar": doc.sidebar_text.strip(),
             "main":    doc.main_text.strip(),
             "footer":  footer,
+            "section_blocks": doc.section_blocks if hasattr(doc, 'section_blocks') else [],
         }
 
 

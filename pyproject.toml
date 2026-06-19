@@ -9,5 +9,5 @@ dependencies = [
     "nltk>=3.9.4",
     "pdfplumber>=0.11.10",
     "pymupdf>=1.27.2.3",
-    "pymupdf4llm>=1.27.2.3"
+    "pymupdf4llm>=1.27.2.3",
 ]

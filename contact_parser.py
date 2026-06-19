@@ -51,6 +51,28 @@ _NOT_NAMES = {
     'marketing manager', 'operations manager', 'general manager',
     'business analyst', 'systems analyst', 'security guard',
     'warehouse associate', 'amazon warehouse', 'laboratory inventory',
+    # Medical
+    'registered nurse', 'clinical director', 'medical officer',
+    'staff nurse', 'charge nurse', 'nurse practitioner',
+    'physician assistant', 'medical assistant', 'dental hygienist',
+    'physical therapist', 'occupational therapist', 'speech therapist',
+    'clinical researcher', 'lab technician', 'pharmacy technician',
+    # Legal
+    'attorney at law', 'legal counsel', 'senior partner',
+    'managing partner', 'associate attorney', 'legal assistant',
+    'court clerk', 'case manager', 'compliance officer',
+    # Finance
+    'financial analyst', 'investment banker', 'portfolio manager',
+    'risk analyst', 'credit analyst', 'fund manager',
+    'tax consultant', 'audit manager', 'budget analyst',
+    # Education
+    'assistant professor', 'teaching assistant', 'research assistant',
+    'associate professor', 'adjunct professor', 'lab instructor',
+    'academic advisor', 'department chair', 'dean of students',
+    # Operations / Sales
+    'sales representative', 'account executive', 'branch manager',
+    'store manager', 'shift supervisor', 'district manager',
+    'supply chain manager', 'logistics coordinator', 'fleet manager',
 }
 # Common lowercase particles in names (allowed without uppercase)
 _NAME_PARTICLES = {'de', 'van', 'von', 'al', 'el', 'la', 'le', 'du', 'da', 'di',
@@ -94,7 +116,7 @@ class ContactParser:
     """
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
-              sidebar_text: str = "",
+              sidebar_text: str = "", main_text: str = "",
               hyperlinks: list = None) -> Dict[str, Any]:
         combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
         # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub
@@ -107,7 +129,7 @@ class ContactParser:
             "phone":    self._extract_phone(combined),
             "linkedin": self._extract_linkedin(combined),
             "github":   self._extract_github(combined),
-            "location": self._extract_location(combined, sidebar_text),
+            "location": self._extract_location(combined, sidebar_text, main_text),
         }
 
     def _extract_name(self, full_width_text: str, raw_text: str,
@@ -185,10 +207,16 @@ class ContactParser:
                 return f"github.com/{username}"
         return None
 
-    def _extract_location(self, text: str, sidebar_text: str = "") -> Optional[str]:
+    def _extract_location(self, text: str, sidebar_text: str = "",
+                           main_text: str = "") -> Optional[str]:
         # First search sidebar text (often has location early)
         if sidebar_text:
             result = self._extract_location_from_text(sidebar_text)
+            if result:
+                return result
+        # Second: search main_text header area (address blocks in main column)
+        if main_text:
+            result = self._extract_location_from_text(main_text)
             if result:
                 return result
         return self._extract_location_from_text(text)
@@ -204,22 +232,84 @@ class ContactParser:
         _section_kw_re = re.compile(
             r'(?:programming|languages?|frameworks?|libraries|tools|skills|'
             r'databases?|education|experience|projects|certific)[:\s]', re.I)
+        # Job entry patterns — skip these for location extraction
+        _job_entry_re = re.compile(
+            r'\b(?:at|@)\s+[A-Z]|'   # "at Company" pattern
+            r'\b(?:Engineer|Developer|Manager|Designer|Teacher|Nurse|'
+            r'Analyst|Associate|Assistant|Coordinator)\b', re.I)
         _tag_re = re.compile(r'\[/?[A-Z_]+\]')
-        for line in lines[:10]:
-            if _EMAIL_RE.search(line) or _LINKEDIN_RE.search(line):
+
+        # First pass: prefer lines with street address or zip code
+        for line in lines[:15]:
+            if _LINKEDIN_RE.search(line):
                 continue
-            if _section_kw_re.search(line):
+            if _section_kw_re.search(line) or _job_entry_re.search(line):
                 continue
-            # Skip lines that are primarily tags (JOB_TITLE, NAME, etc.)
             if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
                 continue
-            # Strip tags before matching
             clean_line = _tag_re.sub('', line).strip()
+            if not clean_line:
+                continue
+            # Strip email and phone from line before matching
+            clean_line = _EMAIL_RE.sub('', clean_line)
+            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
+            clean_line = clean_line.strip(' ,;|')
+            if not clean_line:
+                continue
+            # Prefer address lines with zip codes or street numbers
+            if re.search(r'\d{5}|\d+\s+(?:Ave|St|Blvd|Dr|Rd|Lane|Way)', clean_line, re.I):
+                m = city_state_re.search(clean_line)
+                if m:
+                    return m.group(0).strip()
+
+        # Second pass: any City, ST match
+        for line in lines[:15]:
+            if _LINKEDIN_RE.search(line):
+                continue
+            if _section_kw_re.search(line) or _job_entry_re.search(line):
+                continue
+            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+                continue
+            clean_line = _tag_re.sub('', line).strip()
+            if not clean_line:
+                continue
+            # Strip email and phone before matching
+            clean_line = _EMAIL_RE.sub('', clean_line)
+            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
+            clean_line = clean_line.strip(' ,;|')
             if not clean_line:
                 continue
             m = city_state_re.search(clean_line)
             if m:
                 return m.group(0).strip()
+
+        # Strategy 1.5: "Street, City, ZIP, Country" or "City, ZIP" format
+        # Catches addresses like "9 Wall St, New York, 10005, USA"
+        addr_re = re.compile(
+            r'(?:\d+\s+[A-Za-z\s]+(?:St|Ave|Blvd|Dr|Rd|Lane|Way|Street|Avenue),\s*)?'
+            r'([A-Z][a-zA-Z\s]{2,20}),\s*(?:\d{5}|[A-Z]{2,3})',
+        )
+        for line in lines[:15]:
+            if _LINKEDIN_RE.search(line):
+                continue
+            if _section_kw_re.search(line) or _job_entry_re.search(line):
+                continue
+            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+                continue
+            clean_line = _tag_re.sub('', line).strip()
+            if not clean_line:
+                continue
+            # Strip email and phone before matching
+            clean_line = _EMAIL_RE.sub('', clean_line)
+            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
+            clean_line = clean_line.strip(' ,;|')
+            if not clean_line:
+                continue
+            m = addr_re.search(clean_line)
+            if m:
+                city = m.group(1).strip()
+                if len(city) > 2:
+                    return city
 
         # Strategy 2: Nationality/Place of Birth/Address labels
         # Use inline (?i:...) for keywords only; capture group is case-sensitive
