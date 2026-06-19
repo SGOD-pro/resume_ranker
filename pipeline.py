@@ -48,6 +48,19 @@ class ExtractionResult:
     metadata: Dict[str, Any]
 
 
+@dataclass
+class SectionContent:
+    """Section content preserving both tagged and plain text.
+
+    tagged_text: text with [JOB_TITLE], [DATE], [BULLET] tags (for assembler)
+    plain_text:  raw text stripped of tags (for standalone parsers)
+    source:      which extraction path found this section
+    """
+    plain_text: str = ""
+    tagged_text: str = ""
+    source: str = "unknown"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Known human languages for extraction
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,72 +290,68 @@ class PDFPipelineV3:
         asm_has_education  = bool(assembler_result.get('education'))
         asm_has_projects   = bool(assembler_result.get('projects_raw_text', '').strip())
 
-        # Plain-text fallback: use section_detector on raw text
+        # Plain-text section detection: always run (needed for run-both-score-both)
         # Strategy: try main text → sidebar text → sidebar-header-split-main
         plain_sections: Dict[str, str] = {}
-        if not (asm_has_experience and asm_has_education):
-            # Strategy 1: detect sections in main text
-            plain_sections = self.section_detector.detect(doc.main_text)
 
-            # Strategy 2: if main text yielded few sections, try sidebar
-            # (some two-column resumes put headers + content in sidebar)
-            if len(plain_sections) < 2 and doc.sidebar_text.strip():
-                sidebar_plain = self.section_detector.detect(doc.sidebar_text)
-                if len(sidebar_plain) > len(plain_sections):
-                    # Merge: sidebar sections fill gaps, but only if content
-                    # is substantial (not just dates/labels from header column)
-                    for k, v in sidebar_plain.items():
-                        if k not in plain_sections and len(v.strip()) > 100:
-                            plain_sections[k] = v
+        # Strategy 1: detect sections in main text
+        plain_sections = self.section_detector.detect(doc.main_text)
 
-            # Strategy 3: sidebar has headers only (no content), main has
-            # content only (no headers). Use sidebar headers as boundary
-            # markers to split the combined text.
-            if len(plain_sections) < 2 and doc.sidebar_text.strip():
-                combined_for_detect = doc.sidebar_text + '\n' + doc.main_text
-                combined_plain = self.section_detector.detect(combined_for_detect)
-                total_combined_len = sum(len(v) for v in combined_plain.values())
-                if len(combined_plain) > len(plain_sections):
-                    # Only use combined sections with substantial content
-                    # AND not disproportionately large (likely entire text dumped)
-                    for k, v in combined_plain.items():
-                        content_len = len(v.strip())
-                        is_proportional = (
-                            total_combined_len == 0
-                            or content_len / total_combined_len < 0.6
-                        )
-                        if (k not in plain_sections
-                                and content_len > 100
-                                and is_proportional):
-                            plain_sections[k] = v
+        # Strategy 2: if main text yielded few sections, try sidebar
+        # (some two-column resumes put headers + content in sidebar)
+        if len(plain_sections) < 2 and doc.sidebar_text.strip():
+            sidebar_plain = self.section_detector.detect(doc.sidebar_text)
+            if len(sidebar_plain) > len(plain_sections):
+                # Merge: sidebar sections fill gaps, but only if content
+                # is substantial (not just dates/labels from header column)
+                for k, v in sidebar_plain.items():
+                    if k not in plain_sections and len(v.strip()) > 100:
+                        plain_sections[k] = v
 
-            # Strategy 4: sidebar-ordered section splitting
-            # When sidebar has section headers and main has content,
-            # use sidebar header ORDER to split main content into sections.
-            # ONLY use for summary — proportional splitting is too noisy for
-            # structured sections (experience, education) that need exact content.
-            quality_sections = sum(
-                1 for v in plain_sections.values() if len(v.strip()) > 100
-            )
-            if quality_sections < 2 and doc.sidebar_text.strip():
-                sidebar_split = self._split_main_by_sidebar_headers(
-                    doc.sidebar_text, doc.main_text, doc.full_width_text)
-                if sidebar_split:
-                    # Only inject summary from sidebar split (reliable first section)
-                    if 'summary' in sidebar_split and 'summary' not in plain_sections:
-                        summary_text = sidebar_split['summary']
-                        if len(summary_text.strip()) > 40:
-                            plain_sections['summary'] = summary_text
+        # Strategy 3: sidebar has headers only (no content), main has
+        # content only (no headers). Use sidebar headers as boundary
+        # markers to split the combined text.
+        if len(plain_sections) < 2 and doc.sidebar_text.strip():
+            combined_for_detect = doc.sidebar_text + '\n' + doc.main_text
+            combined_plain = self.section_detector.detect(combined_for_detect)
+            total_combined_len = sum(len(v) for v in combined_plain.values())
+            if len(combined_plain) > len(plain_sections):
+                # Only use combined sections with substantial content
+                # AND not disproportionately large (likely entire text dumped)
+                for k, v in combined_plain.items():
+                    content_len = len(v.strip())
+                    is_proportional = (
+                        total_combined_len == 0
+                        or content_len / total_combined_len < 0.6
+                    )
+                    if (k not in plain_sections
+                            and content_len > 100
+                            and is_proportional):
+                        plain_sections[k] = v
 
-            # Strategy 5: Inject fallback-detected sections
-            # When fallback detector found sections via sidebar header matching,
-            # map them to canonical names and add to plain_sections
-            if fallback_used and main_sections:
-                from section_registry import resolve as _resolve
-                for raw_key, content in main_sections.items():
-                    canonical = _resolve(raw_key)
-                    if canonical and canonical not in plain_sections and content.strip():
-                        plain_sections[canonical] = content
+        # Strategy 4: sidebar-ordered section splitting
+        # When sidebar has section headers and main has content,
+        # use sidebar header ORDER to split main content into sections.
+        # ONLY use for summary — proportional splitting is too noisy for
+        # structured sections (experience, education) that need exact content.
+        quality_sections = sum(
+            1 for v in plain_sections.values() if len(v.strip()) > 100
+        )
+        if quality_sections < 2 and doc.sidebar_text.strip():
+            sidebar_split = self._split_main_by_sidebar_headers(
+                doc.sidebar_text, doc.main_text, doc.full_width_text)
+            if sidebar_split:
+                # Only inject summary from sidebar split (reliable first section)
+                if 'summary' in sidebar_split and 'summary' not in plain_sections:
+                    summary_text = sidebar_split['summary']
+                    if len(summary_text.strip()) > 40:
+                        plain_sections['summary'] = summary_text
+
+        # ── Build unified sections (preserves tagged + plain text) ────────
+        fallback_secs = main_sections if fallback_used else None
+        unified = self._build_unified_sections(
+            main_sections, plain_sections, fallback_sections=fallback_secs
+        )
 
         # ── Phase 4: Contact (regex-only, no NER) ────────────────────────
         contact = self.contact_parser.parse(
@@ -439,10 +448,11 @@ class PDFPipelineV3:
         skills_section_text = assembler_result.get('skills_section_text', '')
         sidebar_skills = assembler_result.get('skills_raw', [])
         sidebar_skills_text = '\n'.join(sidebar_skills) if sidebar_skills else ''
-        # Also grab skills from plain-text detection (strip tags first)
-        plain_skills_text = self._strip_tags(plain_sections.get('skills', ''))
+        # Also grab skills from unified sections (combines all sources)
+        skills_unified = unified.get('skills')
+        unified_skills_text = skills_unified.plain_text if skills_unified else ''
         all_skills_text = '\n'.join(filter(None, [
-            skills_section_text, sidebar_skills_text, plain_skills_text
+            skills_section_text, sidebar_skills_text, unified_skills_text
         ]))
         skills = self.skills_parser.parse(
             skills_section=all_skills_text,
@@ -450,9 +460,13 @@ class PDFPipelineV3:
             also_scan_fulltext=True,
         )
 
-        # ── Phase 6: Experience ───────────────────────────────────────────
+        # ── Phase 6: Experience (run both → score both → pick best) ─────
+        exp_assembler = []
+        exp_standalone = []
+
+        # Path A: Assembler on tagged text
         if asm_has_experience:
-            experience = [
+            exp_assembler = [
                 {
                     "role":         j.get("role"),
                     "company":      j.get("company"),
@@ -464,12 +478,20 @@ class PDFPipelineV3:
                 }
                 for j in assembler_result['employment_history']
             ]
-        else:
-            # Try DATE-tag experience first (handles [DATE]...role[/DATE] patterns)
-            experience = self._parse_date_tag_experience(doc.main_text)
-            if not experience:
-                exp_text = plain_sections.get('experience', '')
-                experience = self.experience_parser.parse(exp_text)
+
+        # Path B: Standalone parser on plain text from unified sections
+        exp_section = unified.get('experience')
+        if exp_section and exp_section.plain_text.strip():
+            exp_standalone = self.experience_parser.parse(exp_section.plain_text)
+
+        # If standalone found nothing, try date-tag patterns in main_text
+        if not exp_standalone:
+            exp_standalone = self._parse_date_tag_experience(doc.main_text)
+
+        # Score both and pick best
+        score_asm = self._score_experience_entries(exp_assembler)
+        score_std = self._score_experience_entries(exp_standalone)
+        experience = exp_assembler if score_asm > score_std else exp_standalone
 
         # ── Experience fallback: parse INTERNSHIP & TRAINING from full_width_text ──
         internship_entries = self._extract_internship_training(doc.full_width_text)
@@ -516,9 +538,13 @@ class PDFPipelineV3:
                 self._strip_tags(doc.main_text)
             )
 
-        # ── Phase 7: Education ────────────────────────────────────────────
+        # ── Phase 7: Education (run both → score both → pick best) ─────
+        edu_assembler = []
+        edu_standalone = []
+
+        # Path A: Assembler on tagged text
         if asm_has_education:
-            education = [
+            edu_assembler = [
                 {
                     "degree":      ' '.join(filter(None, [
                         e.get('degree_type'),
@@ -531,9 +557,16 @@ class PDFPipelineV3:
                 }
                 for e in assembler_result['education']
             ]
-        else:
-            edu_text = plain_sections.get('education', '')
-            education = self.edu_parser.parse(edu_text)
+
+        # Path B: Standalone parser on plain text from unified sections
+        edu_section = unified.get('education')
+        if edu_section and edu_section.plain_text.strip():
+            edu_standalone = self.edu_parser.parse(edu_section.plain_text)
+
+        # Score both and pick best
+        score_asm = self._score_education_entries(edu_assembler)
+        score_std = self._score_education_entries(edu_standalone)
+        education = edu_assembler if score_asm > score_std else edu_standalone
 
         # ── Education fallback: parse from sidebar [EDUCATION] section ────
         if not education:
@@ -570,10 +603,11 @@ class PDFPipelineV3:
                 education = self.edu_parser.parse(edu_text_raw)
 
         # ── Phase 8: Projects ─────────────────────────────────────────────
-        if asm_has_projects:
-            projects_raw_text = assembler_result['projects_raw_text']
-        else:
-            projects_raw_text = plain_sections.get('projects', '')
+        # Use whichever source has more content
+        proj_asm_text = assembler_result.get('projects_raw_text', '').strip()
+        proj_section = unified.get('projects')
+        proj_plain_text = proj_section.plain_text.strip() if proj_section else ''
+        projects_raw_text = proj_asm_text if len(proj_asm_text) > len(proj_plain_text) else proj_plain_text
         projects = self.project_parser.parse(
             projects_raw_text,
             hyperlinks=getattr(doc, 'hyperlinks', [])
@@ -582,7 +616,9 @@ class PDFPipelineV3:
         # ── Summary ───────────────────────────────────────────────────────
         summary = assembler_result.get('profile')
         if not summary:
-            summary = plain_sections.get('summary')
+            summary_section = unified.get('summary')
+            if summary_section and summary_section.plain_text.strip():
+                summary = summary_section.plain_text
 
         # Fallback 1: Profile tagged as [TITLE] in full_width_text
         # (some layouts misclassify Profile as a title due to font size)
@@ -643,13 +679,14 @@ class PDFPipelineV3:
             for c in (courses_raw or [])
         ] if courses_raw else []
 
-        # Fallback: parse from plain-text section detection
+        # Fallback: parse from unified sections
         if not certifications:
-            # Check certifications, awards, achievements sections
-            # (section_registry separates these into distinct canonical keys)
-            cert_text = plain_sections.get('certifications', '')
+            # Check certifications, awards, achievements from unified
+            cert_section = unified.get('certifications')
+            cert_text = cert_section.plain_text if cert_section else ''
             for fallback_key in ('awards', 'achievements'):
-                extra = plain_sections.get(fallback_key, '')
+                extra_section = unified.get(fallback_key)
+                extra = extra_section.plain_text if extra_section else ''
                 if extra:
                     cert_text = (cert_text + '\n' + extra).strip() if cert_text else extra
             if cert_text:
@@ -658,10 +695,11 @@ class PDFPipelineV3:
         # ── Languages ─────────────────────────────────────────────────────
         languages = assembler_result.get('languages', [])
         lang_section_text = assembler_result.get('languages_section', '')
-        lang_plain = plain_sections.get('languages', '')
+        lang_section = unified.get('languages')
+        lang_unified = lang_section.plain_text if lang_section else ''
         if not languages:
             languages = self._extract_languages(
-                combined_text + '\n' + lang_section_text + '\n' + lang_plain
+                combined_text + '\n' + lang_section_text + '\n' + lang_unified
             )
 
         # ── Build raw text fallback for ranking ────────────────────────────
@@ -824,6 +862,161 @@ class PDFPipelineV3:
                 merged[canonical] = content
 
         return merged
+
+    def _build_unified_sections(
+        self,
+        main_sections: Dict[str, str],
+        plain_sections: Dict[str, str],
+        fallback_sections: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, 'SectionContent']:
+        """Build unified section map preserving both tagged and plain text.
+
+        For each canonical section:
+        - tagged_text = from layout extractor (has [JOB_TITLE], [DATE], [BULLET] tags)
+        - plain_text  = from section_detector OR tag-stripped version of tagged_text
+        - source      = which path found this section
+
+        Both standalone parsers (ExperienceParser, EducationParser) and the
+        assembler (EmploymentParser, EducationParser) can operate on their
+        native input format without quality degradation.
+        """
+        from section_registry import resolve
+
+        unified: Dict[str, SectionContent] = {}
+
+        # 1. Layout-extracted tagged sections → tagged_text
+        for raw_key, content in main_sections.items():
+            if raw_key == '__PREAMBLE__' or not content or not content.strip():
+                continue
+            canonical = resolve(raw_key)
+            if not canonical:
+                continue
+            if canonical not in unified:
+                unified[canonical] = SectionContent(
+                    tagged_text=content,
+                    plain_text=self._strip_tags(content),
+                    source="layout",
+                )
+            elif len(content) > len(unified[canonical].tagged_text):
+                # Longer content wins for same canonical
+                unified[canonical].tagged_text = content
+                unified[canonical].plain_text = self._strip_tags(content)
+                unified[canonical].source = "layout"
+
+        # 2. Plain-text sections → fill plain_text gaps or upgrade with longer content
+        for canonical, content in plain_sections.items():
+            if not content or not content.strip():
+                continue
+            if canonical not in unified:
+                unified[canonical] = SectionContent(
+                    plain_text=content,
+                    tagged_text="",  # No tagged version available
+                    source="section_detector",
+                )
+            elif len(content.strip()) > len(unified[canonical].plain_text.strip()):
+                # Section detector found more content → use it for plain_text
+                # (keeps tagged_text from layout for assembler)
+                unified[canonical].plain_text = content
+
+        # 3. Fallback-detected sections → fill remaining gaps
+        if fallback_sections:
+            for raw_key, content in fallback_sections.items():
+                if not content or not content.strip():
+                    continue
+                canonical = resolve(raw_key)
+                if not canonical:
+                    continue
+                if canonical not in unified:
+                    unified[canonical] = SectionContent(
+                        plain_text=content,
+                        tagged_text="",
+                        source="fallback",
+                    )
+                elif not unified[canonical].plain_text.strip():
+                    unified[canonical].plain_text = content
+
+        return unified
+
+    @staticmethod
+    def _score_experience_entries(entries: List[Dict]) -> float:
+        """Score experience extraction quality.
+
+        Per-entry scoring:
+          complete_role:    +2.0  (non-empty, non-generic role)
+          complete_company: +2.0  (non-empty company)
+          complete_dates:   +1.0  (has start date)
+          has_description:  +0.5  (has description or achievements)
+
+        Total = sum(per_entry_scores) + entry_count * 0.5
+        """
+        if not entries:
+            return 0.0
+
+        total = 0.0
+        generic_roles = {'intern', 'trainee', 'employee', 'worker', 'staff'}
+
+        for entry in entries:
+            score = 0.0
+            role = (entry.get('role') or '').strip()
+            company = (entry.get('company') or '').strip()
+            start = (entry.get('start') or '').strip()
+            desc = (entry.get('description') or '').strip()
+            achievements = entry.get('achievements', [])
+
+            if role and role.lower() not in generic_roles:
+                score += 2.0
+            if company:
+                score += 2.0
+            if start:
+                score += 1.0
+            if desc or achievements:
+                score += 0.5
+
+            total += score
+
+        # Bonus for having multiple entries
+        total += len(entries) * 0.5
+
+        return total
+
+    @staticmethod
+    def _score_education_entries(entries: List[Dict]) -> float:
+        """Score education extraction quality.
+
+        Per-entry scoring:
+          complete_degree:      +2.0
+          complete_institution: +2.0
+          complete_dates:       +1.0
+          has_grade:            +0.5
+
+        Total = sum(per_entry_scores) + entry_count * 0.5
+        """
+        if not entries:
+            return 0.0
+
+        total = 0.0
+
+        for entry in entries:
+            score = 0.0
+            degree = (entry.get('degree') or '').strip()
+            institution = (entry.get('institution') or '').strip()
+            start = (entry.get('start') or entry.get('end') or '').strip()
+            grade = (entry.get('grade') or '').strip()
+
+            if degree:
+                score += 2.0
+            if institution:
+                score += 2.0
+            if start:
+                score += 1.0
+            if grade:
+                score += 0.5
+
+            total += score
+
+        total += len(entries) * 0.5
+
+        return total
 
     def _fallback_detect_sections(
         self,
