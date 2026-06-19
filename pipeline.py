@@ -157,9 +157,19 @@ class PDFPipelineV3:
         warnings = self._generate_warnings(fields, domain.domain)
 
         # ── Step 7: Build ExtractionResult ────────────────────────────────
-        page_count = len(set(
-            round(l.top / 800) for l in doc.classified_lines
-        )) or 1  # estimate page count from y-positions
+        # Use actual page count from PyMuPDF (via DocumentStructure)
+        page_count = doc.page_count if doc.page_count > 0 else (
+            len(set(round(l.top / 800) for l in doc.classified_lines)) or 1
+        )
+
+        # ── Semantic quality scoring ──────────────────────────────────────
+        semantic_quality_score = self._compute_semantic_quality(combined_text)
+        # Flag for OCR if either score is very low, or if both are borderline
+        mark_for_ocr = (
+            text_quality_score < 0.5
+            or semantic_quality_score < 0.5
+            or (text_quality_score < 0.75 and semantic_quality_score < 0.9)
+        )
 
         # ── Extraction telemetry ──────────────────────────────────────────
         from section_registry import CANONICAL_SECTIONS
@@ -197,6 +207,9 @@ class PDFPipelineV3:
                 "domain_signals":       domain.signals[:5],
                 "layout_type":          layout_type,
                 "text_quality_score":   text_quality_score,
+                "semantic_quality_score": semantic_quality_score,
+                "mark_for_ocr":         mark_for_ocr,
+                "extraction_engine":    doc.extraction_metadata.get("extractor", "unknown"),
                 "blocks": {
                     "header_len":       len(blocks.get("header", "")),
                     "sidebar_len":      len(blocks.get("sidebar", "")),
@@ -924,6 +937,70 @@ class PDFPipelineV3:
         score -= garbled_penalty
 
         return round(max(0.0, min(1.0, score)), 2)
+
+    @staticmethod
+    def _compute_semantic_quality(text: str) -> float:
+        """Detect semantically garbled text using linguistic heuristics.
+
+        Checks if words have patterns consistent with natural English:
+        - Contain vowels (garbled text often has runs of consonants)
+        - Reasonable consonant-to-vowel ratio
+        - Not excessive unusual character patterns
+
+        Words like 'PreneCt', 'mCntagra@', 'oiCkeIiC' fail these checks.
+
+        Returns:
+            0.0-1.0 where < 0.5 indicates semantic corruption
+        """
+        if not text or len(text) < 20:
+            return 0.0
+
+        # Strip tags and get words
+        clean = re.sub(r'\[/?[A-Z_]+\]', '', text)
+        words = re.findall(r'[a-zA-Z]{3,}', clean)
+
+        if len(words) < 5:
+            return 0.5  # too few words to judge
+
+        vowels = set('aeiouAEIOU')
+
+        def looks_english(word: str) -> bool:
+            """Check if a word has plausible English-like structure."""
+            w = word.lower()
+            # Must contain at least one vowel
+            if not any(c in vowels for c in w):
+                return False
+            # No more than 4 consecutive consonants (unusual in English)
+            consonant_run = 0
+            max_consonant_run = 0
+            for c in w:
+                if c not in vowels:
+                    consonant_run += 1
+                    max_consonant_run = max(max_consonant_run, consonant_run)
+                else:
+                    consonant_run = 0
+            if max_consonant_run > 5:
+                return False
+            # Check mid-word capitalization (garbled: 'PreneCt', 'oiCkeIiC')
+            if len(word) > 2:
+                mid = word[1:-1]
+                mid_upper = sum(1 for c in mid if c.isupper())
+                if mid_upper > len(mid) * 0.3 and len(mid) > 2:
+                    return False
+            return True
+
+        plausible = sum(1 for w in words if looks_english(w))
+        ratio = plausible / len(words)
+
+        # Score: >80% plausible = good text, <50% = garbled
+        if ratio >= 0.8:
+            return 1.0
+        elif ratio >= 0.6:
+            return 0.7
+        elif ratio >= 0.5:
+            return 0.5
+        else:
+            return 0.2
 
     @staticmethod
     def _remove_duplicate_blocks(text: str) -> str:

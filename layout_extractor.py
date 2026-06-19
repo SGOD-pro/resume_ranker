@@ -36,9 +36,9 @@ LOCATION HANDLING (key insight):
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from collections import defaultdict
-import pdfplumber
+import pymupdf
 
 
 # ─────────────────────────────────────────────────────────────
@@ -118,50 +118,121 @@ class LayoutAwarePDFExtractor:
     def extract(self, pdf_path: str) -> 'DocumentStructure':
         all_classified: List[ClassifiedLine] = []
         all_hyperlinks: List[Dict[str, str]] = []
+        raw_pages: List[dict] = []
+        actual_page_count = 0
 
-        with pdfplumber.open(pdf_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                words = self._get_words(page)
+        doc = pymupdf.open(pdf_path)
+        try:
+            actual_page_count = doc.page_count
+            for page_num, page in enumerate(doc):
+                # Extract dict-mode page structure (reading-order sorted)
+                page_dict = page.get_text("dict", sort=True)
+                raw_pages.append(page_dict)
+
+                page_width = float(page_dict["width"])
+                words = self._get_words_from_page_dict(page_dict)
                 if not words:
                     continue
 
-                # Extract hyperlinks from PDF annotations
+                # Extract hyperlinks
                 all_hyperlinks.extend(self._get_hyperlinks(page))
 
-                page_width = float(page.width)
                 split_x = self._find_column_split(words, page_width)
+
+                # Detect right-sidebar layout: if left column has much more
+                # content than right, the sidebar is actually on the right
+                swap_columns = False
+                if split_x:
+                    left_count = sum(1 for w in words if w.x0 < split_x)
+                    right_count = sum(1 for w in words if w.x0 >= split_x)
+                    if left_count > right_count * 3 and right_count > 0:
+                        swap_columns = True
+
                 name_y_max = self._find_header_band_bottom(words)
 
                 lines = self._group_lines(words, y_tol=3.5)
                 classified = self._classify_lines(
-                    lines, split_x, name_y_max, page_width, page_num
+                    lines, split_x, name_y_max, page_width, page_num,
+                    swap_columns=swap_columns,
                 )
                 all_classified.extend(classified)
+        finally:
+            doc.close()
 
-        doc = self._build_document(all_classified)
-        doc.hyperlinks = all_hyperlinks
-        return doc
+        result = self._build_document(all_classified)
+        result.hyperlinks = all_hyperlinks
+        result.pages = raw_pages
+        result.page_count = actual_page_count
+        result.extraction_metadata = {"extractor": "pymupdf", "version": pymupdf.__version__}
+        return result
 
     # ─────────────────────────────────────────────────────────
-    # Step 1: Get words with metadata
+    # Step 1: Get words from PyMuPDF dict-mode page output
     # ─────────────────────────────────────────────────────────
 
-    def _get_words(self, page) -> List[Word]:
-        raw = page.extract_words(
-            x_tolerance=3, y_tolerance=3,
-            keep_blank_chars=False,
-            extra_attrs=["fontname", "size"]
-        )
-        return [
-            Word(
-                text=self._clean_cid(w["text"]),
-                x0=float(w["x0"]), x1=float(w["x1"]),
-                top=float(w["top"]), bottom=float(w["bottom"]),
-                fontname=str(w.get("fontname") or ""),
-                size=float(w.get("size") or 0),
-            )
-            for w in (raw or [])
-        ]
+    def _get_words_from_page_dict(self, page_dict: dict) -> List[Word]:
+        """Convert PyMuPDF dict-mode blocks → Word objects.
+
+        Each span is split on whitespace to produce individual Word tokens,
+        matching the word-level interface that all classification logic expects.
+        """
+        words: List[Word] = []
+        for block in page_dict.get("blocks", []):
+            if block.get("type") != 0:  # skip image blocks
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = self._clean_cid(span.get("text", ""))
+                    if not text.strip():
+                        continue
+
+                    # De-letterspace: collapse "D E T A I L S" → "DETAILS"
+                    # Pattern: single chars separated by single spaces
+                    text = self._collapse_letterspacing(text)
+                    bbox = span["bbox"]  # (x0, y0, x1, y1)
+                    fontname = span.get("font", "")
+                    size = float(span.get("size", 0))
+
+                    # Split span text into individual words
+                    # Distribute x-coordinates proportionally using full text
+                    # length (including spaces) so gaps appear between words
+                    span_words = text.split()
+                    if not span_words:
+                        continue
+                    if len(span_words) == 1:
+                        # Single word — use full span bbox
+                        words.append(Word(
+                            text=span_words[0],
+                            x0=bbox[0], x1=bbox[2],
+                            top=bbox[1], bottom=bbox[3],
+                            fontname=fontname, size=size,
+                        ))
+                        continue
+
+                    # Multiple words: distribute width proportionally
+                    # including space chars so gaps appear naturally
+                    full_len = len(text)  # includes spaces
+                    if full_len == 0:
+                        continue
+                    span_width = bbox[2] - bbox[0]
+                    char_width = span_width / full_len
+                    pos = 0  # character position in original text
+
+                    for i, w_text in enumerate(span_words):
+                        # Find this word's start position in original text
+                        word_start = text.index(w_text, pos)
+                        word_end = word_start + len(w_text)
+                        w_x0 = bbox[0] + word_start * char_width
+                        w_x1 = bbox[0] + word_end * char_width
+                        words.append(Word(
+                            text=w_text,
+                            x0=w_x0, x1=w_x1,
+                            top=bbox[1], bottom=bbox[3],
+                            fontname=fontname, size=size,
+                        ))
+                        pos = word_end
+
+        return words
 
     @staticmethod
     def _clean_cid(text: str) -> str:
@@ -169,12 +240,43 @@ class LayoutAwarePDFExtractor:
         Common patterns: (cid:28)ltering → filtering, speci(cid:28)c → specific"""
         return re.sub(r'\(cid:\d+\)', '', text)
 
-    def _get_hyperlinks(self, page) -> List[Dict[str, str]]:
-        """Extract hyperlinks from PDF page annotations."""
+    @staticmethod
+    def _collapse_letterspacing(text: str) -> str:
+        """Collapse letterspaced text like 'D E T A I L S' → 'DETAILS'.
+
+        Handles both single-word ('P R O F I L E') and multi-word
+        ('E M P L O Y M E N T  H I S T O R Y') letterspacing.
+        Double-space separates words in multi-word letterspaced headers.
+        """
+        stripped = text.strip()
+        if len(stripped) < 3:
+            return text
+
+        # Check if text matches letterspacing pattern:
+        # single chars separated by single spaces
+        # Allow double-space as word separator
+        parts = stripped.split('  ')  # split on double-space first
+        collapsed_parts = []
+        is_letterspaced = True
+        for part in parts:
+            chars = part.split(' ')
+            if all(len(c) == 1 for c in chars) and len(chars) >= 2:
+                collapsed_parts.append(''.join(chars))
+            else:
+                is_letterspaced = False
+                break
+
+        if is_letterspaced and collapsed_parts:
+            return ' '.join(collapsed_parts)
+        return text
+
+    @staticmethod
+    def _get_hyperlinks(page) -> List[Dict[str, str]]:
+        """Extract hyperlinks from a PyMuPDF page."""
         links = []
         try:
-            for annot in (page.hyperlinks or []):
-                uri = annot.get('uri', '')
+            for link in page.get_links():
+                uri = link.get('uri', '')
                 if uri:
                     links.append({'uri': uri})
         except Exception:
@@ -268,6 +370,7 @@ class LayoutAwarePDFExtractor:
         header_band_bottom: float,
         page_width: float,
         page_num: int,
+        swap_columns: bool = False,
     ) -> List[ClassifiedLine]:
 
         result = []
@@ -279,8 +382,13 @@ class LayoutAwarePDFExtractor:
             top = line_words[0].top
 
             if split_x:
-                left_words  = [w for w in line_words if w.x0 < split_x]
-                right_words = [w for w in line_words if w.x0 >= split_x]
+                raw_left  = [w for w in line_words if w.x0 < split_x]
+                raw_right = [w for w in line_words if w.x0 >= split_x]
+                if swap_columns:
+                    # Right-sidebar layout: left is main, right is sidebar
+                    left_words, right_words = raw_right, raw_left
+                else:
+                    left_words, right_words = raw_left, raw_right
             else:
                 left_words  = []
                 right_words = line_words
@@ -354,6 +462,16 @@ class LayoutAwarePDFExtractor:
                 and not text_stripped.replace(" ", "").isdigit()
                 and len(text_stripped) >= 3):
             return self._make_line(words, ROLE_SECTION_HDR, "right")
+
+        # Section header fallback: non-bold but large font (≥12pt), short line
+        # that resolves to a known section name in the registry
+        if (1 <= len(text_stripped.split()) <= 4
+                and avg_size >= 12.0
+                and len(text_stripped) >= 3
+                and not text_stripped.replace(" ", "").isdigit()):
+            from section_registry import resolve
+            if resolve(text_stripped):
+                return self._make_line(words, ROLE_SECTION_HDR, "right")
 
         # Date range line
         if DATE_RE.search(text_full):
@@ -495,7 +613,10 @@ class LayoutAwarePDFExtractor:
 
             else:  # right or full column — main content
                 if line.role == ROLE_SECTION_HDR:
-                    main_parts.append(f"\n[{text}]\n")
+                    # Clean tag: uppercase, replace & with AND, strip non-alpha
+                    tag_text = text.upper().replace('&', 'AND')
+                    tag_text = re.sub(r'[^A-Z\s]', '', tag_text).strip()
+                    main_parts.append(f"\n[{tag_text}]\n")
 
                 elif line.role == ROLE_JOB_TITLE:
                     # Strip inline_location from text to avoid duplication
@@ -621,6 +742,10 @@ class DocumentStructure:
     classified_lines: List[ClassifiedLine] = field(default_factory=list)
     hyperlinks: List[Dict[str, str]] = field(default_factory=list)
     section_blocks: List[SectionBlock] = field(default_factory=list)
+    # Phase 4A.55: PyMuPDF raw page data (backward compatible — all have defaults)
+    pages: List[dict] = field(default_factory=list)
+    page_count: int = 0
+    extraction_metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def layout(self) -> str:
