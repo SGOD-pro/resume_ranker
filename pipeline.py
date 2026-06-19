@@ -326,8 +326,11 @@ class PDFPipelineV3:
                 for j in assembler_result['employment_history']
             ]
         else:
-            exp_text = plain_sections.get('experience', '')
-            experience = self.experience_parser.parse(exp_text)
+            # Try DATE-tag experience first (handles [DATE]...role[/DATE] patterns)
+            experience = self._parse_date_tag_experience(doc.main_text)
+            if not experience:
+                exp_text = plain_sections.get('experience', '')
+                experience = self.experience_parser.parse(exp_text)
 
         # ── Experience fallback: parse INTERNSHIP & TRAINING from full_width_text ──
         internship_entries = self._extract_internship_training(doc.full_width_text)
@@ -343,8 +346,6 @@ class PDFPipelineV3:
                 experience = self.experience_parser.parse(exp_text)
 
         # ── Experience fallback 3: pattern-based from main_text ───────────
-        #    For two-column resumes with no "Experience" header,
-        #    the main text often has "Role, Company, Location\nDATE" patterns.
         if not experience:
             experience = self._extract_experience_by_pattern(
                 self._strip_tags(doc.main_text)
@@ -779,6 +780,67 @@ class PDFPipelineV3:
 
         return entries
 
+    def _parse_date_tag_experience(self, text: str) -> List[Dict[str, Any]]:
+        """Parse experience from [DATE]...role[/DATE] patterns in raw text.
+        Example: [DATE]Jan 2025 - Present Senior Retail Assistant / Floor Supervisor[/DATE]
+        Next line: Macy's, Chicago, IL
+        """
+        if not text:
+            return []
+
+        # Find all [DATE]...[/DATE] blocks that contain a role after the date range
+        date_tag_re = re.compile(
+            r'\[DATE\]'
+            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}|\d{4})'
+            r'\s*[-–—]+\s*'
+            r'((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}|Present|Current|\d{4})'
+            r'\s+'
+            r'(.+?)'
+            r'\[/DATE\]',
+            re.I
+        )
+
+        entries = []
+        lines = text.split('\n')
+        text_joined = text  # keep original for regex matching
+
+        for m in date_tag_re.finditer(text_joined):
+            start = m.group(1).strip()
+            end = m.group(2).strip()
+            role = m.group(3).strip()
+
+            # Find the line after the [DATE] tag to get company
+            match_end_pos = m.end()
+            after_text = text_joined[match_end_pos:match_end_pos + 200]
+            after_lines = [l.strip() for l in after_text.split('\n') if l.strip()]
+
+            company = None
+            description_lines = []
+            achievements = []
+
+            for i, line in enumerate(after_lines):
+                if i == 0:
+                    # First non-empty line after DATE tag = company
+                    company = line.rstrip(',').strip()
+                elif line.startswith(('•', '-', '*', '·')):
+                    achievements.append(re.sub(r'^[•·*\-]\s*', '', line).strip())
+                elif re.match(r'\[DATE\]', line):
+                    break  # Next experience entry
+                elif not achievements:
+                    description_lines.append(line)
+
+            if role:
+                entries.append({
+                    "role": role,
+                    "company": company,
+                    "start": start,
+                    "end": end,
+                    "description": ' '.join(description_lines).strip() or None,
+                    "achievements": achievements,
+                })
+
+        return entries
+
     def _extract_experience_by_pattern(self, text: str) -> List[Dict[str, Any]]:
         """
         Pattern-based experience extraction for resumes without section headers.
@@ -931,12 +993,45 @@ class PDFPipelineV3:
         # ── Fix skills: remove garbled entries ──────────────────────────
         cleaned['skills'] = self._fix_skills(cleaned.get('skills', []))
 
+        # ── Fix summary: remove noise from start ────────────────────────
+        cleaned['summary'] = self._fix_summary(cleaned.get('summary'))
+
         return cleaned
+
+    @staticmethod
+    def _fix_summary(summary: Optional[str]) -> Optional[str]:
+        """Remove noise from the beginning of summary text."""
+        if not summary:
+            return None
+        # Remove leading lines that are location/metadata noise
+        lines = summary.split('\n')
+        clean_lines = []
+        started = False
+        for line in lines:
+            stripped = line.strip()
+            # Skip leading noise lines
+            if not started:
+                if re.match(r'^(?:Place\s+of\s+birth|Nationality|Driving\s+license|'
+                           r'Date\s+of\s+birth|Gender|Marital|Address|\d{4}/)',
+                           stripped, re.I):
+                    continue
+                if stripped and len(stripped) > 15:
+                    started = True
+            if started:
+                clean_lines.append(line)
+        result = '\n'.join(clean_lines).strip()
+        return result if result else None
 
     @staticmethod
     def _fix_skills(skills: list) -> list:
         """Remove garbled or invalid skills."""
         _VALID_SINGLE = {'C', 'R'}  # Known single-char programming languages
+        # Non-skill words that leak from section headers
+        _NON_SKILLS = {
+            'hobbies', 'interests', 'activities', 'references',
+            'languages', 'details', 'profile', 'summary',
+            'objective', 'declaration', 'disclaimer',
+        }
         fixed = []
         for sk in skills:
             # Must be string
@@ -952,6 +1047,10 @@ class PDFPipelineV3:
             if len(sk) == 1 and sk not in _VALID_SINGLE:
                 continue
 
+            # Skip non-skill words
+            if sk.lower() in _NON_SKILLS:
+                continue
+
             # Skip if contains non-printable or garbled chars
             if re.search(r'[^\x20-\x7E]', sk):
                 continue
@@ -959,6 +1058,56 @@ class PDFPipelineV3:
             # Skip if mostly special chars (garbled text)
             alpha_count = sum(1 for c in sk if c.isalpha())
             if alpha_count < len(sk) * 0.4:
+                continue
+
+            # Skip very short multi-char skills that aren't valid
+            if len(sk) <= 3 and sk not in _VALID_SINGLE and sk not in {
+                'AI', 'CI', 'CD', 'ML', 'NLP', 'AWS', 'GCP', 'SQL', 'PHP',
+                'CSS', 'C++', 'C#', 'Go', 'UX', 'UI', 'API', 'ETL', 'SEM',
+                'SEO', 'CAD', 'ERP', 'SAP', 'GIS', 'RPA', 'IoT', 'VPN',
+                'TCP', 'DNS', 'SSH', 'Git', 'SVN', 'VBA', '5S', 'CPR',
+            }:
+                continue
+
+            # Skip skills starting with special chars (garbled)
+            if sk[0] in ('+', '=', '*', '/', '\\', '<', '>', '~', '`'):
+                continue
+
+            # Skip cipher-font garbled text detection
+            if len(sk) > 4:
+                words = sk.split()
+
+                # Multi-word skill starting with lowercase = likely garbled
+                if len(words) > 1 and sk[0].islower():
+                    continue
+
+                # Digits at start of word (not tech versions) e.g., "9ogdegd"
+                if re.search(r'\b\d[a-zA-Z]{2,}', sk):
+                    continue
+
+                # Digits mixed into word body e.g., "E39omm"
+                if re.search(r'[a-zA-Z]\d[a-zA-Z]', sk) and not re.match(
+                    r'^[A-Z][a-z]*\d+$', sk):
+                    continue
+
+                # High uppercase ratio in multi-word strings
+                upper_count = sum(1 for c in sk if c.isupper())
+                if len(words) > 1 and upper_count > len(sk) * 0.35:
+                    if not re.match(r'^[A-Z]{2,5}(\s|$)', sk):
+                        continue
+
+                # Parentheses in multi-word skill name (garbled text)
+                if '(' in sk and len(words) > 1:
+                    continue
+
+                # Unusual consonant clusters that don't appear in English
+                # e.g., "dFa", "gCe", "pgl", "tneF"
+                if re.search(r'[bcdfghjklmnpqrstvwxyz]{4,}', sk, re.I):
+                    continue
+
+            # Two-word skill where first word is lowercase and very short
+            # e.g., 'es E' — garbled fragment
+            if len(sk) <= 5 and ' ' in sk and sk[0].islower():
                 continue
 
             fixed.append(sk)
@@ -975,11 +1124,12 @@ class PDFPipelineV3:
             # Fix: company starts with bullet marker or description text
             company = re.sub(r'^[•·▪▸►✓✔*\-]\s*', '', company)
 
-            # Fix: company is actually a description (starts with verb phrase, %)
+            # Fix: company is actually a description (starts with verb phrase)
             if company and re.match(r'^(?:onboarding|reducing|improving|managing|'
                                     r'assisted|supervised|maintaining|developed|'
-                                    r'implemented|responsible)', company, re.I):
-                # This is a description leak, not a company
+                                    r'implemented|responsible|maintained|provided|'
+                                    r'operated|organized|coordinated|resolved|'
+                                    r'requirements|performed|facilitated)', company, re.I):
                 if not exp.get('description'):
                     exp['description'] = company
                 company = ''
@@ -1007,16 +1157,43 @@ class PDFPipelineV3:
 
             # Fix: company is too long (likely includes description)
             if company and len(company) > 80:
-                # Try to cut at first period or newline
                 cut = re.search(r'[.\n]', company)
                 if cut:
                     company = company[:cut.start()].strip()
 
             # Skip entries that look like education, not experience
             if role and re.search(r'\b(?:Bachelor|Master|Associate|Diploma|Certificate'
-                                  r'|B\.?S\.?C|M\.?S\.?C|B\.?A\.?|M\.?A\.?|Ph\.?D)\b',
+                                  r'|B\.?S\.?C|M\.?S\.?C|B\.?A\.?|M\.?A\.?|Ph\.?D'
+                                  r'|Hospitality\s*&|Tourism\s+Management)\b',
                                   role, re.I):
                 continue
+
+            # Skip entries that look like certifications, not experience
+            if role and re.search(r'\b(?:Certified\s+Expert|Certification|Licensed)\b',
+                                  role, re.I):
+                continue
+
+            # Skip entries that look like language courses
+            if role and re.match(r'^(?:Spanish|French|German|Italian|Mandarin|Chinese|'
+                                r'Portuguese|Russian|Japanese|Korean|Arabic|Hindi'
+                                r')(?:\s+and\s+\w+)?$', role, re.I):
+                continue
+
+            # Skip entries with garbled/ALL-CAPS city names as role (no real job title)
+            if role and role.isupper() and len(role.split()) == 1 and not company:
+                continue
+
+            # Skip entries that look like just a place name (no job title words)
+            # e.g., 'San Jacinto' with no company
+            if role and not company and len(role.split()) <= 2:
+                has_job_word = re.search(
+                    r'(?:Engineer|Developer|Designer|Manager|Analyst|Consultant|'
+                    r'Assistant|Associate|Director|Specialist|Coordinator|Agent|'
+                    r'Guard|Teacher|Trainer|Nurse|Chef|Writer|Editor|Intern|'
+                    r'Officer|Administrator|Supervisor|Operator|Technician|'
+                    r'Marketer|Accountant|Lawyer|Programmer)', role, re.I)
+                if not has_job_word:
+                    continue
 
             # Clean up: strip trailing commas, periods
             role = role.rstrip(',.').strip() if role else None
@@ -1031,7 +1208,8 @@ class PDFPipelineV3:
         return fixed
 
     def _fix_education(self, entries: list) -> list:
-        """Clean up education entries: fix garbled degrees, remove prefixes."""
+        """Clean up education entries: fix garbled degrees, remove prefixes,
+        fix degree/institution swaps."""
         fixed = []
         seen = set()
         for edu in entries:
@@ -1041,7 +1219,7 @@ class PDFPipelineV3:
             # Fix: "Bachelor in 's Degree" → "Bachelor's Degree"
             degree = re.sub(r"(\w+)\s+in\s+'s\s+Degree", r"\1's Degree", degree)
 
-            # Fix: "Master in 's Degree" → "Master's Degree"
+            # Fix: "Master in 's Degree in ..." → "Master's Degree in ..."
             degree = re.sub(r"(\w+)\s+in\s+'s\s+", r"\1's ", degree)
 
             # Fix: "Degree: Bachelor's Degree" → "Bachelor's Degree"
@@ -1051,14 +1229,54 @@ class PDFPipelineV3:
             if degree.startswith('ravel'):
                 degree = 'T' + degree
 
+            # Fix: degree starts with year prefix "2015 – Advanced Course..."
+            degree = re.sub(r'^\d{4}\s*[–—\-]\s*', '', degree).strip()
+
+            # Fix: degree field has multiple comma-separated items
+            # e.g. "Security Guard Certificate Program (SOCP), ASIS International, North Naples"
+            if degree and ',' in degree and not institution:
+                parts = [p.strip() for p in degree.split(',')]
+                if re.search(r'(?:Certificate|Degree|Diploma|Training|Program|BA|BS|MA|MS)',
+                            parts[0], re.I):
+                    degree = parts[0]
+                    institution = ', '.join(parts[1:])
+
+            # Fix: degree has institution embedded (multiple items with commas)
+            if degree and institution and ',' in degree:
+                parts = [p.strip() for p in degree.split(',')]
+                if len(parts) >= 2 and re.search(
+                    r'(?:University|College|School|Institute|Academy|International)',
+                    degree, re.I):
+                    deg_parts = []
+                    inst_parts = []
+                    for p in parts:
+                        if re.search(r'(?:University|College|School|Institute|Academy|'
+                                    r'International)', p, re.I):
+                            inst_parts.append(p)
+                        else:
+                            deg_parts.append(p)
+                    if deg_parts:
+                        degree = ', '.join(deg_parts)
+                    if inst_parts:
+                        institution = ', '.join(inst_parts) + (', ' + institution if institution else '')
+
+            # Fix: institution has degree embedded (swap detection)
+            if institution and not degree:
+                if re.search(r'(?:Certificate|Degree|Diploma|Course|Training|Bachelor|Master)',
+                            institution, re.I):
+                    degree = institution
+                    institution = None
+
             # Fix: institution contains year prefixes like "2015 –"
-            institution = re.sub(r'^\d{4}\s*[–—\-]\s*', '', institution).strip()
+            institution = re.sub(r'^\d{4}\s*[–—\-]\s*', '', institution).strip() if institution else ''
 
             # Clean brackets/tags from institution
-            institution = re.sub(r'\[/?[A-Z_]+\]', '', institution).strip()
+            institution = re.sub(r'\[/?[A-Z_]+\]', '', institution).strip() if institution else ''
 
-            # Dedup key
-            key = (degree.lower(), institution.lower())
+            # Dedup key: normalize by stripping year prefixes and lowercasing
+            norm_deg = re.sub(r'^\d{4}\s*[–—\-]\s*', '', degree).strip().lower()
+            norm_inst = institution.lower() if institution else ''
+            key = (norm_deg, norm_inst)
             if key in seen:
                 continue
             seen.add(key)
@@ -1098,6 +1316,13 @@ class PDFPipelineV3:
 
             # Skip if starts with a lowercase word (achievement text)
             if name[0].islower():
+                continue
+
+            # Skip garbled/cipher-font encoded cert names
+            # e.g., "CertiPcate in Hootsuite Social Marketing Udemy Online MaJ U2U2"
+            if re.search(r'[a-zA-Z]\d[a-zA-Z]', name) or \
+               re.search(r'\b\d[a-zA-Z]{2,}', name) or \
+               re.search(r'[A-Z]{2,}[a-z][A-Z]', name):
                 continue
 
             # Clean garbled characters (cid artifacts already cleaned)
