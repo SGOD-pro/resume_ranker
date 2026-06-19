@@ -141,10 +141,25 @@ class PDFPipelineV3:
         main_sections    = self.layout_extractor.parse_sections(doc)
         sidebar_sections = self.layout_extractor.parse_sidebar(doc)
 
+        # ── Step 4b: Fallback header detection ────────────────────────────
+        # When layout-based parsing finds no real sections (only __PREAMBLE__),
+        # scan combined text for section header lines using registry matching.
+        real_sections = [k for k in main_sections if k != '__PREAMBLE__']
+        fallback_used = False
+        fallback_candidates = []
+        if not real_sections and domain.domain == 'resume':
+            fallback_sections, fallback_candidates = self._fallback_detect_sections(
+                combined_text, doc=doc
+            )
+            if fallback_sections:
+                main_sections = fallback_sections
+                fallback_used = True
+
         # ── Step 5: Field extraction ──────────────────────────────────────
         if domain.domain == 'resume':
             fields = self._extract_resume_fields(
-                doc, main_sections, sidebar_sections, combined_text
+                doc, main_sections, sidebar_sections, combined_text,
+                fallback_used=fallback_used,
             )
         else:
             # Non-resume: return raw sections
@@ -186,7 +201,9 @@ class PDFPipelineV3:
             for sec in CANONICAL_SECTIONS:
                 if sec in merged_telemetry and merged_telemetry[sec].strip():
                     sections_found.append(sec)
-                    if sec in tagged_for_telemetry:
+                    if fallback_used and sec in tagged_for_telemetry:
+                        section_sources[sec] = "fallback"
+                    elif sec in tagged_for_telemetry:
                         section_sources[sec] = "layout"
                     else:
                         section_sources[sec] = "section_detector"
@@ -221,6 +238,8 @@ class PDFPipelineV3:
                 "sections_found":       sections_found,
                 "sections_missing":     sections_missing,
                 "section_sources":      section_sources,
+                "fallback_detector_used": fallback_used,
+                "header_candidates":    len(fallback_candidates),
                 # Field-level telemetry (for debugging)
                 "summary_found":        bool(fields.get('summary')) if isinstance(fields, dict) else False,
                 "skills_count":         len(fields.get('skills', [])) if isinstance(fields, dict) else 0,
@@ -236,6 +255,7 @@ class PDFPipelineV3:
         main_sections: Dict[str, str],
         sidebar_sections: Dict[str, list],
         combined_text: str,
+        fallback_used: bool = False,
     ) -> Dict[str, Any]:
         """
         Phase 4-10: Extract all resume fields into normalized schema.
@@ -313,6 +333,16 @@ class PDFPipelineV3:
                         summary_text = sidebar_split['summary']
                         if len(summary_text.strip()) > 40:
                             plain_sections['summary'] = summary_text
+
+            # Strategy 5: Inject fallback-detected sections
+            # When fallback detector found sections via sidebar header matching,
+            # map them to canonical names and add to plain_sections
+            if fallback_used and main_sections:
+                from section_registry import resolve as _resolve
+                for raw_key, content in main_sections.items():
+                    canonical = _resolve(raw_key)
+                    if canonical and canonical not in plain_sections and content.strip():
+                        plain_sections[canonical] = content
 
         # ── Phase 4: Contact (regex-only, no NER) ────────────────────────
         contact = self.contact_parser.parse(
@@ -445,6 +475,32 @@ class PDFPipelineV3:
         internship_entries = self._extract_internship_training(doc.full_width_text)
         if internship_entries:
             experience = experience + internship_entries
+
+        # ── Experience fallback 1.5: tagged section with minimal content ──
+        # When main_sections has an experience-mapped section but parsers found nothing
+        if not experience:
+            from section_registry import resolve as _resolve_fb
+            for raw_key, content in main_sections.items():
+                if _resolve_fb(raw_key) == 'experience' and content.strip():
+                    clean = re.sub(r'\[/?[A-Z_]+\]', '', content).strip()
+                    clean = re.sub(r'^[•·▪\-\*]\s*', '', clean).strip()
+                    if clean and len(clean) > 10:
+                        # Extract duration if present: "(2 months)"
+                        dur_m = re.search(r'\(([^)]+)\)\s*$', clean)
+                        duration = dur_m.group(1) if dur_m else None
+                        desc = re.sub(r'\([^)]+\)\s*$', '', clean).strip() if dur_m else clean
+                        experience.append({
+                            "role": "Intern",
+                            "company": None,
+                            "start": None,
+                            "end": None,
+                            "location": None,
+                            "description": desc,
+                            "achievements": [],
+                            "duration": duration,
+                            "type": "internship",
+                        })
+                    break
 
         # ── Experience fallback 2: parse sidebar text if still empty ──────
         if not experience:
@@ -768,6 +824,199 @@ class PDFPipelineV3:
                 merged[canonical] = content
 
         return merged
+
+    def _fallback_detect_sections(
+        self,
+        text: str,
+        doc=None,
+    ) -> tuple:
+        """Fallback section detection when layout-based parsing finds nothing.
+
+        Strategy 1 (preferred): If doc is provided, scan classified lines for
+        sidebar_value entries that match section registry. Collect right-column
+        content between matching headers into sections.
+
+        Strategy 2 (text-only): Scan combined text line-by-line for section
+        header candidates using registry matching + scoring.
+
+        Only called when sections_found == 0.
+
+        Returns:
+            (sections_dict, candidates_list)
+            sections_dict: Dict[str, str] keyed by raw section header name
+            candidates_list: List of candidate dicts for telemetry
+        """
+        from section_registry import resolve
+
+        # Strategy 1: Use classified lines from layout extraction
+        if doc and hasattr(doc, 'classified_lines') and doc.classified_lines:
+            sections, candidates = self._fallback_from_classified_lines(
+                doc.classified_lines
+            )
+            if sections:
+                return sections, candidates
+
+        # Strategy 2: Text-based fallback
+        return self._fallback_from_text(text)
+
+    def _fallback_from_classified_lines(self, classified_lines) -> tuple:
+        """Detect sections from classified lines when headers are in sidebar.
+
+        Scans for sidebar_value lines that resolve to known sections,
+        then collects right-column (main) content between those headers.
+        """
+        from section_registry import resolve
+
+        # Find sidebar header candidates
+        candidates = []
+        for i, cl in enumerate(classified_lines):
+            if cl.column != 'left':
+                continue
+            canonical = resolve(cl.text.strip())
+            if not canonical:
+                continue
+            score = self._score_header_candidate(
+                cl.text.strip(), canonical, i, len(classified_lines)
+            )
+            candidates.append({
+                'text': cl.text.strip(),
+                'canonical': canonical,
+                'y_pos': cl.top,
+                'line_idx': i,  # index in classified_lines (preserves page order)
+                'score': score,
+            })
+
+        if not candidates:
+            return {}, []
+
+        # Sort by line index (preserves multi-page ordering, unlike y-position)
+        candidates.sort(key=lambda c: c['line_idx'])
+
+        # Collect content between each pair of header positions (by line index)
+        # Include: right-column lines + left-column date lines (not headers)
+        import re as _re
+        _DATE_RE = _re.compile(
+            r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}',
+            _re.I
+        )
+        # Build set of header line indices to exclude
+        header_idxs = set(c['line_idx'] for c in candidates)
+
+        sections: Dict[str, str] = {}
+        for idx, cand in enumerate(candidates):
+            start_idx = cand['line_idx']
+            end_idx = candidates[idx + 1]['line_idx'] if idx + 1 < len(candidates) else len(classified_lines)
+
+            # Collect content lines in this index range
+            content_lines = []
+            for li in range(start_idx, end_idx):
+                cl = classified_lines[li]
+                if li in header_idxs:
+                    continue  # skip the header line itself
+
+                if cl.column in ('right', 'full'):
+                    content_lines.append(cl.text)
+                elif cl.column == 'left' and _DATE_RE.search(cl.text):
+                    # Include left-column date lines (e.g., "Jan 2021 — Present")
+                    content_lines.append(cl.text)
+
+            content = '\n'.join(content_lines).strip()
+            if content:
+                sections[cand['text']] = content
+
+        return sections, candidates
+
+    def _fallback_from_text(self, text: str) -> tuple:
+        """Text-only fallback: scan for section headers by line."""
+        from section_registry import resolve
+
+        lines = text.split('\n')
+        candidates = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped or len(stripped) < 3:
+                continue
+
+            clean = re.sub(r'\[/?[A-Z_]+\]', '', stripped).strip()
+            if not clean or len(clean) < 3:
+                continue
+
+            words = clean.split()
+            if len(words) > 5:
+                continue
+
+            canonical = resolve(clean)
+            score = self._score_header_candidate(clean, canonical, i, len(lines))
+
+            if score >= 0.5:
+                candidates.append({
+                    'text': clean,
+                    'line_num': i,
+                    'canonical': canonical,
+                    'score': score,
+                })
+
+        if not candidates:
+            return {}, []
+
+        sections: Dict[str, str] = {}
+        candidates.sort(key=lambda c: c['line_num'])
+
+        for idx, cand in enumerate(candidates):
+            start = cand['line_num'] + 1
+            end = candidates[idx + 1]['line_num'] if idx + 1 < len(candidates) else len(lines)
+            content = '\n'.join(lines[start:end]).strip()
+            if content:
+                sections[cand['text']] = content
+
+        return sections, candidates
+
+    @staticmethod
+    def _score_header_candidate(
+        text: str,
+        canonical: Optional[str],
+        line_idx: int,
+        total_lines: int,
+    ) -> float:
+        """Score a line as a potential section header.
+
+        Scoring factors:
+        - registry_match: +0.5 (strongest signal)
+        - uppercase_ratio: +0.15 if fully uppercase
+        - line_length: +0.15 if short (≤30 chars)
+        - position: +0.1 if not in first 3 lines (preamble)
+        - word_count: +0.1 if 1-3 words
+
+        Returns 0.0-1.0 score. Threshold: ≥ 0.5
+        """
+        score = 0.0
+
+        # Registry match — strongest signal
+        if canonical:
+            score += 0.5
+
+        # Uppercase ratio
+        alpha = [c for c in text if c.isalpha()]
+        if alpha and all(c.isupper() for c in alpha):
+            score += 0.15
+
+        # Line length (headers are short)
+        if len(text) <= 30:
+            score += 0.15
+        elif len(text) <= 50:
+            score += 0.05
+
+        # Position (skip preamble lines)
+        if line_idx >= 3:
+            score += 0.1
+
+        # Word count (headers are 1-3 words)
+        words = text.split()
+        if 1 <= len(words) <= 3:
+            score += 0.1
+
+        return min(1.0, score)
 
     def _extract_languages(self, text: str) -> List[str]:
         """Find known human languages in text."""

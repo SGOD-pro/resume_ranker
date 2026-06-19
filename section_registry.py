@@ -94,6 +94,17 @@ SECTION_ALIASES: Dict[str, str] = {
     "SERVICE HISTORY":          "experience",
     # Management
     "CASE MANAGEMENT":          "experience",
+    # Internship / Training (work experience, not coursework)
+    "INTERNSHIP":               "experience",
+    "INTERNSHIPS":              "experience",
+    "INTERNSHIP AND TRAINING":  "experience",
+    "INTERNSHIP & TRAINING":    "experience",
+    "PROFESSIONAL TRAINING":    "experience",
+    "INDUSTRIAL TRAINING":      "experience",
+    "PRACTICAL TRAINING":       "experience",
+    "VOCATIONAL TRAINING":      "experience",
+    "APPRENTICESHIP":           "experience",
+    "APPRENTICESHIPS":          "experience",
 
     # ── Education ─────────────────────────────────────────────────────────
     "EDUCATION":                "education",
