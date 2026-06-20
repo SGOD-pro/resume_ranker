@@ -5,7 +5,9 @@ import { ResumeUploadZone } from './ResumeUploadZone';
 import { CandidateFilters } from './CandidateFilters';
 import { CandidateRow } from './CandidateRow';
 import { CandidateListFooter } from './CandidateListFooter';
+import { CenterPanelLoader } from './CenterPanelLoader';
 import { useCandidateStore } from '@/store/candidate-store';
+import { useAppStore } from '@/store/app-store';
 
 export function CandidateListPanel() {
   const allCandidates = useCandidateStore((s) => s.candidates);
@@ -13,6 +15,7 @@ export function CandidateListPanel() {
   const sortField = useCandidateStore((s) => s.sortField);
   const searchQuery = useCandidateStore((s) => s.searchQuery);
   const showKnockouts = useCandidateStore((s) => s.showKnockouts);
+  const appPhase = useAppStore((s) => s.appPhase);
 
   const candidates = useMemo(() => {
     let filtered = [...allCandidates];
@@ -44,6 +47,8 @@ export function CandidateListPanel() {
     return filtered;
   }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts]);
 
+  const showLoader = appPhase === 'extracting' || appPhase === 'scoring';
+
   return (
     <div className="flex h-full flex-col">
       <div className="p-sp-4 pb-0">
@@ -54,26 +59,33 @@ export function CandidateListPanel() {
 
       <Separator className="bg-border h-[3px]" />
 
-      {/* Table header */}
-      <div className="flex items-center gap-sp-2 px-sp-4 py-sp-2 bg-foreground text-background">
-        <span className="w-8 text-tiny uppercase tracking-chip font-bold">#</span>
-        <span className="flex-1 text-tiny uppercase tracking-chip font-bold">Name</span>
-        <span className="w-16 text-tiny uppercase tracking-chip font-bold text-right">Score</span>
-        <span className="w-20 text-tiny uppercase tracking-chip font-bold text-right">Signal</span>
-      </div>
+      {showLoader ? (
+        /* Center panel loader replaces list content area only */
+        <CenterPanelLoader phase={appPhase} />
+      ) : (
+        <>
+          {/* Table header */}
+          <div className="flex items-center gap-sp-2 px-sp-4 py-sp-2 bg-secondary text-foreground">
+            <span className="w-8 text-tiny uppercase tracking-chip font-bold">#</span>
+            <span className="flex-1 text-tiny uppercase tracking-chip font-bold">Name</span>
+            <span className="w-16 text-tiny uppercase tracking-chip font-bold text-right">Score</span>
+            <span className="w-20 text-tiny uppercase tracking-chip font-bold text-right">Signal</span>
+          </div>
 
-      <ScrollArea className="flex-1 scrollbar-brutal">
-        <div>
-          {candidates.map((candidate) => (
-            <CandidateRow key={candidate.id} candidate={candidate} />
-          ))}
-          {candidates.length === 0 && (
-            <div className="p-sp-5 text-center text-muted-foreground text-small">
-              No candidates match the current filters.
+          <ScrollArea className="flex-1 scrollbar-brutal">
+            <div>
+              {candidates.map((candidate) => (
+                <CandidateRow key={candidate.id} candidate={candidate} />
+              ))}
+              {candidates.length === 0 && (
+                <div className="p-sp-5 text-center text-muted-foreground text-small">
+                  No candidates match the current filters.
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </ScrollArea>
+          </ScrollArea>
+        </>
+      )}
 
       <Separator className="bg-border h-[3px]" />
       <CandidateListFooter />

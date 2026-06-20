@@ -43,7 +43,7 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
         </span>
         <span
           className={cn(
-            'w-20 text-right text-tiny uppercase tracking-chip font-bold flex items-center justify-end gap-1',
+            'w-20 text-right text-sm uppercase tracking-chip font-bold flex items-center justify-end gap-1',
             isSelected ? 'text-current' : signal.color
           )}
         >
@@ -54,7 +54,7 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
 
       {/* Skills line */}
       <div className="ml-8 mt-sp-1">
-        <p className={cn('text-tiny font-mono', isSelected ? 'opacity-80' : 'text-muted-foreground')}>
+        <p className={cn('text-sm font-mono', isSelected ? 'opacity-80' : 'text-muted-foreground')}>
           {candidate.topSkills.join(' · ')}
         </p>
       </div>
@@ -66,7 +66,7 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
             <p
               key={i}
               className={cn(
-                'text-tiny',
+                'text-sm',
                 isSelected
                   ? 'opacity-70'
                   : flag.type === 'warning'

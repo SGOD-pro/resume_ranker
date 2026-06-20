@@ -9,6 +9,7 @@ import { KeywordsSection } from './KeywordsSection';
 import { WeightsSection } from './WeightsSection';
 import { AnalyzeButton } from './AnalyzeButton';
 import { useJobStore } from '@/store/job-store';
+import { useAppStore } from '@/store/app-store';
 
 export function JobSetupPanel() {
   const {
@@ -21,6 +22,9 @@ export function JobSetupPanel() {
     job,
   } = useJobStore();
 
+  const appPhase = useAppStore((s) => s.appPhase);
+  const isLocked = appPhase === 'extracting' || appPhase === 'scoring';
+
   return (
     <ScrollArea className="h-full scrollbar-brutal">
       <div className="p-sp-4">
@@ -30,50 +34,54 @@ export function JobSetupPanel() {
 
         <Separator className="bg-border h-[3px] mb-sp-4" />
 
-        <JobInfoSection />
+        {/* Form content — disabled (locked) once analysis starts */}
+        <div className={isLocked ? 'panel-disabled' : ''}>
+          <JobInfoSection />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <JobDescriptionSection />
+          <JobDescriptionSection />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <SkillTagsSection
-          title="Must-Have Skills"
-          skills={job.mustHaveSkills}
-          onAdd={addMustHaveSkill}
-          onRemove={removeMustHaveSkill}
-        />
+          <SkillTagsSection
+            title="Must-Have Skills"
+            skills={job.mustHaveSkills}
+            onAdd={addMustHaveSkill}
+            onRemove={removeMustHaveSkill}
+          />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <SkillTagsSection
-          title="Nice-to-Have"
-          skills={job.niceToHaveSkills}
-          onAdd={addNiceToHaveSkill}
-          onRemove={removeNiceToHaveSkill}
-        />
+          <SkillTagsSection
+            title="Nice-to-Have"
+            skills={job.niceToHaveSkills}
+            onAdd={addNiceToHaveSkill}
+            onRemove={removeNiceToHaveSkill}
+          />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <ExperienceSection />
+          <ExperienceSection />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <EducationSection />
+          <EducationSection />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <KeywordsSection
-          keywords={job.keywords}
-          onAdd={addKeyword}
-          onRemove={removeKeyword}
-        />
+          <KeywordsSection
+            keywords={job.keywords}
+            onAdd={addKeyword}
+            onRemove={removeKeyword}
+          />
 
-        <Separator className="bg-border h-px my-sp-4" />
+          <Separator className="bg-border h-px my-sp-4" />
 
-        <WeightsSection />
+          <WeightsSection />
+        </div>
 
+        {/* Analyze button stays interactive (handles its own disable state) */}
         <div className="mt-sp-5">
           <AnalyzeButton />
         </div>
