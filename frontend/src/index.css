@@ -1,0 +1,187 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════
+   RAWBLOCK DESIGN SYSTEM — Tailwind v4 Theme
+   ═══════════════════════════════════════════════ */
+@theme inline {
+    /* Fonts */
+    --font-heading: 'Archivo Black', sans-serif;
+    --font-sans: 'Work Sans', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+
+    /* Colors mapped to shadcn variables */
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    /* RawBlock extra colors */
+    --color-link: #0000FF;
+    --color-success: #00CC66;
+    --color-warning: #FFA500;
+    --color-error: #FF4444;
+    --color-info: #4488FF;
+    --color-surface-sunken: var(--surface-sunken);
+    --color-surface-hover: var(--surface-hover);
+    --color-disabled-border: #555555;
+    --color-disabled-bg: #1A1A1A;
+
+    /* All radius = 0px — Brutalism */
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --radius-xl: 0px;
+    --radius-2xl: 0px;
+    --radius-3xl: 0px;
+    --radius-4xl: 0px;
+
+    /* Spacing scale */
+    --spacing-sp-1: 4px;
+    --spacing-sp-2: 8px;
+    --spacing-sp-3: 16px;
+    --spacing-sp-4: 24px;
+    --spacing-sp-5: 40px;
+    --spacing-sp-6: 64px;
+    --spacing-sp-7: 80px;
+    --spacing-sp-8: 120px;
+}
+
+/* ═══════════════════════════════════════════════
+   DARK MODE (DEFAULT) — RawBlock
+   ═══════════════════════════════════════════════ */
+:root {
+    --background: #0A0A0A;
+    --foreground: #E8E8E8;
+    --card: #111111;
+    --card-foreground: #E8E8E8;
+    --popover: #111111;
+    --popover-foreground: #E8E8E8;
+    --primary: #FFFFFF;
+    --primary-foreground: #000000;
+    --secondary: #1A1A1A;
+    --secondary-foreground: #E8E8E8;
+    --muted: #1A1A1A;
+    --muted-foreground: #888888;
+    --accent: #1A1A1A;
+    --accent-foreground: #E8E8E8;
+    --destructive: #FF4444;
+    --border: #333333;
+    --input: #333333;
+    --ring: #FFFFFF;
+    --radius: 0px;
+    --surface-sunken: #0F0F0F;
+    --surface-hover: #1A1A1A;
+
+    --chart-1: #FFFFFF;
+    --chart-2: #888888;
+    --chart-3: #666666;
+    --chart-4: #444444;
+    --chart-5: #222222;
+}
+
+/* ═══════════════════════════════════════════════
+   RAWBLOCK BASE STYLES
+   ═══════════════════════════════════════════════ */
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground font-sans text-base leading-relaxed;
+    }
+    html {
+        @apply font-sans;
+    }
+    h1 {
+        @apply font-heading text-[64px] font-normal leading-none;
+    }
+    h2 {
+        @apply font-heading text-5xl font-normal;
+        line-height: 1.05;
+    }
+    h3 {
+        @apply font-heading text-[32px] font-normal;
+        line-height: 1.1;
+    }
+    h4 {
+        @apply font-sans text-[22px] font-semibold;
+        line-height: 1.2;
+    }
+
+    /* Remove all rounded corners from everything */
+    *,
+    *::before,
+    *::after {
+        border-radius: 0px !important;
+    }
+
+    /* Remove all shadows */
+    * {
+        box-shadow: none !important;
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   RAWBLOCK UTILITY CLASSES
+   ═══════════════════════════════════════════════ */
+@utility border-thin {
+    border-width: 1px;
+}
+
+@utility border-thick {
+    border-width: 3px;
+}
+
+@utility border-heavy {
+    border-width: 5px;
+}
+
+@utility text-tiny {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+@utility text-small {
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+@utility text-mono-base {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+@utility tracking-brutal {
+    letter-spacing: 2px;
+}
+
+@utility tracking-chip {
+    letter-spacing: 1px;
+}
+
+/* Scrollbar brutalism */
+@utility scrollbar-brutal {
+    scrollbar-width: thin;
+    scrollbar-color: #444444 #111111;
+}

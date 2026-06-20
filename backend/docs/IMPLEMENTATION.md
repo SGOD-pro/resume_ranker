@@ -170,7 +170,7 @@ The pipeline went through 4 major versions. Each version solved a specific class
 
 **Impact**: Experience extraction went from 70% to 90%. Zero-section resumes went from 5 to 1 (the remaining one needs OCR).
 
-### 3.5 Version 4 — Unified Routing (Phase 4B, Current)
+### 3.5 Version 4 — Unified Routing
 
 **Architecture**: Run-both-score-both for all fields. Unified section map preserving both tagged and plain text.
 
