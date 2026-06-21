@@ -14,11 +14,14 @@ Usage:
 """
 
 from __future__ import annotations
+import logging
 import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +83,7 @@ from src.ranking.tfidf_scorer import (
     cosine_sim as _cosine_sim,
     text_cosine_sim as _text_cosine_sim,
 )
+
 from src.ranking.bm25_scorer import bm25_skill_score as _bm25_skill_score
 from src.ranking.similarity import (
     parse_date as _parse_date,
@@ -483,24 +487,28 @@ class CandidateScorer:
         if ko_reasons:
             result.knocked_out = True
             result.knockout_reasons = ko_reasons
-            # Still compute breakdowns for reporting
-            matched_must, missing_must = _find_matching_skills(c_skills, jd.must_have_skills)
-            result.matched_must_have = matched_must
-            result.missing_must_have = missing_must
-            result.anomalies = _detect_anomalies(candidate, total_years, jd)
-            return result
+            # DO NOT return early — compute Phase 2 sub-scores for reporting
 
         # ── Phase 2: Multi-Signal Scoring ─────────────────────────────────
+        # Always compute sub-scores regardless of knockout status, so that
+        # the UI can show actual skill/experience/keyword discrimination
+        # even for knocked-out candidates.
 
-        # Augment skills with JD skills found in raw text but not structured
-        raw_text_lower = (candidate.get('raw_text_sections', {})
-                          .get('full_text', '') or '').lower()
+        # Augment skills with JD skills found in targeted text sections only.
+        # IMPORTANT: We restrict to skill-bearing sections (skills, summary,
+        # experience descriptions) to avoid false positives from URLs, footers,
+        # email addresses, or boilerplate that happen to contain skill names.
+        skill_sections = self._get_skill_sections(candidate)
         augmented_skills = list(c_skills)
         all_jd_skills = jd.must_have_skills + jd.nice_to_have_skills
         for jd_sk in all_jd_skills:
             if not any(_skill_match(cs, jd_sk) for cs in augmented_skills):
                 sk_lower = jd_sk.lower()
-                if re.search(r'\b' + re.escape(sk_lower) + r'\b', raw_text_lower):
+                # Only augment for skills with 3+ chars to avoid noise from
+                # short generic words (e.g. 'go', 'r') appearing in plain text
+                if len(sk_lower) >= 3 and re.search(
+                    r'\b' + re.escape(sk_lower) + r'\b', skill_sections
+                ):
                     augmented_skills.append(jd_sk)
 
         # Skill scoring (BM25) — use augmented skills
@@ -556,12 +564,63 @@ class CandidateScorer:
 
         # Add bonuses on top (capped at 100)
         total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus
-        result.final_score = round(min(100.0, base_score + total_bonus), 1)
+
+        # If knocked out, zero the final score but keep sub-scores for reporting
+        if result.knocked_out:
+            result.final_score = 0.0
+        else:
+            result.final_score = round(min(100.0, base_score + total_bonus), 1)
 
         # Anomaly detection
         result.anomalies = _detect_anomalies(candidate, total_years, jd)
 
         return result
+
+    def _get_skill_sections(self, candidate: Dict[str, Any]) -> str:
+        """
+        Extract only the skill-bearing text sections from a candidate.
+        This prevents false-positive skill matches from URLs, footers,
+        email addresses, and boilerplate text.
+        """
+        sections = candidate.get('raw_text_sections', {}) or {}
+        parts = []
+
+        # Structured skills list (most reliable)
+        skills_list = candidate.get('skills', [])
+        if skills_list:
+            parts.append(' '.join(str(s) for s in skills_list))
+
+        # Dedicated skills section text
+        for key in ('skills', 'technical_skills', 'core_competencies',
+                    'technologies', 'tools'):
+            if sections.get(key):
+                parts.append(str(sections[key]))
+
+        # Summary / objective (candidates often list skills here)
+        for key in ('summary', 'objective', 'profile', 'about'):
+            if sections.get(key):
+                parts.append(str(sections[key]))
+
+        # Experience descriptions (skills in context)
+        experience = candidate.get('experience', [])
+        for exp in experience:
+            desc = exp.get('description') or exp.get('responsibilities') or ''
+            if desc:
+                parts.append(str(desc))
+
+        # Projects (technologies used)
+        projects = candidate.get('projects', [])
+        for proj in projects:
+            tech = proj.get('technologies') or []
+            if isinstance(tech, list):
+                parts.append(' '.join(str(t) for t in tech))
+            elif tech:
+                parts.append(str(tech))
+            desc = proj.get('description') or ''
+            if desc:
+                parts.append(str(desc))
+
+        return ' '.join(parts).lower()
 
     def _phase1_knockout(self, jd: JobDescription,
                          candidate: Dict[str, Any],
@@ -577,25 +636,34 @@ class CandidateScorer:
         if jd.must_have_skills:
             _, missing = _find_matching_skills(c_skills, jd.must_have_skills)
             if missing:
-                # Second chance: check raw text for the missing skills
-                raw_text = (candidate.get('raw_text_sections', {})
-                            .get('full_text', '') or '').lower()
+                # Second chance: check SKILL-BEARING SECTIONS ONLY for missing
+                # skills. We deliberately avoid full raw text here because URLs,
+                # footers, email addresses, and boilerplate often contain tech
+                # words (e.g. "node" in "linkedin.com/in/...", "react" in a
+                # disclaimer) that produce false-positive skill matches.
+                skill_sections_text = self._get_skill_sections(candidate)
                 still_missing = []
                 for sk in missing:
                     sk_lower = sk.lower().strip()
-                    # Check raw text for the skill keyword
-                    if re.search(r'\b' + re.escape(sk_lower) + r'\b', raw_text):
-                        continue  # Found in raw text — not truly missing
-                    # Also check normalized variants
-                    variants = [sk_lower, sk_lower.replace('.', ''),
-                                sk_lower.replace(' ', '')]
-                    if any(v in raw_text for v in variants):
-                        continue
+                    # Only allow second-chance matches for skills >= 4 chars to
+                    # avoid false positives from short generic words.
+                    if len(sk_lower) >= 4 and re.search(
+                        r'\b' + re.escape(sk_lower) + r'\b', skill_sections_text
+                    ):
+                        continue  # Found in skill-bearing section — valid match
                     still_missing.append(sk)
+
                 if still_missing:
                     reasons.append(
                         f"Missing must-have skills: {', '.join(still_missing)}"
                     )
+
+                logger.debug(
+                    "[KO-SKILLS] %s | missing_from_structured=%s | still_missing=%s",
+                    candidate.get('personal_info', {}).get('name', 'Unknown'),
+                    missing,
+                    still_missing if missing else [],
+                )
 
         # ── Minimum years check ───────────────────────────────────────────
         if jd.min_years > 0 and total_years < jd.min_years:
@@ -619,6 +687,15 @@ class CandidateScorer:
                 reasons.append(
                     f"Insufficient experience: {total_years}yr vs {jd.min_years}yr required"
                 )
+
+        # ── Maximum years check (overqualified knockout) ──────────────────
+        if jd.max_years < 99 and total_years > jd.max_years:
+            # Hard knockout: candidate exceeds the maximum experience cap.
+            # This is a constraint, not a preference — HR screening for
+            # "0-2 years, junior role" should strictly exclude senior candidates.
+            reasons.append(
+                f"Exceeds maximum experience: {total_years}yr vs {jd.max_years}yr max"
+            )
 
         # ── Required degree check ─────────────────────────────────────────
         if jd.required_degree and jd.required_degree.lower() not in ('any', 'none', ''):

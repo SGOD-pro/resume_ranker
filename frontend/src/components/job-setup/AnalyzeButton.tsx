@@ -14,7 +14,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useJobStore } from '@/store/job-store';
 import { useAppStore } from '@/store/app-store';
-import { startExtraction, scoreJob } from '@/lib/api';
+import { useCandidateStore } from '@/store/candidate-store';
+import { startExtraction, scoreJob, updateJob } from '@/lib/api';
+import { mapScoredCandidates } from '@/lib/mapScoredCandidate';
 import type { ExtractionEvent } from '@/lib/api';
 
 const MAX_SSE_RETRIES = 3;
@@ -27,6 +29,8 @@ export function AnalyzeButton() {
   const jobId = useAppStore((s) => s.jobId);
   const setBlockingError = useAppStore((s) => s.setBlockingError);
   const setSseRetryCount = useAppStore((s) => s.setSseRetryCount);
+  const setCandidates = useCandidateStore((s) => s.setCandidates);
+  const setUpload = useCandidateStore((s) => s.setUpload);
 
   const isDisabled =
     isAnalyzing ||
@@ -114,6 +118,35 @@ export function AnalyzeButton() {
     setAnalyzing(true);
 
     try {
+      // Phase 0: Push current JD form state to backend
+      // The job was created at upload time with empty/default config.
+      // Now that the user has filled the form, sync it before scoring.
+      try {
+        await updateJob(jobId, {
+          title: job.title || 'Untitled Job',
+          department: job.department,
+          description: job.description,
+          must_have_skills: job.mustHaveSkills,
+          nice_to_have_skills: job.niceToHaveSkills,
+          min_years: job.minYears,
+          max_years: job.maxYears,
+          education_level: job.educationLevel,
+          education_field: job.educationField,
+          keywords: job.keywords,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to update job configuration.';
+        setBlockingError({
+          title: 'Config Update Failed',
+          message,
+          onRetry: () => handleClick(),
+        });
+        setAppPhase('idle');
+        setAnalyzing(false);
+        return;
+      }
+
       // Phase 1: Extraction (SSE)
       setAppPhase('extracting');
       try {
@@ -135,7 +168,33 @@ export function AnalyzeButton() {
       // Phase 2: Scoring
       setAppPhase('scoring');
       try {
-        await scoreJob(jobId, { weights: job.weights });
+        const response = await scoreJob(jobId, { weights: job.weights });
+
+        // ── STEP 1 DEBUG: Raw backend response before any frontend mapping ──
+        // Logs knockout fields exactly as the backend returned them.
+        console.group('[SCORE API] Raw backend response');
+        console.log('Total candidates:', response.total_candidates);
+        response.candidates.forEach((c: Record<string, unknown>, i: number) => {
+          console.group(`[${i + 1}] ${c.name ?? 'Unknown'}`);
+          console.table({
+            knocked_out:       c.knocked_out,
+            final_score:       c.final_score,
+            matched_must_have: JSON.stringify(c.matched_must_have ?? []),
+            missing_must_have: JSON.stringify(c.missing_must_have ?? []),
+            knockout_reasons:  JSON.stringify(c.knockout_reasons ?? []),
+          });
+          console.groupEnd();
+        });
+        console.groupEnd();
+
+        // ── STEP 5: Use setCandidates (full replacement, never append) ──────
+        const mapped = mapScoredCandidates(response.candidates);
+        setCandidates(mapped);
+        setUpload({
+          totalFiles: response.total_candidates,
+          analyzedFiles: response.total_candidates,
+          processingFiles: 0,
+        });
         toast.success('Analysis complete');
         setAppPhase('complete');
       } catch (err) {
@@ -152,7 +211,7 @@ export function AnalyzeButton() {
     } finally {
       setAnalyzing(false);
     }
-  }, [jobId, job.weights, setAnalyzing, setAppPhase, setBlockingError, runExtraction]);
+  }, [jobId, job, setAnalyzing, setAppPhase, setBlockingError, runExtraction, setCandidates, setUpload]);
 
   const tooltipText = getTooltipText();
   const showTooltip = isDisabled && tooltipText;

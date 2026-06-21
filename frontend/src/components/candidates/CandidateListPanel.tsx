@@ -62,6 +62,16 @@ export function CandidateListPanel() {
       {showLoader ? (
         /* Center panel loader replaces list content area only */
         <CenterPanelLoader phase={appPhase} />
+      ) : allCandidates.length === 0 ? (
+        /* No analysis has been run yet — genuine empty state */
+        <div className="flex-1 flex flex-col items-center justify-center p-sp-5 gap-sp-3">
+          <p className="font-heading text-2xl uppercase tracking-brutal text-foreground text-center">
+            No Results Yet
+          </p>
+          <p className="text-small text-muted-foreground font-mono text-center max-w-xs">
+            Upload resumes and analyze them against a Job Description to generate rankings.
+          </p>
+        </div>
       ) : (
         <>
           {/* Table header */}

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E2E API Test — Resume Ranker (Multi-JD)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Geist', 'SF Mono', 'Fira Code', monospace;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #111;
+      border-bottom: 3px solid #333;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #fafafa;
+    }
+
+    header .subtitle {
+      font-size: 12px;
+      color: #888;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    button {
+      background: #fafafa;
+      color: #0a0a0a;
+      border: 3px solid #fafafa;
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    button:hover {
+      background: transparent;
+      color: #fafafa;
+    }
+
+    button:active { transform: scale(0.97); }
+
+    #status {
+      padding: 12px 32px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      border-bottom: 2px solid #222;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-running { background: #1a1a2e; color: #818cf8; }
+    .status-pass    { background: #052e16; color: #4ade80; }
+    .status-fail    { background: #2a0a0a; color: #f87171; }
+    .status-info    { background: #111; color: #888; }
+
+    #progress {
+      font-size: 12px;
+      color: #888;
+      font-weight: 400;
+    }
+
+    .test-info {
+      padding: 12px 32px;
+      background: #0d0d14;
+      border-bottom: 1px solid #1a1a2e;
+      font-size: 12px;
+      color: #666;
+      line-height: 1.8;
+    }
+
+    .test-info strong { color: #a78bfa; }
+
+    #log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 32px;
+      font-size: 13px;
+      line-height: 1.7;
+      white-space: pre;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+
+    .log-pass  { color: #4ade80; }
+    .log-fail  { color: #f87171; font-weight: bold; }
+    .log-info  { color: #666; }
+    .log-data  { color: #60a5fa; }
+
+    .hint {
+      padding: 12px 32px;
+      font-size: 12px;
+      color: #444;
+      border-top: 1px solid #1a1a1a;
+    }
+
+    .hint code {
+      background: #1a1a1a;
+      padding: 2px 6px;
+      border: 1px solid #333;
+      color: #a78bfa;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Multi-JD E2E Test Runner</h1>
+      <div class="subtitle">Resume Ranking — 5 Job Roles × 20 Resumes × Full Pipeline</div>
+    </div>
+    <div class="controls">
+      <button onclick="window.runTests()">▶ Run All Tests</button>
+      <button onclick="document.getElementById('log').innerHTML = ''; console.clear();">Clear</button>
+    </div>
+  </header>
+
+  <div id="status" class="status-info">
+    <span>Ready — click "Run All Tests" to start</span>
+    <span id="progress"></span>
+  </div>
+
+  <div class="test-info">
+    <strong>JD 0:</strong> Full Stack Developer &nbsp;│&nbsp;
+    <strong>JD 1:</strong> Senior Backend Engineer &nbsp;│&nbsp;
+    <strong>JD 2:</strong> Digital Marketing Manager &nbsp;│&nbsp;
+    <strong>JD 3:</strong> Security Guard &nbsp;│&nbsp;
+    <strong>JD 4:</strong> Junior Web Developer
+    <br />
+    Each JD: <strong>POST /jobs</strong> → <strong>POST /resumes</strong> (20 PDFs) → <strong>PATCH /jobs</strong> (JD config) → <strong>GET /extract</strong> (SSE) → <strong>POST /score</strong> → <strong>GET /results</strong> → stores + mapper
+  </div>
+
+  <div id="log"></div>
+
+  <div class="hint">
+    Open DevTools Console (F12) for full ranking tables and expandable objects.
+    Re-run: <code>window.runTests()</code>
+  </div>
+
+  <script type="module" src="./e2e-api-test.ts"></script>
+</body>
+</html>

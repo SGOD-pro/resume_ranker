@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
+import { useJobStore } from '@/store/job-store';
 import { uploadResumes, createJob } from '@/lib/api';
 import type { UploadResult } from '@/lib/api';
 
@@ -27,6 +28,7 @@ export function ResumeUploadZone() {
   const resetUploadProgress = useAppStore((s) => s.resetUploadProgress);
   const jobId = useAppStore((s) => s.jobId);
   const setJobId = useAppStore((s) => s.setJobId);
+  const job = useJobStore((s) => s.job);
 
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +79,9 @@ export function ResumeUploadZone() {
         // Ensure we have a job ID
         let currentJobId = jobId;
         if (!currentJobId) {
-          const jobRes = await createJob({ title: 'New Screening Job' });
+          const jobRes = await createJob({
+            title: job.title || 'Untitled Job',
+          });
           currentJobId = jobRes.id;
           setJobId(currentJobId);
           toast.success('Job created');

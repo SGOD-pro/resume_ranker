@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Candidate, Signal, CandidateStatus, UploadState } from './types';
-import { mockCandidates } from './mock-data';
 
 type SortField = 'score' | 'name';
 
@@ -23,22 +22,23 @@ interface CandidateStore {
   setSortField: (field: SortField) => void;
   setSearchQuery: (query: string) => void;
   toggleShowKnockouts: () => void;
+  setCandidates: (candidates: Candidate[]) => void;
   setStatus: (id: string, status: CandidateStatus) => void;
   setNote: (id: string, note: string) => void;
   setUpload: (upload: Partial<UploadState>) => void;
 }
 
 export const useCandidateStore = create<CandidateStore>((set, get) => ({
-  candidates: mockCandidates,
+  candidates: [],
   selectedId: null,
   filterSignal: 'all',
   sortField: 'score',
   searchQuery: '',
   showKnockouts: false,
   upload: {
-    totalFiles: 43,
-    analyzedFiles: 41,
-    processingFiles: 2,
+    totalFiles: 0,
+    analyzedFiles: 0,
+    processingFiles: 0,
     isUploading: false,
   },
 
@@ -82,6 +82,8 @@ export const useCandidateStore = create<CandidateStore>((set, get) => ({
     if (!selectedId) return null;
     return candidates.find((c) => c.id === selectedId) ?? null;
   },
+
+  setCandidates: (candidates) => set({ candidates, selectedId: null }),
 
   selectCandidate: (id) => set({ selectedId: id }),
 

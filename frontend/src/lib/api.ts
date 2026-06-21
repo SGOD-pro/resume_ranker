@@ -105,6 +105,17 @@ export async function createJob(
   });
 }
 
+/** Update JD config for an existing job (PATCH merge) */
+export async function updateJob(
+  jobId: string,
+  payload: Partial<CreateJobPayload>,
+): Promise<{ id: string; config: CreateJobPayload; status: string }> {
+  return apiFetch(`/jobs/${jobId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Upload resumes via XMLHttpRequest (supports upload progress) */
 export interface UploadResult {
   job_id: string;
@@ -230,7 +241,7 @@ export interface ScoreResponse {
   status: string;
   total_candidates: number;
   weights_applied: Record<string, number>;
-  candidates: unknown[];
+  candidates: Record<string, unknown>[];
 }
 
 export async function scoreJob(
