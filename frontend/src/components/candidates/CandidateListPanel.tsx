@@ -73,16 +73,16 @@ export function CandidateListPanel() {
           </p>
         </div>
       ) : (
-        <>
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Table header */}
-          <div className="flex items-center gap-sp-2 px-sp-4 py-sp-2 bg-secondary text-foreground">
+          <div className="flex items-center gap-sp-2 px-sp-4 py-sp-2 bg-secondary text-foreground shrink-0">
             <span className="w-8 text-tiny uppercase tracking-chip font-bold">#</span>
             <span className="flex-1 text-tiny uppercase tracking-chip font-bold">Name</span>
             <span className="w-16 text-tiny uppercase tracking-chip font-bold text-right">Score</span>
             <span className="w-20 text-tiny uppercase tracking-chip font-bold text-right">Signal</span>
           </div>
 
-          <ScrollArea className="flex-1 scrollbar-brutal">
+          <ScrollArea className="flex-1 scrollbar-brutal pb-10 h-full">
             <div>
               {candidates.map((candidate) => (
                 <CandidateRow key={candidate.id} candidate={candidate} />
@@ -94,7 +94,7 @@ export function CandidateListPanel() {
               )}
             </div>
           </ScrollArea>
-        </>
+        </div>
       )}
 
       <Separator className="bg-border h-[3px]" />

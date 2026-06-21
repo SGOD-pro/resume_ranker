@@ -56,7 +56,7 @@ const ALL_PDF_NAMES = [
   '1.pdf', '2.pdf', '3.pdf', '4.pdf', '5.pdf',
   '6.pdf', '7.pdf', '8.pdf', '9.pdf', '10.pdf',
   '11.pdf', '12.pdf', '13.pdf', '14.pdf', '15.pdf',
-  '16.pdf', '17.pdf', '18.pdf', 'souvik.pdf', 'SUBHADIPcv.pdf',
+  '16.pdf', '17.pdf', '18.pdf', 'souvik.pdf', 'SUBHADIPcv.pdf', 'backend.pdf', 'fullstack.pdf'
 ];
 
 // ── Predefined JD Test Cases (mirrors test_scorer.py) ───────────────────────

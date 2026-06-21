@@ -7,7 +7,7 @@ export function CandidateListFooter() {
   const { showKnockouts, toggleShowKnockouts } = useCandidateStore();
 
   return (
-    <div className="flex items-center justify-between px-sp-4 py-sp-2 bg-background">
+    <div className="flex items-center justify-between px-sp-4 py-sp-2 bg-background sticky bottom-0">
       <div className="flex items-center gap-sp-2">
         <Switch
           id="show-knockouts"

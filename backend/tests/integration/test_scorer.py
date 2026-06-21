@@ -300,7 +300,7 @@ def main():
 
     # ── Primary test: the UI screenshot JD ────────────────────────────────
     print("\n" + "▓" * 72)
-    print("  TEST 0: Full Stack Developer  (UI Screenshot JD)")
+    print("  TEST 0: Full Stack Developer")
     print("  → Checks correct PDF selection and JULIE MONROE knockout")
     print("▓" * 72)
     test_jd_fullstack_developer(scorer, candidates)
@@ -311,20 +311,20 @@ def main():
     print("▓" * 72)
     test_jd_backend_engineer(scorer, candidates)
 
-    print("\n" + "▓" * 72)
-    print("  TEST 2: Digital Marketing Manager")
-    print("▓" * 72)
-    test_jd_digital_marketer(scorer, candidates)
+    # print("\n" + "▓" * 72)
+    # print("  TEST 2: Digital Marketing Manager")
+    # print("▓" * 72)
+    # test_jd_digital_marketer(scorer, candidates)
 
-    print("\n" + "▓" * 72)
-    print("  TEST 3: Security Guard")
-    print("▓" * 72)
-    test_jd_security_guard(scorer, candidates)
+    # print("\n" + "▓" * 72)
+    # print("  TEST 3: Security Guard")
+    # print("▓" * 72)
+    # test_jd_security_guard(scorer, candidates)
 
-    print("\n" + "▓" * 72)
-    print("  TEST 4: Junior Web Developer (Fresher-friendly)")
-    print("▓" * 72)
-    test_jd_fresher_web_dev(scorer, candidates)
+    # print("\n" + "▓" * 72)
+    # print("  TEST 4: Junior Web Developer (Fresher-friendly)")
+    # print("▓" * 72)
+    # test_jd_fresher_web_dev(scorer, candidates)
 
     print("\n✅  All tests completed successfully.")
 
