@@ -70,6 +70,7 @@ from src.registries.skill_registry import (
     normalize as _normalize_skill,
     match as _skill_match,
     find_matches as _find_matching_skills,
+    get_search_variants as _get_search_variants,
 )
 
 
@@ -503,12 +504,17 @@ class CandidateScorer:
         all_jd_skills = jd.must_have_skills + jd.nice_to_have_skills
         for jd_sk in all_jd_skills:
             if not any(_skill_match(cs, jd_sk) for cs in augmented_skills):
-                sk_lower = jd_sk.lower()
-                # Only augment for skills with 3+ chars to avoid noise from
-                # short generic words (e.g. 'go', 'r') appearing in plain text
-                if len(sk_lower) >= 3 and re.search(
-                    r'\b' + re.escape(sk_lower) + r'\b', skill_sections
-                ):
+                # Search all alias variants of this JD skill in text
+                variants = _get_search_variants(jd_sk)
+                found = False
+                for variant in variants:
+                    # Only augment for variants with 3+ chars to avoid noise
+                    if len(variant) >= 3 and re.search(
+                        r'\b' + re.escape(variant) + r'\b', skill_sections
+                    ):
+                        found = True
+                        break
+                if found:
                     augmented_skills.append(jd_sk)
 
         # Skill scoring (BM25) — use augmented skills
@@ -647,10 +653,19 @@ class CandidateScorer:
                     sk_lower = sk.lower().strip()
                     # Only allow second-chance matches for skills >= 4 chars to
                     # avoid false positives from short generic words.
-                    if len(sk_lower) >= 4 and re.search(
-                        r'\b' + re.escape(sk_lower) + r'\b', skill_sections_text
-                    ):
-                        continue  # Found in skill-bearing section — valid match
+                    if len(sk_lower) >= 4:
+                        # Search all alias variants of this skill
+                        variants = _get_search_variants(sk)
+                        found_in_text = False
+                        for variant in variants:
+                            if len(variant) >= 3 and re.search(
+                                r'\b' + re.escape(variant) + r'\b',
+                                skill_sections_text
+                            ):
+                                found_in_text = True
+                                break
+                        if found_in_text:
+                            continue  # Found in skill-bearing section — valid match
                     still_missing.append(sk)
 
                 if still_missing:

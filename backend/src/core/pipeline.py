@@ -560,8 +560,9 @@ class PDFPipelineV3:
 
         # ── Education fallback 2: parse sidebar text via section_detector ─
         if not education:
-            sidebar_sections_detected = self.section_detector.detect(
-                self._strip_tags(doc.sidebar_text))
+            # Strip layout tags AND Unicode PUA icons (common in template PDFs)
+            clean_sidebar = re.sub(r'[\ue000-\uf8ff]', '', self._strip_tags(doc.sidebar_text))
+            sidebar_sections_detected = self.section_detector.detect(clean_sidebar)
             edu_text = sidebar_sections_detected.get('education', '')
             if edu_text:
                 education = self.edu_parser.parse(edu_text)
@@ -1742,6 +1743,10 @@ class PDFPipelineV3:
     @staticmethod
     def _fix_skills(skills: list) -> list:
         """Remove garbled or invalid skills."""
+        # Import skills dictionary for bypass check — if a skill is in the
+        # dictionary, it was explicitly matched and is guaranteed valid.
+        from src.extractors.skills.skills_parser import _SKILLS_LOWER
+
         _VALID_SINGLE = {'C', 'R'}  # Known single-char programming languages
         # Non-skill words that leak from section headers
         _NON_SKILLS = {
@@ -1772,6 +1777,13 @@ class PDFPipelineV3:
             if re.search(r'[^\x20-\x7E]', sk):
                 continue
 
+            # ── Dictionary bypass: known skills skip heuristic filters ────
+            # This prevents the consonant-cluster and alpha-ratio rules from
+            # killing legitimate tech skills like Python, MySQL, C++, GraphQL.
+            if sk.lower() in _SKILLS_LOWER:
+                fixed.append(sk)
+                continue
+
             # Skip if mostly special chars (garbled text)
             alpha_count = sum(1 for c in sk if c.isalpha())
             if alpha_count < len(sk) * 0.4:
@@ -1783,6 +1795,8 @@ class PDFPipelineV3:
                 'CSS', 'C++', 'C#', 'Go', 'UX', 'UI', 'API', 'ETL', 'SEM',
                 'SEO', 'CAD', 'ERP', 'SAP', 'GIS', 'RPA', 'IoT', 'VPN',
                 'TCP', 'DNS', 'SSH', 'Git', 'SVN', 'VBA', '5S', 'CPR',
+                'LLM', 'RAG', 'GPT', 'NPM', 'GIT', 'JWT', 'ORM', 'SPA',
+                'MVC', 'PR',
             }:
                 continue
 
@@ -1828,6 +1842,20 @@ class PDFPipelineV3:
                 continue
 
             fixed.append(sk)
+
+        # ── Post-processing: remove unsplit skill lines ───────────────────
+        # Lines like "Mocha Jest Scrum Agile GIT" where the raw section
+        # wasn't split by spaces. If a skill has 3+ words AND every word
+        # individually matches an already-extracted single-word skill,
+        # it's an unsplit line — drop it.
+        singles_lower = {s.lower() for s in fixed if len(s.split()) == 1}
+        fixed = [
+            s for s in fixed
+            if len(s.split()) < 3
+            or not all(w.lower() in singles_lower or w.lower() in _SKILLS_LOWER
+                       for w in s.split())
+        ]
+
         return fixed
 
     def _fix_experience(self, entries: list) -> list:

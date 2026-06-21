@@ -160,26 +160,52 @@ def keyword_score(candidate: Dict[str, Any],
                   jd) -> Tuple[float, List[str], List[str]]:
     """
     Score keyword overlap between JD keywords and candidate's full text.
+    Uses alias expansion so 'backend'/'back-end'/'server-side' all match,
+    and skill aliases so 'Node.js'/'nodejs'/'node' all match.
     Returns (score 0-100, matched_keywords, missing_keywords).
     """
+    from src.registries.skill_registry import (
+        get_search_variants, normalize as _normalize, SKILL_ALIASES, match as _skill_match
+    )
+
     if not jd.keywords:
         return 100.0, [], []
 
     full_text = (candidate.get('raw_text_sections', {}).get('full_text', '') or '').lower()
     # Also include structured fields as text
-    skills_text = ' '.join(candidate.get('skills', [])).lower()
+    skills_list = candidate.get('skills', [])
+    skills_text = ' '.join(skills_list).lower()
     summary_text = (candidate.get('summary') or '').lower()
     all_text = f"{full_text} {skills_text} {summary_text}"
 
     matched = []
     missing = []
     for kw in jd.keywords:
+        found = False
         kw_lower = kw.lower().strip()
-        # Check for keyword presence (word boundary aware)
-        if re.search(r'\b' + re.escape(kw_lower) + r'\b', all_text):
-            matched.append(kw)
-        elif kw_lower in all_text:
-            # Substring match (partial credit)
+
+        # Strategy 1: Check all surface-form variants in raw text
+        variants = get_search_variants(kw)
+        for variant in variants:
+            # Word-boundary check for single-word variants
+            if ' ' not in variant and '-' not in variant:
+                if re.search(r'\b' + re.escape(variant) + r'\b', all_text):
+                    found = True
+                    break
+            else:
+                # Multi-word/hyphenated: plain substring
+                if variant in all_text:
+                    found = True
+                    break
+
+        # Strategy 2: Check if any extracted skill matches via alias resolution
+        if not found:
+            for skill in skills_list:
+                if _skill_match(skill, kw):
+                    found = True
+                    break
+
+        if found:
             matched.append(kw)
         else:
             missing.append(kw)

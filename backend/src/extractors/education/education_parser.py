@@ -16,15 +16,19 @@ from typing import List, Dict, Any, Optional, Tuple
 # MA→MARCH, Master→Majors/Management
 DEGREE_RE = re.compile(
     r'\b('
-    r'Bachelors?\s+of\s+\w+|Masters?\s+of\s+\w+|Doctor\s+of\s+\w+|'
-    r'Bachelors?\s+Degree|Masters?\s+Degree|Associates?\s+Degree|'
-    r'Ph\.?D\.?|MBA|B\.?Tech\.?|M\.?Tech\.?|B\.?E\.?|M\.?E\.?|'
-    r'B\.?Sc\.?|M\.?Sc\.?|B\.?SC\.?|M\.?SC\.?|B\.?A\.?|M\.?A\.?|'
-    r'B\.?Com\.?|M\.?Com\.?|'
-    r'Bachelor|Master|Associate|Diploma|Certificate|'
-    r'Higher\s+Secondary|'
-    r'(?:Class|Grade)\s+1[0-2]|'
-    r'1[0-2]th'
+    r'Bachelors?\s+of\s+\w+|Masters?\s+of\s+\w+|Doctor\s+of\s+\w+'
+    r'|Bachelors?\s+Degree|Masters?\s+Degree|Associates?\s+Degree'
+    r'|Ph\.?D\.?|MBA'
+    r'|B\.?Tech\.?|M\.?Tech\.?|B\.?E\.?|M\.?E\.?'
+    r'|B\.S\.?c?\.?|M\.S\.?c?\.?'  # B.S., B.S, B.Sc., M.S., M.S, M.Sc.
+    r'|B\.?Sc\.?|M\.?Sc\.?'         # BSc, B.Sc, MSc, M.Sc
+    r'|B\.?SC\.?|M\.?SC\.?'         # BSC, MSC uppercase
+    r'|B\.?A\.?|M\.?A\.?'
+    r'|B\.?Com\.?|M\.?Com\.?'
+    r'|Bachelor|Master|Associate|Diploma|Certificate'
+    r'|Higher\s+Secondary'
+    r'|(?:Class|Grade)\s+1[0-2]'
+    r'|1[0-2]th'
     r')\b', re.I)
 
 # Looser degree pattern for institution-first layouts (matches on next line)
@@ -45,7 +49,8 @@ DATE_RE = re.compile(
     re.I)
 YEAR_RE = re.compile(r'\b(20\d{2}|19\d{2})\b')
 INST_RE = re.compile(
-    r'\b(university|college|institute|institution|school|academy|'
+    r'\b(university|universty|unversity|universtiy|univeristy|'
+    r'college|institute|institution|school|academy|'
     r'polytechnic|iit|nit|bits|iim|iiser|iiit)\b', re.I)
 GRADE_RE = re.compile(
     r'(?:gpa|cgpa|grade|percentage|score|marks?)[:\s]*([\d.]+(?:\s*/\s*[\d.]+)?(?:\s*%)?)', re.I)

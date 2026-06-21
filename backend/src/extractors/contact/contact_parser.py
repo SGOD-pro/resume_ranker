@@ -124,7 +124,7 @@ class ContactParser:
             link_text = "\n".join(h.get('uri', '') for h in hyperlinks if h.get('uri'))
             combined = combined + "\n" + link_text
         return {
-            "name":     self._extract_name(full_width_text, raw_text, sidebar_text),
+            "name":     self._extract_name(full_width_text, raw_text, sidebar_text, main_text),
             "email":    self._extract_email(combined),
             "phone":    self._extract_phone(combined),
             "linkedin": self._extract_linkedin(combined),
@@ -133,7 +133,7 @@ class ContactParser:
         }
 
     def _extract_name(self, full_width_text: str, raw_text: str,
-                       sidebar_text: str = "") -> Optional[str]:
+                       sidebar_text: str = "", main_text: str = "") -> Optional[str]:
         # Strategy 1: [NAME] tag from layout_extractor (most reliable)
         for text_src in [full_width_text, sidebar_text, raw_text]:
             m = re.search(r'\[NAME\](.*?)\[/NAME\]', text_src, re.DOTALL)
@@ -145,8 +145,11 @@ class ContactParser:
                         candidate = candidate.split(',')[0].strip()
                     return candidate
 
-        # Strategy 2: heuristic — first line of sidebar (common in two-column)
-        for text_src in [sidebar_text, raw_text]:
+        # Strategy 2: heuristic — check main_text FIRST (name is almost always
+        # the first line of main content), then sidebar, then raw_text.
+        # Sidebar is checked last because two-column resumes often have skill
+        # lines that look like names (e.g. "Vue Redux TypeScript").
+        for text_src in [main_text, raw_text, sidebar_text]:
             if not text_src:
                 continue
             lines = [l.strip() for l in text_src.split('\n') if l.strip()]

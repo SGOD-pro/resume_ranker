@@ -194,6 +194,25 @@ def _jd_fresher_web_dev() -> JobDescription:
     )
 
 
+def _jd_network_engineer() -> JobDescription:
+    """Network Engineer — tests networking/infra domain."""
+    return JobDescription(
+        title="Network Engineer",
+        department="IT Infrastructure",
+        must_have_skills=["Networking", "Firewall"],
+        nice_to_have_skills=["TCP/IP", "VPN", "DNS", "DHCP", "Cisco",
+                             "Linux", "AWS", "Monitoring", "Python",
+                             "Wireshark", "Load Balancing"],
+        min_years=2,
+        max_years=15,
+        required_degree="bachelor",
+        preferred_field="Computer Science / IT / Networking",
+        keywords=["network", "infrastructure", "security", "firewall",
+                  "server", "cloud", "monitoring", "troubleshooting"],
+        weights={"skills": 0.40, "experience": 0.25, "keywords": 0.20, "education": 0.15},
+    )
+
+
 # ── Test runners ──────────────────────────────────────────────────────────────
 
 def test_jd_fullstack_developer(scorer, candidates):
@@ -284,6 +303,14 @@ def test_jd_fresher_web_dev(scorer, candidates):
     return results
 
 
+def test_jd_network_engineer(scorer, candidates):
+    """Regression: Network Engineer."""
+    jd = _jd_network_engineer()
+    results = scorer.rank(jd, candidates)
+    print_rankings(results, jd)
+    return results
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -311,20 +338,25 @@ def main():
     print("▓" * 72)
     test_jd_backend_engineer(scorer, candidates)
 
-    # print("\n" + "▓" * 72)
-    # print("  TEST 2: Digital Marketing Manager")
-    # print("▓" * 72)
-    # test_jd_digital_marketer(scorer, candidates)
+    print("\n" + "▓" * 72)
+    print("  TEST 2: Digital Marketing Manager")
+    print("▓" * 72)
+    test_jd_digital_marketer(scorer, candidates)
 
-    # print("\n" + "▓" * 72)
-    # print("  TEST 3: Security Guard")
-    # print("▓" * 72)
-    # test_jd_security_guard(scorer, candidates)
+    print("\n" + "▓" * 72)
+    print("  TEST 3: Security Guard")
+    print("▓" * 72)
+    test_jd_security_guard(scorer, candidates)
 
-    # print("\n" + "▓" * 72)
-    # print("  TEST 4: Junior Web Developer (Fresher-friendly)")
-    # print("▓" * 72)
-    # test_jd_fresher_web_dev(scorer, candidates)
+    print("\n" + "▓" * 72)
+    print("  TEST 4: Junior Web Developer (Fresher-friendly)")
+    print("▓" * 72)
+    test_jd_fresher_web_dev(scorer, candidates)
+
+    print("\n" + "▓" * 72)
+    print("  TEST 5: Network Engineer")
+    print("▓" * 72)
+    test_jd_network_engineer(scorer, candidates)
 
     print("\n✅  All tests completed successfully.")
 

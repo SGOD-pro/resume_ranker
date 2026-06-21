@@ -12,6 +12,7 @@
  *   2. Digital Marketing Manager (regression)
  *   3. Security Guard            (regression)
  *   4. Junior Web Developer      (fresher-friendly)
+ *   5. Network Engineer          (infra/networking)
  *
  * Run: open /test/e2e.html in browser while backend + vite dev are running
  */
@@ -224,6 +225,34 @@ const JD_TESTS: JDTestCase[] = [
         active >= 1,
         'At least 1 candidate NOT knocked out for fresher web dev role',
         `${active} active candidates`,
+      );
+    },
+  },
+
+  {
+    name: 'Network Engineer',
+    jd: {
+      title: 'Network Engineer',
+      department: 'IT Infrastructure',
+      description: 'Seeking a network engineer experienced in network infrastructure, firewalls, and monitoring.',
+      must_have_skills: ['Networking', 'Firewall'],
+      nice_to_have_skills: ['TCP/IP', 'VPN', 'DNS', 'DHCP', 'Cisco', 'Linux', 'AWS', 'Monitoring', 'Python', 'Wireshark', 'Load Balancing'],
+      min_years: 2,
+      max_years: 15,
+      education_level: 'bachelor',
+      education_field: 'Computer Science / IT / Networking',
+      keywords: ['network', 'infrastructure', 'security', 'firewall', 'server', 'cloud', 'monitoring', 'troubleshooting'],
+    },
+    weights: { skills: 40, experience: 25, keywords: 20, education: 15 },
+    assertions: (res, { assert }) => {
+      // ALL/nearly all candidates should be knocked out (no network engineers in pool)
+      const knockedOutCount = res.candidates.filter(
+        (c: Record<string, unknown>) => c.knocked_out === true,
+      ).length;
+      assert(
+        knockedOutCount >= res.total_candidates * 0.9,
+        'Nearly all candidates knocked out for network engineer role (no networking resumes)',
+        `${knockedOutCount}/${res.total_candidates} knocked out`,
       );
     },
   },
