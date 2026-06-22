@@ -74,6 +74,7 @@ SECTION_ALIASES: Dict[str, str] = {
     "WORK HISTORY":             "experience",
     "JOB HISTORY":              "experience",
     "RELEVANT EXPERIENCE":      "experience",
+    "RELEVANT WORK EXPERIENCE": "experience",
     "EMPLOYMENT":               "experience",
     # Medical
     "CLINICAL EXPERIENCE":      "experience",

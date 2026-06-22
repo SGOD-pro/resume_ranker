@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 
 def strip_tags(text: str) -> str:
-    """Remove all [TAG]...[/TAG] markup from text, keeping inner content."""
+    """Remove all [TAG]...[/TAG] markup and internal parser tokens from text."""
     if not text:
         return text
     # Remove closing tags: [/NAME], [/TITLE], [/BULLET], [/DATE], etc.
@@ -19,6 +19,8 @@ def strip_tags(text: str) -> str:
     text = re.sub(r'\[[A-Z][A-Z_]*\]', '', text)
     # Remove mixed-case section tags: [Employment History], [PROFILE], [PERSONAL INFO]
     text = re.sub(r'\[[A-Z][A-Za-z\s&]+\]', '', text)
+    # Remove ||LOC: and bare LOC: tags (internal location markers from layout extractor)
+    text = re.sub(r'\s*\|{0,2}LOC:[^\n]*', '', text)
     return text.strip()
 
 

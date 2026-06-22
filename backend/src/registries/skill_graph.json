@@ -365,7 +365,9 @@
         "react js"
       ],
       "implies": [
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "redux",
@@ -386,7 +388,9 @@
       ],
       "implies": [
         "typescript",
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "rxjs",
@@ -404,7 +408,9 @@
         "vue js"
       ],
       "implies": [
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "nuxtjs",
@@ -421,7 +427,9 @@
         "sveltekit"
       ],
       "implies": [
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "sveltekit_fw"
@@ -440,7 +448,9 @@
       "implies": [
         "reactjs",
         "javascript",
-        "nodejs"
+        "nodejs",
+        "html",
+        "css"
       ],
       "related": [
         "vercel",
@@ -460,7 +470,9 @@
       "implies": [
         "vuejs",
         "javascript",
-        "nodejs"
+        "nodejs",
+        "html",
+        "css"
       ],
       "related": [
         "ssr",
@@ -477,7 +489,9 @@
       ],
       "implies": [
         "reactjs",
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "graphql",
@@ -702,7 +716,9 @@
       ],
       "implies": [
         "reactjs",
-        "javascript"
+        "javascript",
+        "html",
+        "css"
       ],
       "related": [
         "mobile_development",

@@ -396,32 +396,55 @@ class LayoutAwarePDFExtractor:
             # ── CASE 1: Line has words in BOTH columns ──────────────────────
             if left_words and right_words and split_x:
 
-                # Sub-case: left = sidebar section header, right = main section header
-                # e.g. y=172: left=[DETAILS], right=[PROFILE]
-                # e.g. y=280: left=[EMAIL], right=[EMPLOYMENT HISTORY]
-                left_is_hdr  = self._is_sidebar_header(left_words)
-                right_is_hdr = self._is_main_header(right_words)
+                # Sub-case: left sidebar name — large font on page 0 near top
+                left_avg = self._avg_size(left_words)
+                left_is_name = (
+                    page_num == 0
+                    and top < 80
+                    and left_avg >= 18
+                    and 1 <= len(left_words) <= 6
+                    and not self._is_sidebar_header(left_words)
+                )
+                if left_is_name:
+                    cl = self._make_line(left_words, ROLE_DOC_NAME, "full")
+                    if cl: result.append(cl)
+                else:
+                    # Sub-case: left = sidebar section header, right = main section header
+                    left_is_hdr  = self._is_sidebar_header(left_words)
+                    right_is_hdr = self._is_main_header(right_words)
 
-                if left_is_hdr:
-                    cl = self._make_line(left_words, ROLE_SIDEBAR_HDR, "left")
-                    if cl: result.append(cl)
-                elif left_words:
-                    # Sidebar content (contact values etc)
-                    cl = self._make_line(left_words, ROLE_SIDEBAR_VALUE, "left")
-                    if cl: result.append(cl)
+                    if left_is_hdr:
+                        cl = self._make_line(left_words, ROLE_SIDEBAR_HDR, "left")
+                        if cl: result.append(cl)
+                    elif left_words:
+                        # Sidebar content (contact values etc)
+                        cl = self._make_line(left_words, ROLE_SIDEBAR_VALUE, "left")
+                        if cl: result.append(cl)
 
-                if right_is_hdr:
-                    cl = self._make_line(right_words, ROLE_SECTION_HDR, "right")
-                    if cl: result.append(cl)
-                elif right_words:
-                    # Main column content shares y with sidebar label
+                if not left_is_name:
+                    if self._is_main_header(right_words):
+                        cl = self._make_line(right_words, ROLE_SECTION_HDR, "right")
+                        if cl: result.append(cl)
+                    elif right_words:
+                        cl = self._classify_right_line(right_words, top, header_band_bottom)
+                        if cl: result.append(cl)
+                else:
+                    # Right column alongside name → classify normally
                     cl = self._classify_right_line(right_words, top, header_band_bottom)
                     if cl: result.append(cl)
 
             # ── CASE 2: Only left column words ──────────────────────────────
             elif left_words and not right_words:
-                role = ROLE_SIDEBAR_HDR if self._is_sidebar_header(left_words) else ROLE_SIDEBAR_VALUE
-                cl = self._make_line(left_words, role, "left")
+                # Check for sidebar name: large font, page 0, near top
+                left_avg = self._avg_size(left_words)
+                if (page_num == 0 and top < 80 and left_avg >= 18
+                        and 1 <= len(left_words) <= 6
+                        and not self._is_sidebar_header(left_words)):
+                    role = ROLE_DOC_NAME
+                    cl = self._make_line(left_words, role, "full")
+                else:
+                    role = ROLE_SIDEBAR_HDR if self._is_sidebar_header(left_words) else ROLE_SIDEBAR_VALUE
+                    cl = self._make_line(left_words, role, "left")
                 if cl: result.append(cl)
 
             # ── CASE 3: Only right column (or no split = single column) ─────
@@ -512,13 +535,24 @@ class LayoutAwarePDFExtractor:
 
     def _is_sidebar_header(self, words: List[Word]) -> bool:
         text = " ".join(w.text for w in words).strip()
-        return (
+        # Classic detection: bold + ALL CAPS + short
+        classic = (
             all(w.is_bold for w in words)
             and text.isupper()
             and 1 <= len(words) <= 4
             and not text.replace(" ", "").isdigit()
             and len(text) >= 2
         )
+        if classic:
+            return True
+        # Registry-based detection: if the text resolves to a known section,
+        # treat it as a header regardless of font style (fixes PDFs with
+        # non-bold or mixed-case section headers in sidebar)
+        if 1 <= len(words) <= 5 and len(text) >= 3:
+            from src.registries.section_registry import resolve
+            if resolve(text):
+                return True
+        return False
 
     def _is_main_header(self, words: List[Word]) -> bool:
         text = " ".join(w.text for w in words).strip()

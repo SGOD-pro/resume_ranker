@@ -78,6 +78,52 @@ _NOT_NAMES = {
 _NAME_PARTICLES = {'de', 'van', 'von', 'al', 'el', 'la', 'le', 'du', 'da', 'di',
                    'bin', 'binti', 'ibn', 'ben', 'mac', 'mc'}
 
+# Hard blacklist: phrases that must NEVER become candidate names.
+# These are section headers, resume sub-headings, and common title fragments.
+_NAME_HARD_BLACKLIST = {
+    # Section headers
+    'summary', 'skills', 'projects', 'experience', 'education',
+    'certifications', 'key achievements', 'strengths',
+    'professional summary', 'career objective', 'core competencies',
+    'technical skills', 'work experience', 'professional experience',
+    'personal statement', 'career summary', 'executive summary',
+    'employment history', 'academic background', 'professional profile',
+    'key strengths', 'areas of expertise',
+    # Sub-heading fragments (resume template noise)
+    'javascript expertise', 'cross-functional teamwork', 'self-starter',
+    'team player', 'problem solver', 'quick learner',
+    'attention to detail', 'strong communication',
+}
+
+# Technology / skill terms — if ALL words in a candidate match these,
+# it's a skill phrase, not a person name.
+_TECH_WORDS = {
+    'javascript', 'typescript', 'python', 'java', 'react', 'angular',
+    'vue', 'node', 'express', 'django', 'flask', 'spring', 'docker',
+    'kubernetes', 'aws', 'azure', 'gcp', 'mongodb', 'postgresql',
+    'mysql', 'redis', 'sql', 'nosql', 'graphql', 'rest', 'api',
+    'html', 'css', 'sass', 'less', 'webpack', 'babel', 'git', 'github',
+    'ci', 'cd', 'devops', 'agile', 'scrum', 'kanban', 'jira',
+    'expertise', 'proficiency', 'proficient', 'advanced', 'intermediate',
+    'beginner', 'framework', 'frameworks', 'library', 'libraries',
+    'tools', 'technologies', 'microservices', 'architecture',
+    'redux', 'vuex', 'mobx', 'jest', 'mocha', 'cypress', 'selenium',
+    'spark', 'hadoop', 'kafka', 'terraform', 'ansible', 'jenkins',
+    'photoshop', 'illustrator', 'figma', 'sketch',
+    'tensorflow', 'pytorch', 'keras', 'numpy', 'pandas', 'scikit',
+    'bootstrap', 'tailwind', 'material', 'nextjs', 'nuxt',
+    'junit', 'nunit', 'pyunit', 'testcafe', 'webgl',
+    'c', 'cpp', 'golang', 'rust', 'swift', 'kotlin', 'scala',
+    'ruby', 'rails', 'php', 'laravel', 'perl',
+    'linux', 'unix', 'windows', 'macos',
+    'networking', 'protocols', 'tcp', 'http', 'dns', 'ssl',
+    'machine', 'learning', 'deep', 'neural', 'nlp', 'ai', 'ml',
+    'data', 'analytics', 'visualization', 'tableau', 'excel',
+    'seo', 'sem', 'marketing', 'design', 'ux', 'ui',
+    'teamwork', 'leadership', 'communication', 'collaboration',
+    'management', 'development', 'engineering', 'testing',
+}
+
 
 def _is_name_line(line: str) -> bool:
     """Return True if line looks like a person name."""
@@ -103,8 +149,19 @@ def _is_name_line(line: str) -> bool:
     for w in words:
         if not w[0].isupper() and w.lower() not in _NAME_PARTICLES:
             return False
-    # Reject known non-name phrases
+    # Reject known non-name phrases (hard blacklist)
     if s.lower() in _NOT_NAMES:
+        return False
+    if s.lower() in _NAME_HARD_BLACKLIST:
+        return False
+    # Reject if ALL words are known technology / skill terms
+    # (e.g. "JavaScript Expertise", "Vue Redux TypeScript")
+    lower_words = {w.lower() for w in words}
+    if lower_words and lower_words.issubset(_TECH_WORDS):
+        return False
+    # Reject if it resolves to a known section header
+    from src.registries.section_registry import resolve as _resolve_section
+    if _resolve_section(s):
         return False
     return True
 

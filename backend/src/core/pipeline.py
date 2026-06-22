@@ -344,6 +344,33 @@ class PDFPipelineV3:
             main_sections, plain_sections, fallback_sections=fallback_secs
         )
 
+        # ── Merge sidebar sections into unified (gap-filling) ─────────────
+        # For two-column resumes where content sections (experience,
+        # education) are in the sidebar column, not the main column.
+        from src.registries.section_registry import resolve as _resolve_sidebar
+        for raw_key, content_lines in sidebar_sections.items():
+            if raw_key == '__PREAMBLE__':
+                continue
+            canonical = _resolve_sidebar(raw_key)
+            if not canonical:
+                continue
+            sidebar_text_joined = '\n'.join(content_lines) if isinstance(content_lines, list) else str(content_lines)
+            sidebar_text_clean = self._strip_tags(sidebar_text_joined)
+            if not sidebar_text_clean.strip():
+                continue
+            existing = unified.get(canonical)
+            existing_len = len(existing.plain_text.strip()) if existing else 0
+            sidebar_len = len(sidebar_text_clean.strip())
+            # Use sidebar content when: (a) no existing content, or
+            # (b) sidebar has significantly more content (>2x), suggesting
+            # the existing content was grabbed from the wrong column
+            if not existing or not existing_len or sidebar_len > existing_len * 2:
+                unified[canonical] = SectionContent(
+                    plain_text=sidebar_text_clean,
+                    tagged_text=sidebar_text_joined,
+                    source="sidebar",
+                )
+
         # ── Phase 4: Contact (regex-only, no NER) ────────────────────────
         contact = self.contact_parser.parse(
             full_width_text = doc.full_width_text,

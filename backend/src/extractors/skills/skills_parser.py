@@ -239,13 +239,109 @@ class SkillsParser:
         return found
 
     def _deduplicate(self, skills: Set[str]) -> List[str]:
+        # ── Step 1: Split space-separated bundles ─────────────────────────
+        # Skills like "Vue Redux TypeScript" → individual "Vue", "Redux", "TypeScript"
+        # A multi-word entry is a "bundle" if:
+        #   - It has 3+ words, AND
+        #   - At least 2 individual words are known dictionary skills
+        #   - The whole phrase is NOT itself a known multi-word skill (like "Machine Learning")
+        expanded: Set[str] = set()
+        for s in skills:
+            words = s.split()
+            whole_is_known = s.lower() in _SKILLS_LOWER
+            if len(words) >= 3 and not whole_is_known:
+                known_count = sum(1 for w in words if w.lower() in _SKILLS_LOWER)
+                # Heuristic: all words are Title Case or PascalCase single tokens
+                # (typical of sidebar skill lists: "Vue Redux TypeScript")
+                all_title_like = all(
+                    w[0].isupper() and len(w) >= 2 and w.isalpha()
+                    for w in words if w.strip()
+                )
+                is_bundle = (
+                    known_count >= 2
+                    or (known_count >= 1 and all_title_like and len(words) >= 3)
+                )
+                if is_bundle:
+                    # Split: add individual words that are known skills
+                    for w in words:
+                        canonical = _SKILLS_CANONICAL.get(w.lower())
+                        if canonical:
+                            expanded.add(canonical)
+                        elif self._looks_like_skill(w) and len(w) >= 2:
+                            expanded.add(w.strip())
+                    continue  # Don't add the bundle itself
+            # Also split slash-separated items: "Git/Github" → "Git", "Github"
+            if '/' in s and not whole_is_known:
+                parts = [p.strip() for p in s.split('/') if p.strip()]
+                if len(parts) >= 2:
+                    # Further split each part by spaces
+                    all_tokens = []
+                    for p in parts:
+                        sub_words = p.split()
+                        if len(sub_words) >= 2:
+                            all_tokens.extend(sub_words)
+                        else:
+                            all_tokens.append(p)
+                    known_count = sum(1 for t in all_tokens if t.lower() in _SKILLS_LOWER)
+                    if known_count >= 1:
+                        for t in all_tokens:
+                            canonical = _SKILLS_CANONICAL.get(t.lower())
+                            if canonical:
+                                expanded.add(canonical)
+                            elif self._looks_like_skill(t) and len(t) >= 2:
+                                expanded.add(t)
+                        continue
+            # Also split ampersand-separated items: "Teamwork & Collaboration"
+            if '&' in s and not whole_is_known:
+                parts = [p.strip() for p in re.split(r'\s*&\s*', s) if p.strip()]
+                if len(parts) >= 2:
+                    known_parts = sum(1 for p in parts if p.lower() in _SKILLS_LOWER)
+                    if known_parts >= 1:
+                        for p in parts:
+                            canonical = _SKILLS_CANONICAL.get(p.lower())
+                            if canonical:
+                                expanded.add(canonical)
+                            elif self._looks_like_skill(p) and len(p) >= 2:
+                                expanded.add(p)
+                        continue
+            expanded.add(s)
+
+        # ── Step 2: Case-insensitive dedup ────────────────────────────────
         seen_lower: Set[str] = set()
-        result: List[str] = []
-        in_dict = sorted([s for s in skills if s.lower() in _SKILLS_LOWER])
-        not_in_dict = sorted([s for s in skills if s.lower() not in _SKILLS_LOWER])
+        deduped: List[str] = []
+        in_dict = sorted([s for s in expanded if s.lower() in _SKILLS_LOWER])
+        not_in_dict = sorted([s for s in expanded if s.lower() not in _SKILLS_LOWER])
         for s in in_dict + not_in_dict:
             lower = s.lower()
             if lower not in seen_lower:
                 seen_lower.add(lower)
-                result.append(s)
-        return result
+                deduped.append(s)
+
+        # ── Step 3: Containment dedup ─────────────────────────────────────
+        # Remove bundles: if skill A has 3+ words and at least 2 of its
+        # content words appear as individual skills elsewhere, remove A.
+        # Also applies to dictionary multi-word skills where ALL content
+        # words are present individually (e.g., "Teamwork & Collaboration"
+        # when both "Teamwork" and "Collaboration" are separate skills).
+        lower_set = {d.lower() for d in deduped}
+        _STOP_WORDS = {'&', 'and', 'or', 'of', 'in', 'for', 'the', 'a', 'an', 'with', 'to'}
+        to_remove: Set[int] = set()
+        for i, a in enumerate(deduped):
+            a_lower = a.lower()
+            a_words = a_lower.split()
+            if len(a_words) < 3:
+                continue
+            # Get content words (skip punctuation and stop words)
+            content_words = [w for w in a_words if w not in _STOP_WORDS and len(w) > 1]
+            if len(content_words) < 2:
+                continue
+            # Count how many content words appear as separate skills
+            individual_count = sum(
+                1 for w in content_words
+                if w in lower_set and w != a_lower
+            )
+            if individual_count >= 2:
+                to_remove.add(i)
+
+        return [s for i, s in enumerate(deduped) if i not in to_remove]
+

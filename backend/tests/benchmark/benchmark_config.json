@@ -1,0 +1,283 @@
+{
+  "extraction_expectations": {
+    "1.pdf": {
+      "expected_name": "JULIE MONROE",
+      "min_skills": 8,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "healthcare"
+    },
+    "2.pdf": {
+      "expected_name": "DANIEL GAN",
+      "min_skills": 15,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "3.pdf": {
+      "expected_name": "Christopher Fowler",
+      "min_skills": 8,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "marketing"
+    },
+    "5.pdf": {
+      "expected_name": "John Smith",
+      "min_skills": 10,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "6.pdf": {
+      "expected_name": "Eddy Butler",
+      "min_skills": 6,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "7.pdf": {
+      "expected_name": "Sarah West",
+      "min_skills": 10,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "9.pdf": {
+      "expected_name": "ROBERT COOPER",
+      "min_skills": 10,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "healthcare"
+    },
+    "11.pdf": {
+      "expected_name": "Emily Davies",
+      "min_skills": 10,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "15.pdf": {
+      "expected_name": "John Smith",
+      "min_skills": 10,
+      "min_experience_entries": 2,
+      "min_education_entries": 1,
+      "expected_domain": "legal"
+    },
+    "backend.pdf": {
+      "expected_name": "ZOE THOMPSON",
+      "min_skills": 10,
+      "min_experience_entries": 3,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "fullstack.pdf": {
+      "expected_name": "MARCUS HALL",
+      "min_skills": 20,
+      "min_experience_entries": 3,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "SUBHADIPcv.pdf": {
+      "expected_name": "SUBHADIP MONDAL",
+      "min_skills": 10,
+      "min_experience_entries": 1,
+      "min_education_entries": 2,
+      "expected_domain": "engineering"
+    },
+    "souvik.pdf": {
+      "expected_name": "Souvik Karmakar",
+      "min_skills": 20,
+      "min_experience_entries": 0,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "frontend.pdf": {
+      "expected_name": "Harper Garcia",
+      "min_skills": 10,
+      "min_experience_entries": 0,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "front-end.pdf": {
+      "expected_name": "First Last",
+      "min_skills": 10,
+      "min_experience_entries": 0,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    },
+    "devops.pdf": {
+      "expected_name": "VICTORIA BAKER",
+      "min_skills": 10,
+      "min_experience_entries": 0,
+      "min_education_entries": 1,
+      "expected_domain": "engineering"
+    }
+  },
+
+  "ranking_expectations": {
+    "Full Stack Developer": {
+      "jd": {
+        "title": "Full Stack Developer",
+        "department": "Engineering",
+        "description": "Full stack developer with backend and frontend experience plus DevOps knowledge",
+        "must_have_skills": ["JavaScript"],
+        "nice_to_have_skills": ["React", "Python", "Node.js", "Docker", "AWS", "MongoDB", "TypeScript"],
+        "min_years": 0,
+        "max_years": 10,
+        "required_degree": "any",
+        "preferred_field": "Computer Science",
+        "keywords": ["fullstack", "frontend", "backend", "api", "web", "deployment"],
+        "weights": {"skills": 0.40, "experience": 0.25, "keywords": 0.20, "education": 0.15}
+      },
+      "expected_top_5": ["fullstack.pdf", "souvik.pdf", "backend.pdf"]
+    },
+    "Backend Engineer": {
+      "jd": {
+        "title": "Backend Engineer",
+        "department": "Engineering",
+        "description": "Backend engineer building scalable microservices and APIs",
+        "must_have_skills": ["Node.js"],
+        "nice_to_have_skills": ["Python", "Docker", "AWS", "MongoDB", "PostgreSQL", "Microservices", "SQL"],
+        "min_years": 0,
+        "max_years": 15,
+        "required_degree": "any",
+        "preferred_field": "Computer Science",
+        "keywords": ["microservices", "api", "database", "scalable", "agile", "backend"],
+        "weights": {"skills": 0.40, "experience": 0.25, "keywords": 0.20, "education": 0.15}
+      },
+      "expected_top_5": ["backend.pdf", "fullstack.pdf"]
+    },
+    "Digital Marketing Manager": {
+      "jd": {
+        "title": "Digital Marketing Manager",
+        "department": "Marketing",
+        "description": "Digital marketing manager to lead campaigns and brand strategy",
+        "must_have_skills": ["SEO", "Marketing"],
+        "nice_to_have_skills": ["Social Media", "Email Marketing", "Google Ads", "Analytics", "Instagram"],
+        "min_years": 0,
+        "max_years": 15,
+        "required_degree": "any",
+        "preferred_field": "Marketing",
+        "keywords": ["campaign", "brand", "content", "traffic", "conversion", "strategy"],
+        "weights": {"skills": 0.35, "experience": 0.30, "keywords": 0.20, "education": 0.15}
+      },
+      "expected_top_5": ["3.pdf"]
+    },
+    "Junior Web Developer": {
+      "jd": {
+        "title": "Junior Web Developer",
+        "department": "Engineering",
+        "description": "Entry-level web developer for frontend and basic backend work",
+        "must_have_skills": ["HTML", "CSS"],
+        "nice_to_have_skills": ["JavaScript", "React", "Python", "Django", "MongoDB", "Git", "TypeScript", "Node.js"],
+        "min_years": 0,
+        "max_years": 5,
+        "required_degree": "any",
+        "preferred_field": "Computer Science",
+        "keywords": ["web", "frontend", "responsive", "api", "github"],
+        "weights": {"skills": 0.50, "experience": 0.10, "keywords": 0.25, "education": 0.15}
+      },
+      "expected_top_5": ["souvik.pdf", "frontend.pdf"]
+    }
+  },
+
+  "cross_domain_rejections": [
+    {
+      "name": "Lawyer vs Backend JD",
+      "candidate_file": "15.pdf",
+      "jd_title": "Backend Engineer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Dietitian vs Backend JD",
+      "candidate_file": "1.pdf",
+      "jd_title": "Backend Engineer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Marketing vs Security JD",
+      "candidate_file": "3.pdf",
+      "jd_title": "Security Guard",
+      "expected_rejected": true
+    },
+    {
+      "name": "Security Guard vs Full Stack JD",
+      "candidate_file": "9.pdf",
+      "jd_title": "Full Stack Developer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Personal Trainer vs Backend JD",
+      "candidate_file": "10.pdf",
+      "jd_title": "Backend Engineer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Fashion Designer vs Full Stack JD",
+      "candidate_file": "8.pdf",
+      "jd_title": "Full Stack Developer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Travel Agent vs Junior Web Dev JD",
+      "candidate_file": "4.pdf",
+      "jd_title": "Junior Web Developer",
+      "expected_rejected": true
+    },
+    {
+      "name": "Retail Assistant vs Backend JD",
+      "candidate_file": "17.pdf",
+      "jd_title": "Backend Engineer",
+      "expected_rejected": true
+    }
+  ],
+
+  "inference_test_cases": {
+    "true_positives": [
+      {"candidate_skill": "Next.js", "jd_skill": "React", "expected_type": "inferred"},
+      {"candidate_skill": "NestJS", "jd_skill": "Node.js", "expected_type": "inferred"},
+      {"candidate_skill": "Django", "jd_skill": "Python", "expected_type": "inferred"},
+      {"candidate_skill": "Spring Boot", "jd_skill": "Java", "expected_type": "inferred"},
+      {"candidate_skill": "TypeScript", "jd_skill": "JavaScript", "expected_type": "inferred"},
+      {"candidate_skill": "Flask", "jd_skill": "Python", "expected_type": "inferred"},
+      {"candidate_skill": "React Native", "jd_skill": "React", "expected_type": "inferred"},
+      {"candidate_skill": "Kotlin", "jd_skill": "Java", "expected_type": "inferred"},
+      {"candidate_skill": "Express.js", "jd_skill": "Node.js", "expected_type": "inferred"},
+      {"candidate_skill": "Labor Law", "jd_skill": "Employment Law", "expected_type": "alias"},
+      {"candidate_skill": "HIPAA", "jd_skill": "Compliance", "expected_type": "inferred"},
+      {"candidate_skill": "Gatsby", "jd_skill": "React", "expected_type": "inferred"},
+      {"candidate_skill": "React", "jd_skill": "HTML", "expected_type": "inferred"},
+      {"candidate_skill": "React", "jd_skill": "CSS", "expected_type": "inferred"},
+      {"candidate_skill": "Next.js", "jd_skill": "HTML", "expected_type": "inferred"},
+      {"candidate_skill": "Next.js", "jd_skill": "CSS", "expected_type": "inferred"},
+      {"candidate_skill": "Angular", "jd_skill": "HTML", "expected_type": "inferred"},
+      {"candidate_skill": "Vue.js", "jd_skill": "CSS", "expected_type": "inferred"}
+    ],
+    "true_negatives": [
+      {"candidate_skill": "Vue.js", "jd_skill": "React", "should_not_match": true},
+      {"candidate_skill": "Angular", "jd_skill": "React", "should_not_match": true},
+      {"candidate_skill": "Python", "jd_skill": "Java", "should_not_match": true},
+      {"candidate_skill": "React", "jd_skill": "Angular", "should_not_match": true},
+      {"candidate_skill": "SQL", "jd_skill": "MongoDB", "should_not_match": true},
+      {"candidate_skill": "SEO", "jd_skill": "Python", "should_not_match": true},
+      {"candidate_skill": "Nursing", "jd_skill": "Python", "should_not_match": true},
+      {"candidate_skill": "Accounting", "jd_skill": "React", "should_not_match": true}
+    ]
+  },
+
+  "scoring_weights": {
+    "extraction_accuracy": 0.30,
+    "ranking_accuracy": 0.40,
+    "rejection_accuracy": 0.15,
+    "inference_accuracy": 0.10,
+    "api_reliability": 0.05
+  },
+
+  "production_gates": {
+    "extraction_accuracy": 90.0,
+    "ranking_accuracy": 85.0,
+    "rejection_accuracy": 95.0,
+    "inference_accuracy": 95.0,
+    "api_reliability": 100.0
+  }
+}

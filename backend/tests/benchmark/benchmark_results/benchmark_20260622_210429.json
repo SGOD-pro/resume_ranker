@@ -1,0 +1,680 @@
+{
+  "timestamp": "2026-06-22T21:04:19.763785",
+  "version": "1.0.0",
+  "extraction": {
+    "checks": [
+      {
+        "file": "1.pdf",
+        "expected_name": "JULIE MONROE",
+        "extracted_name": "JULIE MONROE",
+        "name_correct": true,
+        "min_skills": 8,
+        "actual_skills": 10,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 3,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "2.pdf",
+        "expected_name": "DANIEL GAN",
+        "extracted_name": "DANIEL GAN",
+        "name_correct": true,
+        "min_skills": 15,
+        "actual_skills": 25,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "3.pdf",
+        "expected_name": "Christopher Fowler",
+        "extracted_name": "Christopher Fowler",
+        "name_correct": true,
+        "min_skills": 8,
+        "actual_skills": 10,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 3,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 2,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "5.pdf",
+        "expected_name": "John Smith",
+        "extracted_name": "John Smith",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 13,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "6.pdf",
+        "expected_name": "Eddy Butler",
+        "extracted_name": "Eddy Butler",
+        "name_correct": true,
+        "min_skills": 6,
+        "actual_skills": 8,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 2,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "7.pdf",
+        "expected_name": "Sarah West",
+        "extracted_name": "Sarah West",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 14,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "9.pdf",
+        "expected_name": "ROBERT COOPER",
+        "extracted_name": "ROBERT COOPER",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 20,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "11.pdf",
+        "expected_name": "Emily Davies",
+        "extracted_name": "Emily Davies",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 15,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 3,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "15.pdf",
+        "expected_name": "John Smith",
+        "extracted_name": "John Smith",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 14,
+        "skills_pass": true,
+        "min_experience": 2,
+        "actual_experience": 2,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 2,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "backend.pdf",
+        "expected_name": "ZOE THOMPSON",
+        "extracted_name": "ZOE THOMPSON",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 14,
+        "skills_pass": true,
+        "min_experience": 3,
+        "actual_experience": 3,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "fullstack.pdf",
+        "expected_name": "MARCUS HALL",
+        "extracted_name": "MARCUS HALL",
+        "name_correct": true,
+        "min_skills": 20,
+        "actual_skills": 39,
+        "skills_pass": true,
+        "min_experience": 3,
+        "actual_experience": 3,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 1,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "SUBHADIPcv.pdf",
+        "expected_name": "SUBHADIP MONDAL",
+        "extracted_name": "SUBHADIP MONDAL",
+        "name_correct": true,
+        "min_skills": 10,
+        "actual_skills": 13,
+        "skills_pass": true,
+        "min_experience": 1,
+        "actual_experience": 1,
+        "experience_pass": true,
+        "min_education": 2,
+        "actual_education": 4,
+        "education_pass": true,
+        "all_pass": true
+      },
+      {
+        "file": "souvik.pdf",
+        "expected_name": "Souvik Karmakar",
+        "extracted_name": "Souvik Karmakar",
+        "name_correct": true,
+        "min_skills": 20,
+        "actual_skills": 42,
+        "skills_pass": true,
+        "min_experience": 0,
+        "actual_experience": 0,
+        "experience_pass": true,
+        "min_education": 1,
+        "actual_education": 2,
+        "education_pass": true,
+        "all_pass": true
+      }
+    ],
+    "total": 13,
+    "passed": 13,
+    "accuracy": 100.0,
+    "errors": []
+  },
+  "ranking": {
+    "checks": [
+      {
+        "jd_title": "Full Stack Developer",
+        "expected_file": "fullstack.pdf",
+        "actual_rank": 1,
+        "in_top_1": true,
+        "in_top_3": true,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 100.0
+      },
+      {
+        "jd_title": "Full Stack Developer",
+        "expected_file": "souvik.pdf",
+        "actual_rank": 5,
+        "in_top_1": false,
+        "in_top_3": false,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 50.0
+      },
+      {
+        "jd_title": "Full Stack Developer",
+        "expected_file": "2.pdf",
+        "actual_rank": 18,
+        "in_top_1": false,
+        "in_top_3": false,
+        "in_top_5": false,
+        "knocked_out": true,
+        "score": 0.0
+      },
+      {
+        "jd_title": "Backend Engineer",
+        "expected_file": "backend.pdf",
+        "actual_rank": 1,
+        "in_top_1": true,
+        "in_top_3": true,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 100.0
+      },
+      {
+        "jd_title": "Backend Engineer",
+        "expected_file": "fullstack.pdf",
+        "actual_rank": 2,
+        "in_top_1": false,
+        "in_top_3": true,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 75.0
+      },
+      {
+        "jd_title": "Digital Marketing Manager",
+        "expected_file": "3.pdf",
+        "actual_rank": 1,
+        "in_top_1": true,
+        "in_top_3": true,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 100.0
+      },
+      {
+        "jd_title": "Junior Web Developer",
+        "expected_file": "fullstack.pdf",
+        "actual_rank": 25,
+        "in_top_1": false,
+        "in_top_3": false,
+        "in_top_5": false,
+        "knocked_out": true,
+        "score": 0.0
+      },
+      {
+        "jd_title": "Junior Web Developer",
+        "expected_file": "souvik.pdf",
+        "actual_rank": 1,
+        "in_top_1": true,
+        "in_top_3": true,
+        "in_top_5": true,
+        "knocked_out": false,
+        "score": 100.0
+      },
+      {
+        "jd_title": "Junior Web Developer",
+        "expected_file": "2.pdf",
+        "actual_rank": 13,
+        "in_top_1": false,
+        "in_top_3": false,
+        "in_top_5": false,
+        "knocked_out": true,
+        "score": 0.0
+      }
+    ],
+    "total": 9,
+    "top_1_hits": 4,
+    "top_3_hits": 1,
+    "top_5_hits": 1,
+    "misses": 3,
+    "accuracy": 58.3,
+    "mistakes": [
+      {
+        "jd": "Full Stack Developer",
+        "expected_file": "2.pdf",
+        "actual_rank": 18,
+        "knocked_out": true,
+        "score": 0.0
+      },
+      {
+        "jd": "Junior Web Developer",
+        "expected_file": "fullstack.pdf",
+        "actual_rank": 25,
+        "knocked_out": true,
+        "score": 0.0
+      },
+      {
+        "jd": "Junior Web Developer",
+        "expected_file": "2.pdf",
+        "actual_rank": 13,
+        "knocked_out": true,
+        "score": 0.0
+      }
+    ]
+  },
+  "rejection": {
+    "checks": [
+      {
+        "name": "Lawyer vs Backend JD",
+        "candidate_file": "15.pdf",
+        "jd_title": "Backend Engineer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Dietitian vs Backend JD",
+        "candidate_file": "1.pdf",
+        "jd_title": "Backend Engineer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Marketing vs Security JD",
+        "candidate_file": "3.pdf",
+        "jd_title": "Security Guard",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Security Guard vs Full Stack JD",
+        "candidate_file": "9.pdf",
+        "jd_title": "Full Stack Developer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Personal Trainer vs Backend JD",
+        "candidate_file": "10.pdf",
+        "jd_title": "Backend Engineer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Fashion Designer vs Full Stack JD",
+        "candidate_file": "8.pdf",
+        "jd_title": "Full Stack Developer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Travel Agent vs Junior Web Dev JD",
+        "candidate_file": "4.pdf",
+        "jd_title": "Junior Web Developer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      },
+      {
+        "name": "Retail Assistant vs Backend JD",
+        "candidate_file": "17.pdf",
+        "jd_title": "Backend Engineer",
+        "expected_rejected": true,
+        "actually_rejected": true,
+        "final_score": 0.0,
+        "correct": true,
+        "detail": "KO=True, score=0.0"
+      }
+    ],
+    "total": 8,
+    "correct_rejections": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "accuracy": 100.0
+  },
+  "inference": {
+    "checks": [
+      {
+        "candidate_skill": "Next.js",
+        "jd_skill": "React",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "React \u2190 inferred from Next.js"
+      },
+      {
+        "candidate_skill": "NestJS",
+        "jd_skill": "Node.js",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Node.js \u2190 inferred from NestJS"
+      },
+      {
+        "candidate_skill": "Django",
+        "jd_skill": "Python",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Python \u2190 inferred from Django"
+      },
+      {
+        "candidate_skill": "Spring Boot",
+        "jd_skill": "Java",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Java \u2190 inferred from Spring Boot"
+      },
+      {
+        "candidate_skill": "TypeScript",
+        "jd_skill": "JavaScript",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "JavaScript \u2190 inferred from TypeScript"
+      },
+      {
+        "candidate_skill": "Flask",
+        "jd_skill": "Python",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Python \u2190 inferred from Flask"
+      },
+      {
+        "candidate_skill": "React Native",
+        "jd_skill": "React",
+        "expected_type": "inferred",
+        "actual_type": "explicit",
+        "actual_weight": 1.0,
+        "correct": true,
+        "explanation": "React \u2713 matched directly"
+      },
+      {
+        "candidate_skill": "Kotlin",
+        "jd_skill": "Java",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Java \u2190 inferred from Kotlin"
+      },
+      {
+        "candidate_skill": "Express.js",
+        "jd_skill": "Node.js",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Node.js \u2190 inferred from Express.js"
+      },
+      {
+        "candidate_skill": "Labor Law",
+        "jd_skill": "Employment Law",
+        "expected_type": "alias",
+        "actual_type": "alias",
+        "actual_weight": 1.0,
+        "correct": true,
+        "explanation": "Employment Law \u2713 alias of Labor Law"
+      },
+      {
+        "candidate_skill": "HIPAA",
+        "jd_skill": "Compliance",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "Compliance \u2190 inferred from HIPAA"
+      },
+      {
+        "candidate_skill": "Gatsby",
+        "jd_skill": "React",
+        "expected_type": "inferred",
+        "actual_type": "inferred",
+        "actual_weight": 0.75,
+        "correct": true,
+        "explanation": "React \u2190 inferred from Gatsby"
+      },
+      {
+        "candidate_skill": "Vue.js",
+        "jd_skill": "React",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "Angular",
+        "jd_skill": "React",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "Python",
+        "jd_skill": "Java",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "React",
+        "jd_skill": "Angular",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "SQL",
+        "jd_skill": "MongoDB",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "SEO",
+        "jd_skill": "Python",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "Nursing",
+        "jd_skill": "Python",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      },
+      {
+        "candidate_skill": "Accounting",
+        "jd_skill": "React",
+        "expected_type": "no_match",
+        "actual_type": "no_match",
+        "actual_weight": 0.0,
+        "correct": true,
+        "explanation": "Correctly not inferred"
+      }
+    ],
+    "true_positives": 12,
+    "true_negatives": 8,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "total": 20,
+    "accuracy": 100.0
+  },
+  "api": {
+    "checks": [
+      {
+        "endpoint": "POST /jobs",
+        "method": "POST",
+        "status_code": 200,
+        "passed": true,
+        "detail": "",
+        "response_time_ms": 17.3
+      },
+      {
+        "endpoint": "POST /jobs/a76d63b2-3e88-4e75-b7b1-c92dff0b0833/resumes",
+        "method": "POST",
+        "status_code": 200,
+        "passed": true,
+        "detail": "",
+        "response_time_ms": 4.9
+      },
+      {
+        "endpoint": "GET /jobs/a76d63b2-3e88-4e75-b7b1-c92dff0b0833/extract",
+        "method": "GET",
+        "status_code": 200,
+        "passed": true,
+        "detail": "8 SSE events",
+        "response_time_ms": 408.7
+      },
+      {
+        "endpoint": "POST /jobs/a76d63b2-3e88-4e75-b7b1-c92dff0b0833/score",
+        "method": "POST",
+        "status_code": 200,
+        "passed": true,
+        "detail": "",
+        "response_time_ms": 14.6
+      },
+      {
+        "endpoint": "GET /jobs/a76d63b2-3e88-4e75-b7b1-c92dff0b0833/results",
+        "method": "GET",
+        "status_code": 200,
+        "passed": true,
+        "detail": "",
+        "response_time_ms": 2.2
+      }
+    ],
+    "total": 5,
+    "passed": 5,
+    "accuracy": 100.0,
+    "debug_jd_match": true
+  },
+  "overall_score": 83.3,
+  "production_ready": false,
+  "failing_gates": [
+    "ranking_accuracy: 58.3% < 85.0%"
+  ],
+  "recommendations": [
+    "Ranking miss: 2.pdf should rank top-5 for Full Stack Developer (actual rank #18, KO=True)",
+    "Ranking miss: fullstack.pdf should rank top-5 for Junior Web Developer (actual rank #25, KO=True)",
+    "Ranking miss: 2.pdf should rank top-5 for Junior Web Developer (actual rank #13, KO=True)"
+  ]
+}

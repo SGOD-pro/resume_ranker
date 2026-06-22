@@ -16,9 +16,13 @@ import re
 from typing import List, Dict, Any, Optional, Tuple
 
 DATE_RANGE_RE = re.compile(
-    r'(?P<start>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}|\d{4})'
+    r'(?P<start>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}'
+    r'|\d{1,2}/\d{4}'  # MM/YYYY format
+    r'|\d{4})'
     r'\s*[–—\-–]+\s*'
-    r'(?P<end>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}|Present|Current|Now|\d{4})',
+    r'(?P<end>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}'
+    r'|\d{1,2}/\d{4}'  # MM/YYYY format
+    r'|Present|Current|Now|\d{4})',
     re.I)
 BULLET_RE = re.compile(r'^[•·▪▸►✓✔\*\-]\s+(.+)')
 SEP_RE = re.compile(r'\s*[|/]\s*')
