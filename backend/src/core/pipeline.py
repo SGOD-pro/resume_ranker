@@ -393,6 +393,81 @@ class PDFPipelineV3:
         if raw_name and resolve_section_name(raw_name):
             raw_name = None
 
+        # ── Extended name blacklist ────────────────────────────────────────
+        # Catches section headers, document titles, and other non-name strings
+        # that slip through the section resolver.
+        _NAME_BLACKLIST = {
+            # Document titles
+            "resume", "curriculum vitae", "curriculum vita", "curriculam vitae",
+            "curriculum-vitae", "cv", "biodata", "bio data", "bio-data",
+            # Section headers
+            "objective", "objective:", "career objective", "career focus",
+            "profile", "professional profile", "professional summary",
+            "summary", "executive summary", "executive profile",
+            "core qualifications", "core competencies", "key skills",
+            "skill highlights", "technical skills", "professional skills",
+            "academic qualification", "academic qualifications",
+            "professional background", "career summary", "career highlights",
+            "work experience", "professional experience", "experience",
+            "education", "certifications", "achievements", "references",
+            "personal details", "personal information", "contact information",
+            # Generic/placeholder
+            "first last", "first name last name", "your name",
+            "name", "n/a", "unknown", "not available",
+            # Job titles mistaken as names
+            "specialist", "intern", "manager", "director",
+            "java intern", "information technology",
+            "information technology specialist",
+            "mechanical engineering", "electrical engineering",
+            "civil engineering", "software engineering",
+            "account representative", "practice manager",
+            # Address/location fragments
+            "main road", "marital status",
+        }
+        _NAME_BLACKLIST_PREFIXES = [
+            "address-", "address ", "objective ",
+            "curriculum", "assistant to", "vp of", "vp ",
+            "director of", "public relations",
+        ]
+        name_confidence = 1.0
+        is_section_header = False
+
+        if raw_name:
+            name_lower = raw_name.strip().lower().rstrip(':').strip()
+            # Exact match blacklist
+            if name_lower in _NAME_BLACKLIST:
+                raw_name = None
+                name_confidence = 0.0
+                is_section_header = True
+            # Prefix match blacklist
+            elif any(name_lower.startswith(p) for p in _NAME_BLACKLIST_PREFIXES):
+                raw_name = None
+                name_confidence = 0.0
+                is_section_header = True
+            else:
+                # Confidence heuristics
+                words = raw_name.split()
+                # Single word names are low confidence
+                if len(words) == 1:
+                    name_confidence = 0.6
+                # Names > 5 words are suspicious
+                elif len(words) > 5:
+                    name_confidence = 0.4
+                    is_section_header = True
+                # All-caps names with common section words
+                elif raw_name.isupper() and any(
+                    w.lower() in {'resume', 'vitae', 'curriculum', 'engineering',
+                                  'technology', 'management', 'specialist',
+                                  'qualification', 'department', 'representative'}
+                    for w in words
+                ):
+                    raw_name = None
+                    name_confidence = 0.0
+                    is_section_header = True
+                # Normal 2-3 word name → high confidence
+                elif 2 <= len(words) <= 4:
+                    name_confidence = 0.95
+
         # Fallback: try first [JOB_TITLE] in main_text that looks like "Name, Title"
         if not raw_name:
             import re as _re
@@ -423,26 +498,6 @@ class PDFPipelineV3:
         if raw_name and ',' in raw_name:
             raw_name = raw_name.split(',')[0].strip()
 
-        # Fallback: try first 2-3 words from first line of main_text
-        if not raw_name:
-            from src.extractors.contact.contact_parser import _is_name_line
-            for text_src in [doc.main_text, doc.sidebar_text]:
-                if not text_src:
-                    continue
-                first_line = self._strip_tags(text_src.split('\n')[0]).strip()
-                if not first_line:
-                    continue
-                words = first_line.split()
-                # Try 2 words, then 3 words
-                for n in [2, 3]:
-                    if len(words) >= n:
-                        candidate = ' '.join(words[:n])
-                        if _is_name_line(candidate):
-                            raw_name = candidate
-                            break
-                if raw_name:
-                    break
-
         # ── Extract DOB from [PERSONAL INFO] section or full text ─────────
         dob = self._extract_dob(main_sections, combined_text)
 
@@ -454,6 +509,8 @@ class PDFPipelineV3:
             "github":   contact.get('github'),
             "location": contact.get('location') or asm_info.get('address'),
             "dob":      dob,
+            "name_confidence": round(name_confidence, 2),
+            "candidate_name_is_section_header": is_section_header,
         }
         # Fix: if location looks like a skill list, clear it
         _LOCATION_BLOCKLIST = [

@@ -1,0 +1,4581 @@
+{
+  "timestamp": "2026-06-23T03:42:07.229215",
+  "version": "5.0.0",
+  "total_pdfs": 5076,
+  "phases": {
+    "knockout": {
+      "checks": [
+        {
+          "test": "Has must-have + valid experience",
+          "knocked_out": false,
+          "expected_ko": false,
+          "pass": true,
+          "ko_reasons": [],
+          "matched_must": [
+            "Python"
+          ],
+          "missing_must": [],
+          "total_years": 6.5
+        },
+        {
+          "test": "Missing must-have skill",
+          "knocked_out": true,
+          "expected_ko": true,
+          "pass": true,
+          "ko_reasons": [
+            "Missing must-have skills: Python"
+          ],
+          "matched_must": [],
+          "missing_must": [
+            "Python"
+          ],
+          "total_years": 6.5
+        },
+        {
+          "test": "Must-have via inference (Django\u2192Python)",
+          "knocked_out": false,
+          "expected_ko": false,
+          "pass": true,
+          "ko_reasons": [],
+          "matched_must": [
+            "Python"
+          ],
+          "missing_must": [],
+          "total_years": 6.5
+        }
+      ],
+      "passed": 3,
+      "total": 3
+    },
+    "extraction": {
+      "total": 5076,
+      "success": 5076,
+      "failures": 0,
+      "success_rate": 100.0,
+      "fields": {
+        "name": {
+          "present": 2601,
+          "rate": 51.2,
+          "formula": "2601/5076"
+        },
+        "email": {
+          "present": 3809,
+          "rate": 75.0,
+          "formula": "3809/5076"
+        },
+        "phone": {
+          "present": 3734,
+          "rate": 73.6,
+          "formula": "3734/5076"
+        },
+        "skills": {
+          "present": 4653,
+          "rate": 91.7,
+          "avg": 13.9,
+          "formula": "4653/5076"
+        },
+        "experience": {
+          "present": 2546,
+          "rate": 50.2,
+          "avg": 3.9,
+          "formula": "2546/5076"
+        },
+        "education": {
+          "present": 3929,
+          "rate": 77.4,
+          "avg": 2.0,
+          "formula": "3929/5076"
+        },
+        "projects": {
+          "present": 610,
+          "rate": 12.0,
+          "formula": "610/5076"
+        },
+        "certs": {
+          "present": 793,
+          "rate": 15.6,
+          "formula": "793/5076"
+        }
+      },
+      "avg_quality": 0.649,
+      "anomalies": {
+        "tag_leaks": 4,
+        "tag_leak_samples": [
+          {
+            "file": "cv (1809).pdf",
+            "value": "KS &amp; KN"
+          },
+          {
+            "file": "cv (1996).pdf",
+            "value": "&amp; surface creation."
+          },
+          {
+            "file": "cv (2895).pdf",
+            "value": "KS &amp; KN"
+          },
+          {
+            "file": "cv (3711).pdf",
+            "value": "KS &amp; KN"
+          }
+        ],
+        "skill_duplicates": 12,
+        "low_quality": 361,
+        "low_quality_samples": [
+          {
+            "file": "cv (1003).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1004).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1005).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1006).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1009).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1010).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1011).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1012).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1013).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1014).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1015).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1018).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1019).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1020).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1023).pdf",
+            "quality": 0
+          }
+        ]
+      },
+      "name_audit": {
+        "valid_names": 2601,
+        "blank_names": 2475,
+        "blacklisted_names": 1248,
+        "name_precision": 67.6,
+        "name_precision_formula": "2601/(2601+1248)",
+        "confidence_distribution": {
+          "high": 2263,
+          "medium": 242,
+          "low": 96,
+          "zero": 2475
+        }
+      },
+      "composite_score": 68.7,
+      "composite_formula": "0.20*name + 0.25*skills + 0.25*experience + 0.20*education + 0.10*email"
+    },
+    "domain": {
+      "total": 5076,
+      "unique_domains": 8,
+      "domain_distribution": {
+        "engineering": {
+          "count": 1532,
+          "pct": 30.2,
+          "avg_confidence": 0.725
+        },
+        "healthcare": {
+          "count": 1269,
+          "pct": 25.0,
+          "avg_confidence": 0.669
+        },
+        "unknown": {
+          "count": 761,
+          "pct": 15.0,
+          "avg_confidence": 0.0
+        },
+        "hr": {
+          "count": 600,
+          "pct": 11.8,
+          "avg_confidence": 0.643
+        },
+        "marketing": {
+          "count": 290,
+          "pct": 5.7,
+          "avg_confidence": 0.557
+        },
+        "accounting": {
+          "count": 286,
+          "pct": 5.6,
+          "avg_confidence": 0.543
+        },
+        "legal": {
+          "count": 242,
+          "pct": 4.8,
+          "avg_confidence": 0.53
+        },
+        "finance": {
+          "count": 96,
+          "pct": 1.9,
+          "avg_confidence": 0.539
+        }
+      },
+      "low_confidence": 928,
+      "unknown_count": 761,
+      "unknown_pct": 15.0,
+      "classified_accuracy": 85.0,
+      "classified_formula": "(5076 - 761) / 5076"
+    },
+    "dedup": {
+      "total_pdfs": 5076,
+      "unique_pdfs_by_hash": 3856,
+      "exact_duplicates": 1220,
+      "near_duplicates": 156,
+      "exact_duplicate_groups": 1051,
+      "near_duplicate_groups": 123,
+      "exact_samples": [
+        {
+          "hash": "21a975187145",
+          "files": [
+            "cv (1).pdf",
+            "cv (4837).pdf"
+          ]
+        },
+        {
+          "hash": "b47c741903a1",
+          "files": [
+            "cv (10).pdf",
+            "cv (4843).pdf"
+          ]
+        },
+        {
+          "hash": "6c83556835bc",
+          "files": [
+            "cv (1054).pdf",
+            "cv (1055).pdf"
+          ]
+        },
+        {
+          "hash": "d89c849c0d18",
+          "files": [
+            "cv (11).pdf",
+            "cv (4844).pdf"
+          ]
+        },
+        {
+          "hash": "745cac622eea",
+          "files": [
+            "cv (1170).pdf",
+            "cv (1171).pdf"
+          ]
+        },
+        {
+          "hash": "f89a5c06b1af",
+          "files": [
+            "cv (1178).pdf",
+            "cv (1179).pdf"
+          ]
+        },
+        {
+          "hash": "d7f4f5ba92e0",
+          "files": [
+            "cv (1184).pdf",
+            "cv (1185).pdf",
+            "cv (1186).pdf",
+            "cv (1187).pdf"
+          ]
+        },
+        {
+          "hash": "a1cff4481b95",
+          "files": [
+            "cv (12).pdf",
+            "cv (4845).pdf"
+          ]
+        },
+        {
+          "hash": "958cf0d7a84f",
+          "files": [
+            "cv (1213).pdf",
+            "cv (1214).pdf"
+          ]
+        },
+        {
+          "hash": "664fddd2ab7a",
+          "files": [
+            "cv (123).pdf",
+            "cv (2230).pdf",
+            "cv (2446).pdf",
+            "cv (4141).pdf"
+          ]
+        }
+      ],
+      "near_samples": [
+        {
+          "hash": "81285e886e96",
+          "files": [
+            "cv (1002).pdf",
+            "cv (1393).pdf"
+          ]
+        },
+        {
+          "hash": "8eafc303168f",
+          "files": [
+            "cv (101).pdf",
+            "cv (181).pdf",
+            "cv (1843).pdf",
+            "cv (2150).pdf",
+            "cv (2204).pdf"
+          ]
+        },
+        {
+          "hash": "4d4a626d75b8",
+          "files": [
+            "cv (102).pdf",
+            "cv (388).pdf"
+          ]
+        },
+        {
+          "hash": "b6aef17c9967",
+          "files": [
+            "cv (104).pdf",
+            "cv (222).pdf",
+            "cv (372).pdf"
+          ]
+        },
+        {
+          "hash": "fdf04b4ed281",
+          "files": [
+            "cv (1045).pdf",
+            "cv (1046).pdf"
+          ]
+        },
+        {
+          "hash": "4f34c7ba5197",
+          "files": [
+            "cv (1051).pdf",
+            "cv (1052).pdf"
+          ]
+        },
+        {
+          "hash": "385c80a3973f",
+          "files": [
+            "cv (1053).pdf",
+            "cv (1442).pdf"
+          ]
+        },
+        {
+          "hash": "157755418e3b",
+          "files": [
+            "cv (106).pdf",
+            "cv (1866).pdf"
+          ]
+        },
+        {
+          "hash": "753d2ef36e05",
+          "files": [
+            "cv (1067).pdf",
+            "cv (1127).pdf"
+          ]
+        },
+        {
+          "hash": "fbb8fbb1e2b2",
+          "files": [
+            "cv (1068).pdf",
+            "cv (1069).pdf"
+          ]
+        }
+      ],
+      "dedup_rate": 27.1
+    },
+    "skill": {
+      "accuracy": 100.0,
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1": 100.0,
+      "tp": 15,
+      "tn": 4,
+      "fp": 0,
+      "fn": 0,
+      "results": [
+        {
+          "candidate": "Next.js",
+          "jd": "React",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "NestJS",
+          "jd": "Node.js",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "Django",
+          "jd": "Python",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "FastAPI",
+          "jd": "Python",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "Spring Boot",
+          "jd": "Java",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "Flask",
+          "jd": "Python",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "TypeScript",
+          "jd": "JavaScript",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "React Native",
+          "jd": "React",
+          "weight": 1.0,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "Kotlin",
+          "jd": "Java",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "Express.js",
+          "jd": "Node.js",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "PyTorch",
+          "jd": "Python",
+          "weight": 0.75,
+          "expected_positive": true,
+          "threshold": 0.75,
+          "pass": true
+        },
+        {
+          "candidate": "React",
+          "jd": "React",
+          "weight": 1.0,
+          "expected_positive": true,
+          "threshold": 1.0,
+          "pass": true
+        },
+        {
+          "candidate": "Python",
+          "jd": "Python",
+          "weight": 1.0,
+          "expected_positive": true,
+          "threshold": 1.0,
+          "pass": true
+        },
+        {
+          "candidate": "Docker",
+          "jd": "Docker",
+          "weight": 1.0,
+          "expected_positive": true,
+          "threshold": 1.0,
+          "pass": true
+        },
+        {
+          "candidate": "JS",
+          "jd": "JavaScript",
+          "weight": 1.0,
+          "expected_positive": true,
+          "threshold": 1.0,
+          "pass": true
+        },
+        {
+          "candidate": "SEO",
+          "jd": "Python",
+          "weight": 0.0,
+          "expected_positive": false,
+          "threshold": 0.0,
+          "pass": true
+        },
+        {
+          "candidate": "Nursing",
+          "jd": "React",
+          "weight": 0.0,
+          "expected_positive": false,
+          "threshold": 0.0,
+          "pass": true
+        },
+        {
+          "candidate": "Accounting",
+          "jd": "Docker",
+          "weight": 0.0,
+          "expected_positive": false,
+          "threshold": 0.0,
+          "pass": true
+        },
+        {
+          "candidate": "Python",
+          "jd": "Java",
+          "weight": 0.0,
+          "expected_positive": false,
+          "threshold": 0.0,
+          "pass": true
+        }
+      ]
+    },
+    "ranking": {
+      "jd_rankings": {
+        "Backend Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "CV_Shalini_Nair.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "CV_Vikram_Rao.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "backend.pdf",
+              "name": "ZOE THOMPSON",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 9,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 10,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 11,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 12,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 13,
+              "file": "cv (1049).pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 4
+            },
+            {
+              "rank": 14,
+              "file": "cv (4442).pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 5
+            },
+            {
+              "rank": 15,
+              "file": "cv (4446).pdf",
+              "name": "Pavithra Shetty",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 4
+            },
+            {
+              "rank": 16,
+              "file": "front-end.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 17,
+              "file": "5.pdf",
+              "name": "John Smith",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 2
+            },
+            {
+              "rank": 18,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 5
+            },
+            {
+              "rank": 19,
+              "file": "cv (1857).pdf",
+              "name": "Mashad Abbas",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 23
+            },
+            {
+              "rank": 20,
+              "file": "cv (2578).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 7
+            }
+          ],
+          "total": 5076
+        },
+        "Frontend Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 65.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "frontend.pdf",
+              "name": "Harper Garcia",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "cv (4442).pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 5
+            },
+            {
+              "rank": 4,
+              "file": "cv (799).pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 8
+            },
+            {
+              "rank": 5,
+              "file": "front-end.pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "2.pdf",
+              "name": "DANIEL GAN",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "6/10",
+              "exp_count": 2
+            },
+            {
+              "rank": 7,
+              "file": "cv (1234).pdf",
+              "name": "HARI KRISHNAN",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 9
+            },
+            {
+              "rank": 8,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 5
+            },
+            {
+              "rank": 9,
+              "file": "cv (1527).pdf",
+              "name": "Ramya. M",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 5
+            },
+            {
+              "rank": 10,
+              "file": "cv (2578).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 7
+            },
+            {
+              "rank": 11,
+              "file": "cv (2856).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 9
+            },
+            {
+              "rank": 12,
+              "file": "cv (3738).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 9
+            },
+            {
+              "rank": 13,
+              "file": "cv (4014).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 7
+            },
+            {
+              "rank": 14,
+              "file": "cv (4494).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 1
+            },
+            {
+              "rank": 15,
+              "file": "cv (4772).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/10",
+              "exp_count": 1
+            },
+            {
+              "rank": 16,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 3
+            },
+            {
+              "rank": 17,
+              "file": "cv (1101).pdf",
+              "name": "Frederick Chen",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 2
+            },
+            {
+              "rank": 18,
+              "file": "cv (1143).pdf",
+              "name": "Priya Elza",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 2
+            },
+            {
+              "rank": 19,
+              "file": "cv (1222).pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/10",
+              "exp_count": 2
+            },
+            {
+              "rank": 20,
+              "file": "cv (1520).pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/10",
+              "exp_count": 3
+            }
+          ],
+          "total": 5076
+        },
+        "Fullstack Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 62.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 57.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "backend.pdf",
+              "name": "ZOE THOMPSON",
+              "score": 57.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "front-end.pdf",
+              "name": "",
+              "score": 57.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 9,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 10,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 11,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 12,
+              "file": "CV_Shalini_Nair.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 13,
+              "file": "CV_Vikram_Rao.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 14,
+              "file": "devops.pdf",
+              "name": "VICTORIA BAKER",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 15,
+              "file": "frontend.pdf",
+              "name": "Harper Garcia",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 16,
+              "file": "cv (4442).pdf",
+              "name": "",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 5
+            },
+            {
+              "rank": 17,
+              "file": "cv (4446).pdf",
+              "name": "Pavithra Shetty",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 4
+            },
+            {
+              "rank": 18,
+              "file": "cv (4290).pdf",
+              "name": "",
+              "score": 47.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 1
+            },
+            {
+              "rank": 19,
+              "file": "cv (1049).pdf",
+              "name": "",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 4
+            },
+            {
+              "rank": 20,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 5
+            }
+          ],
+          "total": 5076
+        },
+        "DevOps Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "devops.pdf",
+              "name": "VICTORIA BAKER",
+              "score": 73.9,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "7/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 62.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "CV_Shalini_Nair.pdf",
+              "name": "",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "cv (4597).pdf",
+              "name": "",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 5
+            },
+            {
+              "rank": 8,
+              "file": "cv (4884).pdf",
+              "name": "Joseline",
+              "score": 47.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 1
+            },
+            {
+              "rank": 9,
+              "file": "cv (4962).pdf",
+              "name": "Joseline",
+              "score": 47.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 1
+            },
+            {
+              "rank": 10,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 11,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 12,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 13,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 14,
+              "file": "CV_Vikram_Rao.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 15,
+              "file": "backend.pdf",
+              "name": "ZOE THOMPSON",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 16,
+              "file": "front-end.pdf",
+              "name": "",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 17,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 46.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 18,
+              "file": "cv (1049).pdf",
+              "name": "",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 4
+            },
+            {
+              "rank": 19,
+              "file": "cv (1234).pdf",
+              "name": "HARI KRISHNAN",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 9
+            },
+            {
+              "rank": 20,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 5
+            }
+          ],
+          "total": 5076
+        },
+        "Data Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 73.9,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "7/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 73.9,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "7/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 73.9,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "7/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "CV_Shalini_Nair.pdf",
+              "name": "",
+              "score": 73.9,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "7/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 68.3,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 68.3,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 68.3,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "5.pdf",
+              "name": "John Smith",
+              "score": 63.3,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/9",
+              "exp_count": 2
+            },
+            {
+              "rank": 9,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 62.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 10,
+              "file": "CV_Vikram_Rao.pdf",
+              "name": "",
+              "score": 62.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 11,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 57.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 12,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 51.7,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/9",
+              "exp_count": 3
+            },
+            {
+              "rank": 13,
+              "file": "cv (1049).pdf",
+              "name": "",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 4
+            },
+            {
+              "rank": 14,
+              "file": "cv (1857).pdf",
+              "name": "Mashad Abbas",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 23
+            },
+            {
+              "rank": 15,
+              "file": "cv (4442).pdf",
+              "name": "",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 5
+            },
+            {
+              "rank": 16,
+              "file": "cv (4446).pdf",
+              "name": "Pavithra Shetty",
+              "score": 51.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/9",
+              "exp_count": 4
+            },
+            {
+              "rank": 17,
+              "file": "cv (4864).pdf",
+              "name": "",
+              "score": 47.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 1
+            },
+            {
+              "rank": 18,
+              "file": "cv (4924).pdf",
+              "name": "",
+              "score": 47.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/9",
+              "exp_count": 1
+            },
+            {
+              "rank": 19,
+              "file": "cv (1234).pdf",
+              "name": "HARI KRISHNAN",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 9
+            },
+            {
+              "rank": 20,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 45.6,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/9",
+              "exp_count": 5
+            }
+          ],
+          "total": 5076
+        },
+        "Data Scientist": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 66.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 66.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 66.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 9,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 58.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/8",
+              "exp_count": 5
+            },
+            {
+              "rank": 10,
+              "file": "cv (4446).pdf",
+              "name": "Pavithra Shetty",
+              "score": 58.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/8",
+              "exp_count": 4
+            },
+            {
+              "rank": 11,
+              "file": "cv (10).pdf",
+              "name": "Chechnik",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 12,
+              "file": "cv (4840).pdf",
+              "name": "Gruvil Technologies",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 13,
+              "file": "cv (4843).pdf",
+              "name": "Chechnik",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 14,
+              "file": "cv (4864).pdf",
+              "name": "",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 15,
+              "file": "cv (4884).pdf",
+              "name": "Joseline",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 16,
+              "file": "cv (4924).pdf",
+              "name": "",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 17,
+              "file": "cv (4962).pdf",
+              "name": "Joseline",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 18,
+              "file": "cv (4997).pdf",
+              "name": "Edison",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 19,
+              "file": "cv (5010).pdf",
+              "name": "BLAKE MESTLY",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 20,
+              "file": "cv (6).pdf",
+              "name": "Gruvil Technologies",
+              "score": 56.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 1
+            }
+          ],
+          "total": 5076
+        },
+        "ML Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "CV_Rahul_Gupta.pdf",
+              "name": "",
+              "score": 66.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "5/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "cv (4864).pdf",
+              "name": "",
+              "score": 62.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 3,
+              "file": "cv (4884).pdf",
+              "name": "Joseline",
+              "score": 62.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 4,
+              "file": "cv (4924).pdf",
+              "name": "",
+              "score": 62.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 5,
+              "file": "cv (4962).pdf",
+              "name": "Joseline",
+              "score": 62.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "6/8",
+              "exp_count": 1
+            },
+            {
+              "rank": 6,
+              "file": "CV_Amit_Sharma.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "CV_Kiran_Malhotra.pdf",
+              "name": "",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "devops.pdf",
+              "name": "VICTORIA BAKER",
+              "score": 60.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "4/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 9,
+              "file": "CV_Priya_Patel.pdf",
+              "name": "",
+              "score": 53.8,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 10,
+              "file": "CV_Aditya_Joshi.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 11,
+              "file": "CV_Ananya_Desai.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 12,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 13,
+              "file": "CV_Rohan_Mehra.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 14,
+              "file": "CV_Shalini_Nair.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 15,
+              "file": "CV_Vikram_Rao.pdf",
+              "name": "",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 16,
+              "file": "fullstack.pdf",
+              "name": "MARCUS HALL",
+              "score": 47.5,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/8",
+              "exp_count": 3
+            },
+            {
+              "rank": 17,
+              "file": "cv (1049).pdf",
+              "name": "",
+              "score": 46.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/8",
+              "exp_count": 4
+            },
+            {
+              "rank": 18,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 46.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/8",
+              "exp_count": 5
+            },
+            {
+              "rank": 19,
+              "file": "cv (4442).pdf",
+              "name": "",
+              "score": 46.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/8",
+              "exp_count": 5
+            },
+            {
+              "rank": 20,
+              "file": "cv (4446).pdf",
+              "name": "Pavithra Shetty",
+              "score": 46.2,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/8",
+              "exp_count": 4
+            }
+          ],
+          "total": 5076
+        },
+        "Marketing Manager": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "digitalmarketin.pdf",
+              "name": "LIAM",
+              "score": 65.7,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "5/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 2,
+              "file": "3.pdf",
+              "name": "Christopher Fowler",
+              "score": 63.6,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "4/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "senior_digitalmarketing.pdf",
+              "name": "ELIJAH BROWN",
+              "score": 63.6,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "4/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "cv (2684).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 13
+            },
+            {
+              "rank": 5,
+              "file": "cv (3092).pdf",
+              "name": "SAYYED SHAIFAL ABBAS",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 8
+            },
+            {
+              "rank": 6,
+              "file": "cv (3516).pdf",
+              "name": "SAYYED SHAIFAL ABBAS",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 8
+            },
+            {
+              "rank": 7,
+              "file": "cv (3931).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 13
+            },
+            {
+              "rank": 8,
+              "file": "cv (4278).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 9
+            },
+            {
+              "rank": 9,
+              "file": "cv (4291).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 7
+            },
+            {
+              "rank": 10,
+              "file": "cv (4358).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 11,
+              "file": "cv (4514).pdf",
+              "name": "Daiana Rocha",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 12,
+              "file": "cv (4638).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 6
+            },
+            {
+              "rank": 13,
+              "file": "cv (4267).pdf",
+              "name": "",
+              "score": 53.6,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "4/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 14,
+              "file": "cv (4734).pdf",
+              "name": "",
+              "score": 53.6,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "4/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 15,
+              "file": "cv (1379).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 16,
+              "file": "cv (1443).pdf",
+              "name": "Alfred (Yi) Zhang",
+              "score": 49.3,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 17,
+              "file": "cv (1042).pdf",
+              "name": "",
+              "score": 47.1,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "1/7",
+              "exp_count": 11
+            },
+            {
+              "rank": 18,
+              "file": "cv (1058).pdf",
+              "name": "Anju Sasi",
+              "score": 47.1,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 19,
+              "file": "cv (1090).pdf",
+              "name": "",
+              "score": 47.1,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "1/7",
+              "exp_count": 9
+            },
+            {
+              "rank": 20,
+              "file": "cv (1112).pdf",
+              "name": "Reetabrata Bhattacharya",
+              "score": 47.1,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "1/7",
+              "exp_count": 6
+            }
+          ],
+          "total": 5076
+        },
+        "Sales Executive": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "sales.pdf",
+              "name": "ISAAC HALL",
+              "score": 55.0,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "4/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "cv (2669).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "3/5",
+              "exp_count": 11
+            },
+            {
+              "rank": 3,
+              "file": "cv (2901).pdf",
+              "name": "SALIK SHAIKH",
+              "score": 50.0,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "3/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 4,
+              "file": "cv (3717).pdf",
+              "name": "SALIK SHAIKH",
+              "score": 50.0,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "3/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 5,
+              "file": "cv (3916).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "3/5",
+              "exp_count": 11
+            },
+            {
+              "rank": 6,
+              "file": "CV_Neha_Singh.pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "3/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 7,
+              "file": "cv (170).pdf",
+              "name": "Gaurav Kumar",
+              "score": 45.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "3/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 8,
+              "file": "cv (4390).pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "4/5",
+              "exp_count": 1
+            },
+            {
+              "rank": 9,
+              "file": "cv (1100).pdf",
+              "name": "M S",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "2/5",
+              "exp_count": 6
+            },
+            {
+              "rank": 10,
+              "file": "cv (1132).pdf",
+              "name": "Oman Career Software",
+              "score": 40.0,
+              "domain": "accounting",
+              "sub_domain": "accounting",
+              "skill_overlap": "2/5",
+              "exp_count": 4
+            },
+            {
+              "rank": 11,
+              "file": "cv (1239).pdf",
+              "name": "Hussein Masoud",
+              "score": 40.0,
+              "domain": "accounting",
+              "sub_domain": "accounting",
+              "skill_overlap": "2/5",
+              "exp_count": 7
+            },
+            {
+              "rank": 12,
+              "file": "cv (2041).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 34
+            },
+            {
+              "rank": 13,
+              "file": "cv (2261).pdf",
+              "name": "Unmesh Ramesh Thorat",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 17
+            },
+            {
+              "rank": 14,
+              "file": "cv (2290).pdf",
+              "name": "Shahriar Saaed Niazi",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 15,
+              "file": "cv (2312).pdf",
+              "name": "SHOIAB KHAN",
+              "score": 40.0,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "2/5",
+              "exp_count": 12
+            },
+            {
+              "rank": 16,
+              "file": "cv (2763).pdf",
+              "name": "MOHAMED ISMAIL",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 41
+            },
+            {
+              "rank": 17,
+              "file": "cv (3832).pdf",
+              "name": "MOHAMED ISMAIL",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 41
+            },
+            {
+              "rank": 18,
+              "file": "cv (77).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 19,
+              "file": "cv (1024).pdf",
+              "name": "",
+              "score": 35.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "2/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 20,
+              "file": "cv (1106).pdf",
+              "name": "Dheeraj S. Sharma",
+              "score": 35.0,
+              "domain": "marketing",
+              "sub_domain": "marketing",
+              "skill_overlap": "3/5",
+              "exp_count": 1
+            }
+          ],
+          "total": 5076
+        },
+        "HR Manager": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (1765).pdf",
+              "name": "UPADHYAY",
+              "score": 56.7,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "2/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 2,
+              "file": "cv (408).pdf",
+              "name": "",
+              "score": 56.7,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "2/6",
+              "exp_count": 13
+            },
+            {
+              "rank": 3,
+              "file": "cv (4571).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "3/6",
+              "exp_count": 1
+            },
+            {
+              "rank": 4,
+              "file": "cv (4605).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "3/6",
+              "exp_count": 1
+            },
+            {
+              "rank": 5,
+              "file": "cv (1108).pdf",
+              "name": "Mahendra Kumar Yogi",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 13
+            },
+            {
+              "rank": 6,
+              "file": "cv (1545).pdf",
+              "name": "M Priyadharsini",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 4
+            },
+            {
+              "rank": 7,
+              "file": "cv (2011).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 8
+            },
+            {
+              "rank": 8,
+              "file": "cv (2383).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 8
+            },
+            {
+              "rank": 9,
+              "file": "cv (2972).pdf",
+              "name": "ARIF AHAMED M",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 5
+            },
+            {
+              "rank": 10,
+              "file": "cv (3123).pdf",
+              "name": "Radha HG",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 11,
+              "file": "cv (3175).pdf",
+              "name": "Bhola Nagar",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 9
+            },
+            {
+              "rank": 12,
+              "file": "cv (3365).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 8
+            },
+            {
+              "rank": 13,
+              "file": "cv (3470).pdf",
+              "name": "Bhola Nagar",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 9
+            },
+            {
+              "rank": 14,
+              "file": "cv (3483).pdf",
+              "name": "Radha HG",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 15,
+              "file": "cv (3659).pdf",
+              "name": "ARIF AHAMED M",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 5
+            },
+            {
+              "rank": 16,
+              "file": "cv (69).pdf",
+              "name": "Bhola Nagar",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 13
+            },
+            {
+              "rank": 17,
+              "file": "cv (864).pdf",
+              "name": "Hitesh Sagar",
+              "score": 48.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 11
+            },
+            {
+              "rank": 18,
+              "file": "cv (2329).pdf",
+              "name": "Mohammed Hidayath",
+              "score": 45.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "3/6",
+              "exp_count": 0
+            },
+            {
+              "rank": 19,
+              "file": "cv (4219).pdf",
+              "name": "Mohammed Hidayath",
+              "score": 45.0,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "3/6",
+              "exp_count": 0
+            },
+            {
+              "rank": 20,
+              "file": "cv (1024).pdf",
+              "name": "",
+              "score": 43.3,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "1/6",
+              "exp_count": 3
+            }
+          ],
+          "total": 5076
+        },
+        "Accountant": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (1282).pdf",
+              "name": "Godwin Opati Sitati",
+              "score": 54.3,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "2/7",
+              "exp_count": 8
+            },
+            {
+              "rank": 2,
+              "file": "cv (1436).pdf",
+              "name": "Abdullatif A. Shehadeh",
+              "score": 54.3,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "2/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 3,
+              "file": "cv (972).pdf",
+              "name": "ABU RAIS SIDDIQUI",
+              "score": 54.3,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "2/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 4,
+              "file": "cv (1415).pdf",
+              "name": "Sammy Musungu",
+              "score": 48.6,
+              "domain": "accounting",
+              "sub_domain": "accounting",
+              "skill_overlap": "4/7",
+              "exp_count": 6
+            },
+            {
+              "rank": 5,
+              "file": "cv (1270).pdf",
+              "name": "Finance Minister",
+              "score": 47.1,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "1/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 6,
+              "file": "cv (1271).pdf",
+              "name": "Finance Minister",
+              "score": 47.1,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "1/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 7,
+              "file": "cv (1363).pdf",
+              "name": "Khulood Rashed Al-Saad",
+              "score": 47.1,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 8,
+              "file": "cv (850).pdf",
+              "name": "",
+              "score": 47.1,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "1/7",
+              "exp_count": 14
+            },
+            {
+              "rank": 9,
+              "file": "cv (1039).pdf",
+              "name": "VINEET MATHRADAS",
+              "score": 42.1,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "1/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 10,
+              "file": "cv (1040).pdf",
+              "name": "Virak Internship Hdfc",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 10
+            },
+            {
+              "rank": 11,
+              "file": "cv (1100).pdf",
+              "name": "M S",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 6
+            },
+            {
+              "rank": 12,
+              "file": "cv (1316).pdf",
+              "name": "Dinesh Joghee Sockkan",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 6
+            },
+            {
+              "rank": 13,
+              "file": "cv (1325).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 10
+            },
+            {
+              "rank": 14,
+              "file": "cv (1505).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 7
+            },
+            {
+              "rank": 15,
+              "file": "cv (2567).pdf",
+              "name": "CHAISE JAYAPRAKASH (CPSM)",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 16,
+              "file": "cv (2717).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 12
+            },
+            {
+              "rank": 17,
+              "file": "cv (2853).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 12
+            },
+            {
+              "rank": 18,
+              "file": "cv (2908).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 28
+            },
+            {
+              "rank": 19,
+              "file": "cv (3178).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 12
+            },
+            {
+              "rank": 20,
+              "file": "cv (3473).pdf",
+              "name": "",
+              "score": 40.0,
+              "domain": "finance",
+              "sub_domain": "finance",
+              "skill_overlap": "0/7",
+              "exp_count": 12
+            }
+          ],
+          "total": 5076
+        },
+        "Civil Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (1882).pdf",
+              "name": "MOHD AAMIR",
+              "score": 59.3,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 12
+            },
+            {
+              "rank": 2,
+              "file": "cv (1671).pdf",
+              "name": "",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 11
+            },
+            {
+              "rank": 3,
+              "file": "cv (1737).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 4,
+              "file": "cv (1778).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 5,
+              "file": "cv (1800).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 6,
+              "file": "cv (2157).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 7,
+              "file": "cv (2207).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 8,
+              "file": "cv (2376).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 9,
+              "file": "cv (2570).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 10,
+              "file": "cv (3160).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 11,
+              "file": "cv (3455).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 12,
+              "file": "cv (4006).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 13,
+              "file": "cv (4201).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 14,
+              "file": "cv (56).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 15,
+              "file": "cv (625).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 16,
+              "file": "cv (82).pdf",
+              "name": "RAHIL",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 17,
+              "file": "cv (1656).pdf",
+              "name": "",
+              "score": 51.4,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "3/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 18,
+              "file": "cv (2415).pdf",
+              "name": "",
+              "score": 51.4,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "3/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 19,
+              "file": "cv (4175).pdf",
+              "name": "",
+              "score": 51.4,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "3/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 20,
+              "file": "11.pdf",
+              "name": "Emily Davies",
+              "score": 47.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 3
+            }
+          ],
+          "total": 5076
+        },
+        "Electrical Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (2492).pdf",
+              "name": "IMRAN ALI",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 9
+            },
+            {
+              "rank": 2,
+              "file": "cv (294).pdf",
+              "name": "Shahbaz Khurram",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 11
+            },
+            {
+              "rank": 3,
+              "file": "cv (4058).pdf",
+              "name": "IMRAN ALI",
+              "score": 45.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 9
+            },
+            {
+              "rank": 4,
+              "file": "cv (1200).pdf",
+              "name": "___________________________",
+              "score": 37.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 5,
+              "file": "cv (4249).pdf",
+              "name": "WORKING RF SYSTEMS ENGINEER",
+              "score": 37.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 6,
+              "file": "cv (4359).pdf",
+              "name": "Project Manager",
+              "score": 37.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 7,
+              "file": "cv (4753).pdf",
+              "name": "AVIATION ENGINEER",
+              "score": 37.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 8,
+              "file": "cv (1502).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 9,
+              "file": "cv (1527).pdf",
+              "name": "Ramya. M",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 10,
+              "file": "cv (1836).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 11,
+              "file": "cv (2539).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 12,
+              "file": "cv (4040).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 13,
+              "file": "cv (799).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "software_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 8
+            },
+            {
+              "rank": 14,
+              "file": "cv (852).pdf",
+              "name": "",
+              "score": 32.1,
+              "domain": "engineering",
+              "sub_domain": "civil_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 15,
+              "file": "cv (1079).pdf",
+              "name": "CVCV",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 16,
+              "file": "cv (1426).pdf",
+              "name": "RAJA PAULRAJ",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 17,
+              "file": "cv (1891).pdf",
+              "name": "Kumar N.Y.",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 18,
+              "file": "cv (1897).pdf",
+              "name": "Mohammad Fahimuddin",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 19,
+              "file": "cv (2194).pdf",
+              "name": "Mohammad Fahimuddin",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 20,
+              "file": "cv (2394).pdf",
+              "name": "Motars Qatar Qatar",
+              "score": 30.0,
+              "domain": "engineering",
+              "sub_domain": "electrical_engineering",
+              "skill_overlap": "0/7",
+              "exp_count": 1
+            }
+          ],
+          "total": 5076
+        },
+        "Mechanical Engineer": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (340).pdf",
+              "name": "SA",
+              "score": 59.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 4
+            },
+            {
+              "rank": 2,
+              "file": "cv (2600).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 3,
+              "file": "cv (3224).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 4,
+              "file": "cv (3404).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "cv (3971).pdf",
+              "name": "",
+              "score": 54.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "cv (1850).pdf",
+              "name": "ANUJ UPPAL",
+              "score": 53.6,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "4/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 7,
+              "file": "cv (2038).pdf",
+              "name": "",
+              "score": 53.6,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "4/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 8,
+              "file": "cv (361).pdf",
+              "name": "M.YAKOOTH",
+              "score": 53.6,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "4/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 9,
+              "file": "cv (829).pdf",
+              "name": "",
+              "score": 53.6,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "4/7",
+              "exp_count": 0
+            },
+            {
+              "rank": 10,
+              "file": "cv (2179).pdf",
+              "name": "JAGDISH CHAUDHARY",
+              "score": 52.1,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "1/7",
+              "exp_count": 5
+            },
+            {
+              "rank": 11,
+              "file": "cv (4248).pdf",
+              "name": "",
+              "score": 51.4,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "3/7",
+              "exp_count": 1
+            },
+            {
+              "rank": 12,
+              "file": "cv (1931).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 13,
+              "file": "cv (2898).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 14,
+              "file": "cv (3266).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 15,
+              "file": "cv (3389).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 16,
+              "file": "cv (3714).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 17,
+              "file": "cv (379).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 18,
+              "file": "cv (613).pdf",
+              "name": "",
+              "score": 49.3,
+              "domain": "engineering",
+              "sub_domain": "mechanical_engineering",
+              "skill_overlap": "2/7",
+              "exp_count": 2
+            },
+            {
+              "rank": 19,
+              "file": "cv (2181).pdf",
+              "name": "GYANESH GULSHAN",
+              "score": 48.6,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "4/7",
+              "exp_count": 7
+            },
+            {
+              "rank": 20,
+              "file": "cv (268).pdf",
+              "name": "Deepak Patel",
+              "score": 48.6,
+              "domain": "hr",
+              "sub_domain": "hr",
+              "skill_overlap": "4/7",
+              "exp_count": 6
+            }
+          ],
+          "total": 5076
+        },
+        "Legal Advisor": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "15.pdf",
+              "name": "John Smith",
+              "score": 60.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "3/5",
+              "exp_count": 2
+            },
+            {
+              "rank": 2,
+              "file": "cv (1332).pdf",
+              "name": "Adarsh Ramesh",
+              "score": 60.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "2/5",
+              "exp_count": 4
+            },
+            {
+              "rank": 3,
+              "file": "cv (4250).pdf",
+              "name": "Court Procedures Due Dilligence",
+              "score": 55.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "3/5",
+              "exp_count": 1
+            },
+            {
+              "rank": 4,
+              "file": "cv (4272).pdf",
+              "name": "",
+              "score": 55.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "3/5",
+              "exp_count": 1
+            },
+            {
+              "rank": 5,
+              "file": "cv (1144).pdf",
+              "name": "MOHAMMED JAVED KHAN",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 6
+            },
+            {
+              "rank": 6,
+              "file": "cv (1801).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 7
+            },
+            {
+              "rank": 7,
+              "file": "cv (1811).pdf",
+              "name": "VIVEK RAJA",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 4
+            },
+            {
+              "rank": 8,
+              "file": "cv (2113).pdf",
+              "name": "INSTRUMENT & CONTROL ENGINEER/TECHNICIAN",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 9,
+              "file": "cv (2642).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 10
+            },
+            {
+              "rank": 10,
+              "file": "cv (2976).pdf",
+              "name": "Siddharth Aggarwal",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 23
+            },
+            {
+              "rank": 11,
+              "file": "cv (3000).pdf",
+              "name": "INSTRUMENT & CONTROL ENGINEER/TECHNICIAN",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 12,
+              "file": "cv (3621).pdf",
+              "name": "INSTRUMENT & CONTROL ENGINEER/TECHNICIAN",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 13,
+              "file": "cv (3663).pdf",
+              "name": "Siddharth Aggarwal",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 23
+            },
+            {
+              "rank": 14,
+              "file": "cv (3951).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 10
+            },
+            {
+              "rank": 15,
+              "file": "cv (467).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 9
+            },
+            {
+              "rank": 16,
+              "file": "cv (4706).pdf",
+              "name": "Information Technology Specialist(Discountpcfix)",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 4
+            },
+            {
+              "rank": 17,
+              "file": "cv (84).pdf",
+              "name": "SADATH BASHA.A.M",
+              "score": 50.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 5
+            },
+            {
+              "rank": 18,
+              "file": "cv (113).pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 19,
+              "file": "cv (1855).pdf",
+              "name": "",
+              "score": 45.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 3
+            },
+            {
+              "rank": 20,
+              "file": "cv (196).pdf",
+              "name": "ZAFER HUSSAIN",
+              "score": 45.0,
+              "domain": "legal",
+              "sub_domain": "legal",
+              "skill_overlap": "1/5",
+              "exp_count": 3
+            }
+          ],
+          "total": 5076
+        },
+        "Healthcare Specialist": {
+          "top20": [
+            {
+              "rank": 1,
+              "file": "cv (989).pdf",
+              "name": "",
+              "score": 68.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "4/6",
+              "exp_count": 3
+            },
+            {
+              "rank": 2,
+              "file": "cv (4351).pdf",
+              "name": "",
+              "score": 58.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "4/6",
+              "exp_count": 1
+            },
+            {
+              "rank": 3,
+              "file": "cv (1025).pdf",
+              "name": "University Departmental Post",
+              "score": 56.7,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/6",
+              "exp_count": 5
+            },
+            {
+              "rank": 4,
+              "file": "10.pdf",
+              "name": "Charly Dolman",
+              "score": 51.7,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/6",
+              "exp_count": 3
+            },
+            {
+              "rank": 5,
+              "file": "cv (4317).pdf",
+              "name": "Microsoft Office",
+              "score": 51.7,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "2/6",
+              "exp_count": 3
+            },
+            {
+              "rank": 6,
+              "file": "cv (4523).pdf",
+              "name": "Core Accomplishments",
+              "score": 50.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "3/6",
+              "exp_count": 1
+            },
+            {
+              "rank": 7,
+              "file": "cv (4751).pdf",
+              "name": "",
+              "score": 50.0,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "3/6",
+              "exp_count": 1
+            },
+            {
+              "rank": 8,
+              "file": "cv (1050).pdf",
+              "name": "WANGILA Abraham Masinde",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 4
+            },
+            {
+              "rank": 9,
+              "file": "cv (1265).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 11
+            },
+            {
+              "rank": 10,
+              "file": "cv (1335).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 11,
+              "file": "cv (1620).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 4
+            },
+            {
+              "rank": 12,
+              "file": "cv (1770).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 13,
+              "file": "cv (1892).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 23
+            },
+            {
+              "rank": 14,
+              "file": "cv (2014).pdf",
+              "name": "S.Patterson Gnanasamy",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 25
+            },
+            {
+              "rank": 15,
+              "file": "cv (2211).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 8
+            },
+            {
+              "rank": 16,
+              "file": "cv (2927).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 13
+            },
+            {
+              "rank": 17,
+              "file": "cv (293).pdf",
+              "name": "EDUCATIONAL & PERSONAL DETAIL",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 18,
+              "file": "cv (3005).pdf",
+              "name": "",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 15
+            },
+            {
+              "rank": 19,
+              "file": "cv (3128).pdf",
+              "name": "K. HENRY JOSEPH",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            },
+            {
+              "rank": 20,
+              "file": "cv (3488).pdf",
+              "name": "K. HENRY JOSEPH",
+              "score": 48.3,
+              "domain": "healthcare",
+              "sub_domain": "healthcare",
+              "skill_overlap": "1/6",
+              "exp_count": 6
+            }
+          ],
+          "total": 5076
+        }
+      }
+    },
+    "fp": {
+      "count": 4,
+      "rate": 2.5,
+      "formula": "4 / (16 \u00d7 10)",
+      "cases": [
+        {
+          "jd": "Frontend Engineer",
+          "jd_dept": "engineering",
+          "file": "2.pdf",
+          "name": "DANIEL GAN",
+          "score": 50.0,
+          "domain": "engineering",
+          "sub_domain": "civil_engineering",
+          "skill_overlap": "6/10",
+          "exp_count": 2,
+          "reason": "civil_engineering candidate in software JD 'Frontend Engineer'"
+        },
+        {
+          "jd": "Sales Executive",
+          "jd_dept": "sales",
+          "file": "CV_Neha_Singh.pdf",
+          "name": "",
+          "score": 45.0,
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_overlap": "3/5",
+          "exp_count": 3,
+          "reason": "engineering candidate in non-eng JD 'Sales Executive'"
+        },
+        {
+          "jd": "Electrical Engineer",
+          "jd_dept": "electrical engineering",
+          "file": "cv (1502).pdf",
+          "name": "",
+          "score": 32.1,
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_overlap": "1/7",
+          "exp_count": 5,
+          "reason": "software_engineering candidate in Electrical Engineer JD"
+        },
+        {
+          "jd": "Electrical Engineer",
+          "jd_dept": "electrical engineering",
+          "file": "cv (1527).pdf",
+          "name": "Ramya. M",
+          "score": 32.1,
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_overlap": "1/7",
+          "exp_count": 5,
+          "reason": "software_engineering candidate in Electrical Engineer JD"
+        }
+      ]
+    },
+    "fn": {
+      "count": 150,
+      "cases": [
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (1222).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 18,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (1543).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (1635).pdf",
+          "name": "Shanbagam Thanikachalam",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 39,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (2).pdf",
+          "name": "KEISUKE YAMAMOTO",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 12,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4).pdf",
+          "name": "NOLAN",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 15,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4249).pdf",
+          "name": "WORKING RF SYSTEMS ENGINEER",
+          "domain": "engineering",
+          "sub_domain": "electrical_engineering",
+          "skill_count": 46,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4290).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 55,
+          "skill_overlap": 4,
+          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4494).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 49,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4645).pdf",
+          "name": "People Centered Leadership",
+          "domain": "engineering",
+          "sub_domain": "civil_engineering",
+          "skill_count": 27,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4772).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 63,
+          "skill_overlap": 4,
+          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4809).pdf",
+          "name": "JACOB",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 16,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4811).pdf",
+          "name": "Jose Curricular",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 10,
+          "skill_overlap": 4,
+          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4821).pdf",
+          "name": "FRESHER",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 7,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4823).pdf",
+          "name": "TAYLOR",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4825).pdf",
+          "name": "Geakminds Inc",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 10,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4829).pdf",
+          "name": "LISA JENNINGS",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 12,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4833).pdf",
+          "name": "Drew Hall",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 10,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4846).pdf",
+          "name": "JACOB",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 16,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4849).pdf",
+          "name": "RODNEY",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
+          "file": "cv (4856).pdf",
+          "name": "E Express",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1109).pdf",
+          "name": "Thiruvallam P.O",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 33,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1359).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 31,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1404).pdf",
+          "name": "CARRIER OBJECTIVES",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 24,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1405).pdf",
+          "name": "CARRIER OBJECTIVES",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 24,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1538).pdf",
+          "name": "Akila Palanimuthu",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 33,
+          "skill_overlap": 4,
+          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (1772).pdf",
+          "name": "MOHD RASHID",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 7,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2).pdf",
+          "name": "KEISUKE YAMAMOTO",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 12,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (20).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 8,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2212).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 27,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2249).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2315).pdf",
+          "name": "Puja Deshmukh",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 10,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2452).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2688).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 15,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2719).pdf",
+          "name": "AMITENDRA GAURAV",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2732).pdf",
+          "name": "TANVEER RAZA",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 46,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (2994).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 8,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (3053).pdf",
+          "name": "B-Tech Fresher",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (3283).pdf",
+          "name": "AMITENDRA GAURAV",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (3306).pdf",
+          "name": "B-Tech Fresher",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (3339).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 15,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (2).pdf",
+          "name": "KEISUKE YAMAMOTO",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 12,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4772).pdf",
+          "name": "",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 63,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4823).pdf",
+          "name": "TAYLOR",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 11,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4830).pdf",
+          "name": "SEAN CAMPBELL",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 21,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4849).pdf",
+          "name": "RODNEY",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4884).pdf",
+          "name": "Joseline",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 19,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4902).pdf",
+          "name": "RODNEY",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 17,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4916).pdf",
+          "name": "JONATHAN",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 18,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4962).pdf",
+          "name": "Joseline",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 19,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
+          "file": "cv (4993).pdf",
+          "name": "BlueM Solutions",
+          "domain": "engineering",
+          "sub_domain": "software_engineering",
+          "skill_count": 12,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        }
+      ]
+    },
+    "performance": {
+      "tiers": [
+        {
+          "n_pdfs": 1,
+          "extract_s": 0.16,
+          "rank_s": 0.005,
+          "memory_mb": 225.4,
+          "failures": 0,
+          "per_pdf_ms": 162.6
+        },
+        {
+          "n_pdfs": 10,
+          "extract_s": 1.4,
+          "rank_s": 0.058,
+          "memory_mb": 225.4,
+          "failures": 0,
+          "per_pdf_ms": 139.8
+        },
+        {
+          "n_pdfs": 100,
+          "extract_s": 13.72,
+          "rank_s": 2.32,
+          "memory_mb": 257.0,
+          "failures": 0,
+          "per_pdf_ms": 137.2
+        },
+        {
+          "n_pdfs": 1000,
+          "extract_s": 180.69,
+          "rank_s": 222.991,
+          "memory_mb": 257.0,
+          "failures": 0,
+          "per_pdf_ms": 180.7
+        },
+        {
+          "n_pdfs": 5076,
+          "extract_s": 886.93,
+          "rank_s": -1,
+          "memory_mb": 257.0,
+          "failures": 0,
+          "per_pdf_ms": 174.7,
+          "note": "Phase 1 batch extraction data"
+        }
+      ]
+    },
+    "frontend": {
+      "accuracy": 94.1,
+      "passed": 16,
+      "total": 17,
+      "checks": [
+        {
+          "name": "POST /jobs",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "POST /resumes",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "SSE extraction",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "POST /score",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Has candidates",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: name",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: document_id",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: final_score",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: rank",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: knocked_out",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: skill_score",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: experience_score",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: keyword_score",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: education_sc\u007fre",
+          "passed": false,
+          "detail": ""
+        },
+        {
+          "name": "Field: matched_must_have",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Field: missing_must_have",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "GET /results",
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    }
+  },
+  "scorecard": {
+    "scores": {
+      "Extraction Quality": 68.7,
+      "Ranking Quality": 92.5,
+      "Knockout Reliability": 100.0,
+      "Domain Accuracy": 85.0,
+      "False Positive Control": 87.5,
+      "False Negative Control": 75.0,
+      "Performance": 100
+    },
+    "overall": 84.7,
+    "verdict": "BETA READY",
+    "deductions": [
+      "Extraction composite: 0.20*name + 0.25*skills + 0.25*experience + 0.20*education + 0.10*email = 68.7",
+      "Ranking: 74 domain-matched in top-5 across 16 JDs = 74/(16\u00d75)",
+      "Knockout: 3/3",
+      "Domain: (5076 - 761) / 5076 = 85.0%",
+      "FP: 4 / (16 \u00d7 10) = 2.5%",
+      "FN: 150 cases"
+    ]
+  }
+}

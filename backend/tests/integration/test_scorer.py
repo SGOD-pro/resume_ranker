@@ -311,9 +311,103 @@ def test_jd_network_engineer(scorer, candidates):
     return results
 
 
+def test_knockout_required_skill_present():
+    """REGRESSION: Candidate with required skill must NOT be knocked out.
+
+    This test must remain permanently. No benchmark may pass unless this passes.
+
+    Validates:
+      1. Candidate WITH must-have skill → knocked_out=False
+      2. Candidate WITHOUT must-have skill → knocked_out=True
+      3. Experience fields use 'start'/'end' (not 'startDate'/'endDate')
+    """
+    scorer = CandidateScorer()
+
+    jd = JobDescription(
+        title="Senior Python Backend", department="Engineering",
+        description="Senior Python backend engineer",
+        must_have_skills=["Python"],
+        nice_to_have_skills=["Docker", "AWS"],
+        min_years=3, max_years=15,
+        required_degree="bachelor", preferred_field="CS",
+        keywords=["backend", "api"],
+        weights={"skills": 0.4, "experience": 0.25, "keywords": 0.2, "education": 0.15},
+    )
+
+    # ── Test 1: Candidate HAS Python → should NOT be knocked out ──────────
+    cand_with_python = {
+        "personal_info": {"name": "Test Python Dev"},
+        "skills": ["Python", "Docker", "AWS"],
+        "experience": [{
+            "role": "Backend Developer", "company": "TestCo",
+            "start": "January 2020", "end": "Present",  # MUST use start/end
+            "description": "Built backend APIs", "achievements": [],
+        }],
+        "education": [{"degree": "Bachelor of Computer Science", "institution": "MIT"}],
+        "projects": [], "certifications": [], "extraction_quality": 0.8,
+        "raw_text_sections": {"full_text": "5 years of experience in Python backend development"},
+    }
+    results = scorer.rank(jd, [cand_with_python])
+    r = results[0]
+
+    print("\n" + "═" * 72)
+    print("  KNOCKOUT REGRESSION TEST")
+    print("═" * 72)
+    print(f"  Test 1: Candidate WITH Python")
+    print(f"    Knocked Out  : {r.knocked_out}")
+    print(f"    KO Reasons   : {r.knockout_reasons}")
+    print(f"    Total Exp Yrs: {r.total_exp_years}")
+    print(f"    Matched Must : {r.matched_must_have}")
+    print(f"    Missing Must : {r.missing_must_have}")
+    print(f"    Final Score  : {r.final_score}")
+
+    assert not r.knocked_out, (
+        f"CRITICAL BUG: Candidate with Python skill should NOT be knocked out. "
+        f"KO reasons: {r.knockout_reasons}"
+    )
+    assert "Python" in r.matched_must_have, (
+        f"BUG: Python should be in matched_must_have, got: {r.matched_must_have}"
+    )
+    print("    ✅ PASS — Not knocked out (correct)")
+
+    # ── Test 2: Candidate WITHOUT Python → SHOULD be knocked out ──────────
+    cand_without_python = {
+        "personal_info": {"name": "Test Java Dev"},
+        "skills": ["Java", "Spring Boot", "Docker"],
+        "experience": [{
+            "role": "Java Developer", "company": "TestCo",
+            "start": "January 2020", "end": "Present",
+            "description": "Built Java APIs", "achievements": [],
+        }],
+        "education": [{"degree": "Bachelor of Computer Science", "institution": "MIT"}],
+        "projects": [], "certifications": [], "extraction_quality": 0.8,
+        "raw_text_sections": {"full_text": "5 years of experience in Java backend development"},
+    }
+    results2 = scorer.rank(jd, [cand_without_python])
+    r2 = results2[0]
+
+    print(f"\n  Test 2: Candidate WITHOUT Python")
+    print(f"    Knocked Out  : {r2.knocked_out}")
+    print(f"    KO Reasons   : {r2.knockout_reasons}")
+    print(f"    Missing Must : {r2.missing_must_have}")
+
+    assert r2.knocked_out, (
+        f"BUG: Candidate without Python should be knocked out. "
+        f"Matched: {r2.matched_must_have}"
+    )
+    print("    ✅ PASS — Knocked out (correct)")
+    print("═" * 72 + "\n")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    # ── Critical regression: Knockout test (runs first, no PDF loading) ────
+    print("=" * 72)
+    print("  KNOCKOUT REGRESSION TEST (runs before PDF loading)")
+    print("=" * 72)
+    test_knockout_required_skill_present()
+
     print("=" * 72)
     print("  LOADING ALL RESUMES FROM:", RESUME_DIR)
     print("=" * 72)
