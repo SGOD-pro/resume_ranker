@@ -142,17 +142,22 @@ class PDFPipelineV3:
         sidebar_sections = self.layout_extractor.parse_sidebar(doc)
 
         # ── Step 4b: Fallback header detection ────────────────────────────
-        # When layout-based parsing finds no real sections (only __PREAMBLE__),
+        # When layout-based parsing finds too few real sections,
         # scan combined text for section header lines using registry matching.
+        # Threshold: < 3 sections means key sections (experience, education)
+        # are likely missing — fallback detection can recover them.
         real_sections = [k for k in main_sections if k != '__PREAMBLE__']
         fallback_used = False
         fallback_candidates = []
-        if not real_sections and domain.domain == 'resume':
+        if len(real_sections) < 3 and domain.domain == 'resume':
             fallback_sections, fallback_candidates = self._fallback_detect_sections(
                 combined_text, doc=doc
             )
             if fallback_sections:
-                main_sections = fallback_sections
+                # Merge: fallback fills gaps but doesn't overwrite existing sections
+                for k, v in fallback_sections.items():
+                    if k not in main_sections or k == '__PREAMBLE__':
+                        main_sections[k] = v
                 fallback_used = True
 
         # ── Step 5: Field extraction ──────────────────────────────────────
@@ -424,9 +429,19 @@ class PDFPipelineV3:
             "dob":      dob,
         }
         # Fix: if location looks like a skill list, clear it
+        _LOCATION_BLOCKLIST = [
+            'python', 'java', 'react', 'node', 'django', 'html', 'css',
+            'javascript', 'typescript', 'angular', 'vue', 'svelte', 'next.js',
+            'photoshop', 'illustrator', 'indesign', 'figma', 'sketch', 'xd',
+            'autocad', 'solidworks', 'matlab', 'tableau', 'excel',
+            'kubernetes', 'docker', 'terraform', 'ansible', 'jenkins',
+            'mongodb', 'postgresql', 'mysql', 'redis', 'elasticsearch',
+            'machine learning', 'deep learning', 'data science',
+            'agile', 'scrum', 'kanban', 'devops', 'ci/cd',
+        ]
         if personal_info.get('location') and any(
             kw in personal_info['location'].lower()
-            for kw in ['python', 'java', 'react', 'node', 'django', 'html', 'css']
+            for kw in _LOCATION_BLOCKLIST
         ):
             personal_info['location'] = None
 
@@ -599,6 +614,33 @@ class PDFPipelineV3:
             projects_raw_text,
             hyperlinks=getattr(doc, 'hyperlinks', [])
         )
+
+        # ── Project fallback 1: full-text section recovery ────────────────
+        # Scan combined text for a "Projects" header that section detection missed
+        if not projects:
+            proj_section_text = self._recover_project_section(combined_text)
+            if proj_section_text:
+                projects = self.project_parser.parse(
+                    proj_section_text,
+                    hyperlinks=getattr(doc, 'hyperlinks', [])
+                )
+
+        # ── Project fallback 2: sidebar project detection ─────────────────
+        if not projects:
+            clean_sidebar = self._strip_tags(doc.sidebar_text)
+            sidebar_plain_sections = self.section_detector.detect(clean_sidebar)
+            proj_sidebar = sidebar_plain_sections.get('projects', '')
+            if proj_sidebar.strip():
+                projects = self.project_parser.parse(
+                    proj_sidebar,
+                    hyperlinks=getattr(doc, 'hyperlinks', [])
+                )
+
+        # ── Project fallback 3: extract implicit projects from experience ─
+        # When no dedicated projects section exists, extract project-like content
+        # from experience descriptions (bullets mentioning "built", "developed", etc.)
+        if not projects and experience:
+            projects = self._extract_implicit_projects(experience, skills)
 
         # ── Summary ───────────────────────────────────────────────────────
         summary = assembler_result.get('profile')
@@ -1109,6 +1151,7 @@ class PDFPipelineV3:
     def _fallback_from_text(self, text: str) -> tuple:
         """Text-only fallback: scan for section headers by line."""
         from src.registries.section_registry import resolve
+        from src.extractors.layout.section_detector import _clean_for_header_match
 
         lines = text.split('\n')
         candidates = []
@@ -1118,7 +1161,8 @@ class PDFPipelineV3:
             if not stripped or len(stripped) < 3:
                 continue
 
-            clean = re.sub(r'\[/?[A-Z_]+\]', '', stripped).strip()
+            # Use section_detector's cleaning (strips PUA, icons, tags, numbered prefixes)
+            clean = _clean_for_header_match(stripped)
             if not clean or len(clean) < 3:
                 continue
 
@@ -1131,7 +1175,7 @@ class PDFPipelineV3:
 
             if score >= 0.5:
                 candidates.append({
-                    'text': clean,
+                    'text': canonical.upper() if canonical else clean,
                     'line_num': i,
                     'canonical': canonical,
                     'score': score,
@@ -1567,6 +1611,121 @@ class PDFPipelineV3:
 
         return entries
 
+    def _recover_project_section(self, combined_text: str) -> str:
+        """Scan combined text for a 'Projects' section header that section detection missed.
+        
+        Returns the text content after the 'Projects' header up to the next section header.
+        """
+        from src.registries.section_registry import resolve as _resolve
+        
+        lines = combined_text.split('\n')
+        project_start = None
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # Look for project-like headers
+            if re.match(r'^(?:Projects?|Personal\s+Projects?|Key\s+Projects?|'
+                       r'Technical\s+Projects?|Academic\s+Projects?|'
+                       r'Side\s+Projects?|Portfolio)\s*:?\s*$', stripped, re.I):
+                project_start = i + 1
+                continue
+            
+            # If we found a project start, look for the next section header
+            if project_start is not None:
+                canonical = _resolve(stripped)
+                if canonical and canonical != 'projects':
+                    # Found next section — return everything between
+                    return '\n'.join(lines[project_start:i]).strip()
+        
+        # If project_start was found but no end marker, return rest of text
+        if project_start is not None:
+            return '\n'.join(lines[project_start:]).strip()
+        
+        return ''
+
+    def _extract_implicit_projects(
+        self,
+        experience: List[Dict[str, Any]],
+        skills: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Extract implicit projects from experience descriptions.
+        
+        Scans experience achievements/descriptions for project-like content:
+        sentences mentioning action verbs (built, developed, created, etc.)
+        alongside technology/skill names.
+        
+        Returns lightweight project entries with source="experience".
+        Only fires for tech-ish resumes (need skills that look like technologies).
+        """
+        # Only extract implicit projects if the resume has tech skills
+        _TECH_INDICATORS = {
+            'python', 'java', 'javascript', 'typescript', 'react', 'angular',
+            'vue', 'node', 'nodejs', 'django', 'flask', 'spring', 'docker',
+            'kubernetes', 'aws', 'azure', 'gcp', 'sql', 'mongodb', 'redis',
+            'go', 'rust', 'c++', 'c#', '.net', 'swift', 'kotlin', 'flutter',
+            'tensorflow', 'pytorch', 'scikit-learn', 'pandas', 'numpy',
+            'html', 'css', 'sass', 'tailwind', 'bootstrap', 'next.js',
+            'graphql', 'rest', 'api', 'microservices', 'ci/cd', 'git',
+        }
+        skills_lower = {s.lower() for s in skills}
+        has_tech = bool(skills_lower & _TECH_INDICATORS)
+        if not has_tech:
+            return []
+        
+        _ACTION_VERBS = re.compile(
+            r'\b(?:Built|Developed|Created|Designed|Implemented|Launched|'
+            r'Deployed|Architected|Engineered|Automated|Integrated|'
+            r'Migrated|Optimized|Refactored|Containerized|Orchestrated)\b',
+            re.I
+        )
+        
+        projects = []
+        seen_names = set()
+        
+        for exp in experience:
+            achievements = exp.get('achievements', []) or []
+            description = exp.get('description', '') or ''
+            all_text = achievements + ([description] if description else [])
+            
+            for text in all_text:
+                if not text or len(text) < 20:
+                    continue
+                if not _ACTION_VERBS.search(text):
+                    continue
+                
+                # Extract mentioned technologies from the bullet
+                mentioned_tech = []
+                for skill in skills:
+                    # Case-insensitive skill matching in bullet text
+                    if re.search(r'\b' + re.escape(skill) + r'\b', text, re.I):
+                        mentioned_tech.append(skill)
+                
+                if len(mentioned_tech) >= 2:
+                    # Create a project name from the first ~8 words of the bullet
+                    name_words = text.split()[:8]
+                    project_name = ' '.join(name_words)
+                    if project_name.endswith(','):
+                        project_name = project_name[:-1]
+                    
+                    # Dedup by name prefix
+                    name_key = project_name[:30].lower()
+                    if name_key in seen_names:
+                        continue
+                    seen_names.add(name_key)
+                    
+                    projects.append({
+                        'name': project_name,
+                        'description': text,
+                        'technologies': mentioned_tech[:6],
+                        'source': 'experience',
+                    })
+                    
+                    # Don't extract too many implicit projects
+                    if len(projects) >= 4:
+                        return projects
+        
+        return projects
+
     def _extract_experience_by_pattern(self, text: str) -> List[Dict[str, Any]]:
         """
         Pattern-based experience extraction for resumes without section headers.
@@ -1681,6 +1840,21 @@ class PDFPipelineV3:
     def _clean_output(self, fields: Dict[str, Any]) -> Dict[str, Any]:
         """Recursively strip tags from all string values and fix bad values."""
         cleaned = self._recursive_strip(fields)
+
+        # ── Strip ||LOC: tags from experience/education fields (defense-in-depth)
+        _loc_re = re.compile(r'\s*\|\|?LOC:[^\n]*', re.I)
+        for exp in cleaned.get('experience', []):
+            if isinstance(exp, dict):
+                for key in ('role', 'company', 'location', 'description'):
+                    val = exp.get(key)
+                    if isinstance(val, str) and '|LOC:' in val:
+                        exp[key] = _loc_re.sub('', val).strip() or None
+        for edu in cleaned.get('education', []):
+            if isinstance(edu, dict):
+                for key in ('degree', 'institution'):
+                    val = edu.get(key)
+                    if isinstance(val, str) and '|LOC:' in val:
+                        edu[key] = _loc_re.sub('', val).strip() or None
 
         # Fix location: reject if it contains the person's name or job title patterns
         pi = cleaned.get('personal_info', {})
@@ -1861,13 +2035,37 @@ class PDFPipelineV3:
     def _fix_experience(self, entries: list) -> list:
         """Clean up experience entries: split 'Role at Company, City' patterns,
         fix empty roles/companies, clean bullet markers."""
+        _loc_re = re.compile(r'\s*\|\|?LOC:[^\n]*', re.I)
         fixed = []
         for exp in entries:
             role = (exp.get('role') or '').strip()
             company = (exp.get('company') or '').strip()
 
+            # Fix: strip ||LOC: tags from role/company
+            if '|LOC:' in role:
+                role = _loc_re.sub('', role).strip()
+            if '|LOC:' in company:
+                company = _loc_re.sub('', company).strip()
+
             # Fix: company starts with bullet marker or description text
             company = re.sub(r'^[•·▪▸►✓✔*\-]\s*', '', company)
+
+            # Fix: role is actually a description (starts with action verb)
+            if role and re.match(r'^(?:Implemented|Developed|Built|Created|Managed|'
+                                r'Coordinated|Organized|Led|Designed|Launched|'
+                                r'Deployed|Maintained|Resolved|Delivered|Prepared|'
+                                r'Supervised|Trained|Assessed|Evaluated|'
+                                r'Processed|Established|Initiated|Streamlined|'
+                                r'Conducted|Facilitated|Oversaw|Produced)\b', role, re.I):
+                if not exp.get('description'):
+                    exp['description'] = role
+                role = ''
+
+            # Fix: role starts with lowercase (bullet text leaked as role)
+            if role and role[0].islower():
+                if not exp.get('description'):
+                    exp['description'] = role
+                role = ''
 
             # Fix: company is actually a description (starts with verb phrase)
             if company and re.match(r'^(?:onboarding|reducing|improving|managing|'
@@ -1905,6 +2103,29 @@ class PDFPipelineV3:
                 cut = re.search(r'[.\n]', company)
                 if cut:
                     company = company[:cut.start()].strip()
+
+            # Fix: role is actually a company name and description has the real role
+            # Pattern: role="Innovative Tech Solutions", description="Backend Engineer 01/2023 - Present"
+            if role and not company:
+                desc = (exp.get('description') or '').strip()
+                # Check if description starts with a role title followed by a date
+                desc_role_m = re.match(
+                    r'^([A-Z][A-Za-z\s/&]+?)\s+'
+                    r'(\d{2}/\d{4}|\d{4})\s*[-–—]+\s*'
+                    r'(\d{2}/\d{4}|\d{4}|Present|Current)',
+                    desc
+                )
+                if desc_role_m:
+                    # The "role" field is actually the company
+                    company = role
+                    role = desc_role_m.group(1).strip()
+                    # Also fix dates if they weren't extracted
+                    if not exp.get('start'):
+                        exp['start'] = desc_role_m.group(2)
+                    if not exp.get('end'):
+                        exp['end'] = desc_role_m.group(3)
+                    # Clean description to remove the role+date prefix
+                    exp['description'] = None
 
             # Skip entries that look like education, not experience
             if role and re.search(r'\b(?:Bachelor|Master|Associate|Diploma|Certificate'
@@ -1973,6 +2194,18 @@ class PDFPipelineV3:
             # Fix: truncated "ravel and Tourism" → "Travel and Tourism"
             if degree.startswith('ravel'):
                 degree = 'T' + degree
+
+            # Fix: degree starts with bullet character
+            degree = re.sub(r'^\s*[•·▪▸►✓✔\*\-]\s*', '', degree).strip()
+
+            # Fix: degree starts with action verb prefix
+            # e.g., "Received a Business Foundations Certificate"
+            #     → "Business Foundations Certificate"
+            degree = re.sub(
+                r'^(?:Received|Completed|Earned|Awarded|Obtained|Achieved|'
+                r'Pursued|Finished)\s+(?:a\s+|an\s+|the\s+)?',
+                '', degree, flags=re.I
+            ).strip()
 
             # Fix: degree starts with year prefix "2015 – Advanced Course..."
             degree = re.sub(r'^\d{4}\s*[–—\-]\s*', '', degree).strip()

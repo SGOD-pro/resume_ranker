@@ -68,6 +68,16 @@ class ScoredCandidate:
     prestigious_companies: List[str] = field(default_factory=list)
     relevant_certs: List[str] = field(default_factory=list)
 
+    # Inference results (Phase 2)
+    skill_matches: List[Dict] = field(default_factory=list)       # Full SkillMatchResult dicts
+    matched_inferred: List[str] = field(default_factory=list)     # Inferred skill names
+    matched_related: List[str] = field(default_factory=list)      # Related skill names
+
+    # Domain classification (Phase 2)
+    candidate_domain: str = ""
+    domain_confidence: float = 0.0
+    domain_penalty: float = 0.0      # Applied penalty (0.0 = no penalty)
+
     total_exp_years: float = 0.0
     best_title_match: str = ""
     degree_level: str = ""

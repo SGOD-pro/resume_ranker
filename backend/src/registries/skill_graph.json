@@ -1,0 +1,3569 @@
+{
+  "version": "1.0.0",
+  "description": "Universal Skill Intelligence Graph — maps skills to domains, aliases, implications, and relationships",
+  "domains": {
+    "engineering": {
+      "display": "Engineering",
+      "sub_domains": [
+        "backend",
+        "frontend",
+        "fullstack",
+        "devops",
+        "mobile",
+        "data",
+        "ml",
+        "security",
+        "embedded"
+      ]
+    },
+    "legal": {
+      "display": "Legal",
+      "sub_domains": [
+        "corporate",
+        "employment",
+        "ip",
+        "compliance",
+        "litigation",
+        "regulatory"
+      ]
+    },
+    "finance": {
+      "display": "Finance",
+      "sub_domains": [
+        "investment",
+        "banking",
+        "risk",
+        "insurance",
+        "fintech"
+      ]
+    },
+    "healthcare": {
+      "display": "Healthcare",
+      "sub_domains": [
+        "clinical",
+        "nursing",
+        "pharma",
+        "health_admin",
+        "mental_health"
+      ]
+    },
+    "hr": {
+      "display": "Human Resources",
+      "sub_domains": [
+        "recruitment",
+        "compensation",
+        "training",
+        "labor_relations",
+        "org_development"
+      ]
+    },
+    "marketing": {
+      "display": "Marketing",
+      "sub_domains": [
+        "digital",
+        "content",
+        "brand",
+        "analytics",
+        "social_media",
+        "product_marketing"
+      ]
+    },
+    "accounting": {
+      "display": "Accounting",
+      "sub_domains": [
+        "audit",
+        "tax",
+        "forensic",
+        "management",
+        "bookkeeping"
+      ]
+    }
+  },
+  "skills": {
+    "___ENGINEERING_LANGUAGES___": "────────────────────────────────────────",
+    "python": {
+      "display": "Python",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "python",
+        "python3",
+        "py"
+      ],
+      "implies": [],
+      "related": [
+        "django",
+        "flask",
+        "fastapi",
+        "numpy",
+        "pandas"
+      ]
+    },
+    "javascript": {
+      "display": "JavaScript",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "javascript",
+        "js",
+        "ecmascript",
+        "es6",
+        "es2015"
+      ],
+      "implies": [],
+      "related": [
+        "typescript",
+        "nodejs",
+        "reactjs",
+        "vuejs",
+        "angular"
+      ]
+    },
+    "typescript": {
+      "display": "TypeScript",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "typescript",
+        "ts"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "angular",
+        "reactjs",
+        "nodejs",
+        "nestjs"
+      ]
+    },
+    "java": {
+      "display": "Java",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "java",
+        "jdk",
+        "jre",
+        "j2ee",
+        "jee"
+      ],
+      "implies": [],
+      "related": [
+        "springboot",
+        "maven",
+        "gradle",
+        "kotlin",
+        "hibernate"
+      ]
+    },
+    "csharp": {
+      "display": "C#",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "c#",
+        "csharp",
+        "c-sharp"
+      ],
+      "implies": [],
+      "related": [
+        "dotnet",
+        "aspnet",
+        "unity",
+        "azure"
+      ]
+    },
+    "cplusplus": {
+      "display": "C++",
+      "domain": "engineering",
+      "sub_domain": "embedded",
+      "aliases": [
+        "c++",
+        "cpp",
+        "cplusplus"
+      ],
+      "implies": [],
+      "related": [
+        "c_lang",
+        "embedded_systems",
+        "opengl",
+        "qt"
+      ]
+    },
+    "c_lang": {
+      "display": "C",
+      "domain": "engineering",
+      "sub_domain": "embedded",
+      "aliases": [
+        "c"
+      ],
+      "implies": [],
+      "related": [
+        "cplusplus",
+        "embedded_systems",
+        "linux"
+      ]
+    },
+    "go": {
+      "display": "Go",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "go",
+        "golang"
+      ],
+      "implies": [],
+      "related": [
+        "kubernetes",
+        "docker",
+        "microservices"
+      ]
+    },
+    "rust": {
+      "display": "Rust",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "rust",
+        "rustlang"
+      ],
+      "implies": [],
+      "related": [
+        "systems_programming",
+        "cplusplus",
+        "webassembly"
+      ]
+    },
+    "ruby": {
+      "display": "Ruby",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "ruby",
+        "rb"
+      ],
+      "implies": [],
+      "related": [
+        "rubyonrails",
+        "sinatra"
+      ]
+    },
+    "swift": {
+      "display": "Swift",
+      "domain": "engineering",
+      "sub_domain": "mobile",
+      "aliases": [
+        "swift",
+        "swiftui"
+      ],
+      "implies": [],
+      "related": [
+        "ios_development",
+        "xcode",
+        "objectivec"
+      ]
+    },
+    "kotlin": {
+      "display": "Kotlin",
+      "domain": "engineering",
+      "sub_domain": "mobile",
+      "aliases": [
+        "kotlin",
+        "kt"
+      ],
+      "implies": [
+        "java"
+      ],
+      "related": [
+        "android_development",
+        "springboot"
+      ]
+    },
+    "dart": {
+      "display": "Dart",
+      "domain": "engineering",
+      "sub_domain": "mobile",
+      "aliases": [
+        "dart"
+      ],
+      "implies": [],
+      "related": [
+        "flutter"
+      ]
+    },
+    "php": {
+      "display": "PHP",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "php"
+      ],
+      "implies": [],
+      "related": [
+        "laravel",
+        "wordpress",
+        "mysql"
+      ]
+    },
+    "scala": {
+      "display": "Scala",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "scala"
+      ],
+      "implies": [
+        "java"
+      ],
+      "related": [
+        "spark",
+        "akka",
+        "functional_programming"
+      ]
+    },
+    "r_lang": {
+      "display": "R",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "r"
+      ],
+      "implies": [],
+      "related": [
+        "statistics",
+        "data_analysis",
+        "ggplot"
+      ]
+    },
+    "sql": {
+      "display": "SQL",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "sql",
+        "structured query language"
+      ],
+      "implies": [],
+      "related": [
+        "postgresql",
+        "mysql",
+        "mssql",
+        "sqlite",
+        "database"
+      ]
+    },
+    "___ENGINEERING_FRAMEWORKS___": "────────────────────────────────────────",
+    "reactjs": {
+      "display": "React",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "react",
+        "reactjs",
+        "react.js",
+        "react js"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "redux",
+        "nextjs",
+        "gatsby",
+        "jsx"
+      ]
+    },
+    "angular": {
+      "display": "Angular",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "angular",
+        "angularjs",
+        "angular.js",
+        "ng"
+      ],
+      "implies": [
+        "typescript",
+        "javascript"
+      ],
+      "related": [
+        "rxjs",
+        "ngrx"
+      ]
+    },
+    "vuejs": {
+      "display": "Vue.js",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "vue",
+        "vuejs",
+        "vue.js",
+        "vue js"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "nuxtjs",
+        "vuex",
+        "pinia"
+      ]
+    },
+    "svelte": {
+      "display": "Svelte",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "svelte",
+        "sveltekit"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "sveltekit_fw"
+      ]
+    },
+    "nextjs": {
+      "display": "Next.js",
+      "domain": "engineering",
+      "sub_domain": "fullstack",
+      "aliases": [
+        "nextjs",
+        "next.js",
+        "next js",
+        "next"
+      ],
+      "implies": [
+        "reactjs",
+        "javascript",
+        "nodejs"
+      ],
+      "related": [
+        "vercel",
+        "ssr",
+        "ssg"
+      ]
+    },
+    "nuxtjs": {
+      "display": "Nuxt.js",
+      "domain": "engineering",
+      "sub_domain": "fullstack",
+      "aliases": [
+        "nuxtjs",
+        "nuxt.js",
+        "nuxt"
+      ],
+      "implies": [
+        "vuejs",
+        "javascript",
+        "nodejs"
+      ],
+      "related": [
+        "ssr",
+        "ssg"
+      ]
+    },
+    "gatsby": {
+      "display": "Gatsby",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "gatsby",
+        "gatsbyjs"
+      ],
+      "implies": [
+        "reactjs",
+        "javascript"
+      ],
+      "related": [
+        "graphql",
+        "ssg"
+      ]
+    },
+    "nodejs": {
+      "display": "Node.js",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "nodejs",
+        "node.js",
+        "node js",
+        "node"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "expressjs",
+        "nestjs",
+        "npm",
+        "yarn"
+      ]
+    },
+    "expressjs": {
+      "display": "Express.js",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "expressjs",
+        "express.js",
+        "express"
+      ],
+      "implies": [
+        "nodejs",
+        "javascript"
+      ],
+      "related": [
+        "restapi",
+        "middleware"
+      ]
+    },
+    "nestjs": {
+      "display": "NestJS",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "nestjs",
+        "nest.js",
+        "nest"
+      ],
+      "implies": [
+        "nodejs",
+        "typescript"
+      ],
+      "related": [
+        "expressjs",
+        "microservices"
+      ]
+    },
+    "django": {
+      "display": "Django",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "django"
+      ],
+      "implies": [
+        "python"
+      ],
+      "related": [
+        "djangorestframework",
+        "celery",
+        "postgresql"
+      ]
+    },
+    "flask": {
+      "display": "Flask",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "flask"
+      ],
+      "implies": [
+        "python"
+      ],
+      "related": [
+        "restapi",
+        "jinja"
+      ]
+    },
+    "fastapi": {
+      "display": "FastAPI",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "fastapi",
+        "fast api"
+      ],
+      "implies": [
+        "python"
+      ],
+      "related": [
+        "pydantic",
+        "uvicorn",
+        "restapi"
+      ]
+    },
+    "springboot": {
+      "display": "Spring Boot",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "springboot",
+        "spring boot",
+        "spring"
+      ],
+      "implies": [
+        "java"
+      ],
+      "related": [
+        "maven",
+        "gradle",
+        "hibernate",
+        "microservices"
+      ]
+    },
+    "dotnet": {
+      "display": ".NET",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        ".net",
+        "dotnet",
+        "dot net"
+      ],
+      "implies": [
+        "csharp"
+      ],
+      "related": [
+        "aspnet",
+        "azure",
+        "entity_framework"
+      ]
+    },
+    "aspnet": {
+      "display": "ASP.NET",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "aspnet",
+        "asp.net",
+        "asp net"
+      ],
+      "implies": [
+        "csharp",
+        "dotnet"
+      ],
+      "related": [
+        "azure",
+        "entity_framework"
+      ]
+    },
+    "rubyonrails": {
+      "display": "Ruby on Rails",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "rails",
+        "ruby on rails",
+        "ror",
+        "rubyonrails"
+      ],
+      "implies": [
+        "ruby"
+      ],
+      "related": [
+        "postgresql",
+        "heroku"
+      ]
+    },
+    "laravel": {
+      "display": "Laravel",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "laravel"
+      ],
+      "implies": [
+        "php"
+      ],
+      "related": [
+        "mysql",
+        "blade"
+      ]
+    },
+    "flutter": {
+      "display": "Flutter",
+      "domain": "engineering",
+      "sub_domain": "mobile",
+      "aliases": [
+        "flutter"
+      ],
+      "implies": [
+        "dart"
+      ],
+      "related": [
+        "mobile_development",
+        "cross_platform"
+      ]
+    },
+    "reactnative": {
+      "display": "React Native",
+      "domain": "engineering",
+      "sub_domain": "mobile",
+      "aliases": [
+        "react native",
+        "reactnative",
+        "rn"
+      ],
+      "implies": [
+        "reactjs",
+        "javascript"
+      ],
+      "related": [
+        "mobile_development",
+        "cross_platform",
+        "expo"
+      ]
+    },
+    "redux": {
+      "display": "Redux",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "redux",
+        "redux toolkit",
+        "rtk"
+      ],
+      "implies": [
+        "javascript"
+      ],
+      "related": [
+        "reactjs",
+        "state_management"
+      ]
+    },
+    "___ENGINEERING_DEVOPS___": "────────────────────────────────────────",
+    "docker": {
+      "display": "Docker",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "docker",
+        "dockerfile",
+        "docker compose",
+        "docker-compose"
+      ],
+      "implies": [
+        "containerization"
+      ],
+      "related": [
+        "kubernetes",
+        "devops",
+        "cicd"
+      ]
+    },
+    "kubernetes": {
+      "display": "Kubernetes",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "kubernetes",
+        "k8s",
+        "kube"
+      ],
+      "implies": [
+        "containerization",
+        "docker"
+      ],
+      "related": [
+        "helm",
+        "devops",
+        "microservices"
+      ]
+    },
+    "terraform": {
+      "display": "Terraform",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "terraform",
+        "tf",
+        "hcl"
+      ],
+      "implies": [
+        "infrastructure_as_code"
+      ],
+      "related": [
+        "aws",
+        "azure",
+        "gcp",
+        "devops"
+      ]
+    },
+    "ansible": {
+      "display": "Ansible",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "ansible"
+      ],
+      "implies": [
+        "configuration_management"
+      ],
+      "related": [
+        "devops",
+        "linux",
+        "automation"
+      ]
+    },
+    "jenkins": {
+      "display": "Jenkins",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "jenkins"
+      ],
+      "implies": [
+        "cicd"
+      ],
+      "related": [
+        "devops",
+        "automation",
+        "pipeline"
+      ]
+    },
+    "cicd": {
+      "display": "CI/CD",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "cicd",
+        "ci/cd",
+        "ci cd",
+        "continuous integration",
+        "continuous deployment"
+      ],
+      "implies": [],
+      "related": [
+        "jenkins",
+        "github_actions",
+        "gitlab_ci",
+        "devops"
+      ]
+    },
+    "aws": {
+      "display": "AWS",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "aws",
+        "amazon web services"
+      ],
+      "implies": [
+        "cloud_computing"
+      ],
+      "related": [
+        "ec2",
+        "s3",
+        "lambda",
+        "dynamodb",
+        "cloudformation"
+      ]
+    },
+    "azure": {
+      "display": "Azure",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "azure",
+        "microsoft azure",
+        "ms azure"
+      ],
+      "implies": [
+        "cloud_computing"
+      ],
+      "related": [
+        "dotnet",
+        "csharp",
+        "devops"
+      ]
+    },
+    "gcp": {
+      "display": "GCP",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "gcp",
+        "google cloud",
+        "google cloud platform"
+      ],
+      "implies": [
+        "cloud_computing"
+      ],
+      "related": [
+        "bigquery",
+        "kubernetes",
+        "firebase"
+      ]
+    },
+    "linux": {
+      "display": "Linux",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "linux",
+        "ubuntu",
+        "centos",
+        "debian",
+        "rhel",
+        "redhat"
+      ],
+      "implies": [],
+      "related": [
+        "bash",
+        "shell_scripting",
+        "devops",
+        "sysadmin"
+      ]
+    },
+    "git": {
+      "display": "Git",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "git",
+        "github",
+        "gitlab",
+        "bitbucket",
+        "version control"
+      ],
+      "implies": [],
+      "related": [
+        "cicd",
+        "collaboration"
+      ]
+    },
+    "nginx": {
+      "display": "Nginx",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "nginx"
+      ],
+      "implies": [],
+      "related": [
+        "load_balancing",
+        "reverse_proxy",
+        "web_server"
+      ]
+    },
+    "containerization": {
+      "display": "Containerization",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "containerization",
+        "containers"
+      ],
+      "implies": [],
+      "related": [
+        "docker",
+        "kubernetes",
+        "devops"
+      ]
+    },
+    "infrastructure_as_code": {
+      "display": "Infrastructure as Code",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "iac",
+        "infrastructure as code"
+      ],
+      "implies": [],
+      "related": [
+        "terraform",
+        "cloudformation",
+        "pulumi"
+      ]
+    },
+    "cloud_computing": {
+      "display": "Cloud Computing",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "cloud",
+        "cloud computing"
+      ],
+      "implies": [],
+      "related": [
+        "aws",
+        "azure",
+        "gcp"
+      ]
+    },
+    "devops": {
+      "display": "DevOps",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "devops",
+        "dev ops"
+      ],
+      "implies": [],
+      "related": [
+        "cicd",
+        "docker",
+        "kubernetes",
+        "monitoring",
+        "automation"
+      ]
+    },
+    "configuration_management": {
+      "display": "Configuration Management",
+      "domain": "engineering",
+      "sub_domain": "devops",
+      "aliases": [
+        "configuration management",
+        "config management"
+      ],
+      "implies": [],
+      "related": [
+        "ansible",
+        "puppet",
+        "chef"
+      ]
+    },
+    "___ENGINEERING_DATABASES___": "────────────────────────────────────────",
+    "postgresql": {
+      "display": "PostgreSQL",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "postgresql",
+        "postgres",
+        "pg",
+        "psql"
+      ],
+      "implies": [
+        "sql",
+        "database"
+      ],
+      "related": [
+        "mysql",
+        "relational_database"
+      ]
+    },
+    "mysql": {
+      "display": "MySQL",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "mysql"
+      ],
+      "implies": [
+        "sql",
+        "database"
+      ],
+      "related": [
+        "postgresql",
+        "mariadb",
+        "relational_database"
+      ]
+    },
+    "mongodb": {
+      "display": "MongoDB",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "mongodb",
+        "mongo"
+      ],
+      "implies": [
+        "nosql",
+        "database"
+      ],
+      "related": [
+        "mongoose",
+        "nosql"
+      ]
+    },
+    "redis": {
+      "display": "Redis",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "redis"
+      ],
+      "implies": [
+        "caching"
+      ],
+      "related": [
+        "memcached",
+        "in_memory_database"
+      ]
+    },
+    "elasticsearch": {
+      "display": "Elasticsearch",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "elasticsearch",
+        "elastic",
+        "elk"
+      ],
+      "implies": [
+        "search"
+      ],
+      "related": [
+        "kibana",
+        "logstash"
+      ]
+    },
+    "dynamodb": {
+      "display": "DynamoDB",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "dynamodb",
+        "dynamo"
+      ],
+      "implies": [
+        "nosql",
+        "database",
+        "aws"
+      ],
+      "related": [
+        "serverless",
+        "lambda"
+      ]
+    },
+    "database": {
+      "display": "Database",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "database",
+        "databases",
+        "db",
+        "dbms"
+      ],
+      "implies": [],
+      "related": [
+        "sql",
+        "nosql",
+        "postgresql",
+        "mongodb"
+      ]
+    },
+    "nosql": {
+      "display": "NoSQL",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "nosql",
+        "no sql"
+      ],
+      "implies": [
+        "database"
+      ],
+      "related": [
+        "mongodb",
+        "cassandra",
+        "dynamodb",
+        "redis"
+      ]
+    },
+    "___ENGINEERING_DATA_ML___": "────────────────────────────────────────",
+    "machine_learning": {
+      "display": "Machine Learning",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "machine learning",
+        "ml"
+      ],
+      "implies": [],
+      "related": [
+        "deep_learning",
+        "tensorflow",
+        "pytorch",
+        "scikit_learn",
+        "data_science"
+      ]
+    },
+    "deep_learning": {
+      "display": "Deep Learning",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "deep learning",
+        "dl"
+      ],
+      "implies": [
+        "machine_learning"
+      ],
+      "related": [
+        "tensorflow",
+        "pytorch",
+        "neural_networks"
+      ]
+    },
+    "tensorflow": {
+      "display": "TensorFlow",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "tensorflow",
+        "tf"
+      ],
+      "implies": [
+        "machine_learning",
+        "python"
+      ],
+      "related": [
+        "keras",
+        "deep_learning"
+      ]
+    },
+    "pytorch": {
+      "display": "PyTorch",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "pytorch",
+        "torch"
+      ],
+      "implies": [
+        "machine_learning",
+        "python"
+      ],
+      "related": [
+        "deep_learning",
+        "neural_networks"
+      ]
+    },
+    "scikit_learn": {
+      "display": "Scikit-learn",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "scikit-learn",
+        "sklearn",
+        "scikit learn"
+      ],
+      "implies": [
+        "machine_learning",
+        "python"
+      ],
+      "related": [
+        "data_science",
+        "statistics"
+      ]
+    },
+    "pandas": {
+      "display": "Pandas",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "pandas"
+      ],
+      "implies": [
+        "python",
+        "data_analysis"
+      ],
+      "related": [
+        "numpy",
+        "data_science"
+      ]
+    },
+    "numpy": {
+      "display": "NumPy",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "numpy",
+        "np"
+      ],
+      "implies": [
+        "python"
+      ],
+      "related": [
+        "pandas",
+        "scipy",
+        "data_science"
+      ]
+    },
+    "data_science": {
+      "display": "Data Science",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "data science",
+        "data scientist"
+      ],
+      "implies": [],
+      "related": [
+        "machine_learning",
+        "statistics",
+        "python",
+        "pandas"
+      ]
+    },
+    "data_analysis": {
+      "display": "Data Analysis",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "data analysis",
+        "data analytics"
+      ],
+      "implies": [],
+      "related": [
+        "data_science",
+        "statistics",
+        "excel",
+        "tableau",
+        "sql"
+      ]
+    },
+    "nlp": {
+      "display": "NLP",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "nlp",
+        "natural language processing"
+      ],
+      "implies": [
+        "machine_learning"
+      ],
+      "related": [
+        "deep_learning",
+        "transformers",
+        "llm"
+      ]
+    },
+    "computer_vision": {
+      "display": "Computer Vision",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "computer vision",
+        "cv",
+        "image recognition"
+      ],
+      "implies": [
+        "machine_learning"
+      ],
+      "related": [
+        "deep_learning",
+        "opencv",
+        "tensorflow"
+      ]
+    },
+    "llm": {
+      "display": "LLM",
+      "domain": "engineering",
+      "sub_domain": "ml",
+      "aliases": [
+        "llm",
+        "large language model",
+        "large language models"
+      ],
+      "implies": [
+        "machine_learning",
+        "nlp"
+      ],
+      "related": [
+        "gpt",
+        "transformers",
+        "rag"
+      ]
+    },
+    "spark": {
+      "display": "Apache Spark",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "spark",
+        "apache spark",
+        "pyspark"
+      ],
+      "implies": [
+        "big_data"
+      ],
+      "related": [
+        "hadoop",
+        "scala",
+        "data_engineering"
+      ]
+    },
+    "tableau": {
+      "display": "Tableau",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "tableau"
+      ],
+      "implies": [
+        "data_visualization"
+      ],
+      "related": [
+        "power_bi",
+        "data_analysis"
+      ]
+    },
+    "___ENGINEERING_API_ARCH___": "────────────────────────────────────────",
+    "restapi": {
+      "display": "REST API",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "rest",
+        "restapi",
+        "rest api",
+        "restful",
+        "restful api"
+      ],
+      "implies": [],
+      "related": [
+        "graphql",
+        "api_design",
+        "http"
+      ]
+    },
+    "graphql": {
+      "display": "GraphQL",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "graphql",
+        "gql"
+      ],
+      "implies": [],
+      "related": [
+        "restapi",
+        "apollo",
+        "api_design"
+      ]
+    },
+    "microservices": {
+      "display": "Microservices",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "microservices",
+        "micro services",
+        "micro-services"
+      ],
+      "implies": [],
+      "related": [
+        "docker",
+        "kubernetes",
+        "api_design",
+        "message_queue"
+      ]
+    },
+    "agile": {
+      "display": "Agile",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "agile",
+        "agile methodology"
+      ],
+      "implies": [],
+      "related": [
+        "scrum",
+        "kanban",
+        "jira",
+        "project_management"
+      ]
+    },
+    "scrum": {
+      "display": "Scrum",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "scrum",
+        "scrum master"
+      ],
+      "implies": [
+        "agile"
+      ],
+      "related": [
+        "kanban",
+        "sprint",
+        "jira"
+      ]
+    },
+    "html": {
+      "display": "HTML",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "html",
+        "html5"
+      ],
+      "implies": [],
+      "related": [
+        "css",
+        "javascript",
+        "web_development"
+      ]
+    },
+    "css": {
+      "display": "CSS",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "css",
+        "css3",
+        "scss",
+        "sass",
+        "less"
+      ],
+      "implies": [],
+      "related": [
+        "html",
+        "tailwind",
+        "bootstrap",
+        "web_development"
+      ]
+    },
+    "tailwind": {
+      "display": "Tailwind CSS",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "tailwind",
+        "tailwindcss",
+        "tailwind css"
+      ],
+      "implies": [
+        "css"
+      ],
+      "related": [
+        "bootstrap",
+        "web_development"
+      ]
+    },
+    "testing": {
+      "display": "Testing",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "testing",
+        "unit testing",
+        "integration testing",
+        "test automation"
+      ],
+      "implies": [],
+      "related": [
+        "jest",
+        "pytest",
+        "selenium",
+        "tdd"
+      ]
+    },
+    "figma": {
+      "display": "Figma",
+      "domain": "engineering",
+      "sub_domain": "frontend",
+      "aliases": [
+        "figma"
+      ],
+      "implies": [],
+      "related": [
+        "ui_design",
+        "ux_design",
+        "prototyping"
+      ]
+    },
+    "___LEGAL___": "────────────────────────────────────────",
+    "employment_law": {
+      "display": "Employment Law",
+      "domain": "legal",
+      "sub_domain": "employment",
+      "aliases": [
+        "employment law",
+        "labor law",
+        "labour law",
+        "workplace law"
+      ],
+      "implies": [
+        "legal_research",
+        "compliance"
+      ],
+      "related": [
+        "contract_law",
+        "hr_law",
+        "discrimination_law",
+        "workers_compensation"
+      ]
+    },
+    "contract_law": {
+      "display": "Contract Law",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "contract law",
+        "contract drafting",
+        "contract negotiation",
+        "contract review"
+      ],
+      "implies": [
+        "legal_research"
+      ],
+      "related": [
+        "employment_law",
+        "corporate_law",
+        "commercial_law"
+      ]
+    },
+    "corporate_law": {
+      "display": "Corporate Law",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "corporate law",
+        "business law",
+        "company law"
+      ],
+      "implies": [
+        "legal_research"
+      ],
+      "related": [
+        "contract_law",
+        "mergers_acquisitions",
+        "securities_law",
+        "corporate_governance"
+      ]
+    },
+    "litigation": {
+      "display": "Litigation",
+      "domain": "legal",
+      "sub_domain": "litigation",
+      "aliases": [
+        "litigation",
+        "trial",
+        "civil litigation",
+        "commercial litigation"
+      ],
+      "implies": [
+        "legal_research",
+        "legal_writing"
+      ],
+      "related": [
+        "dispute_resolution",
+        "arbitration",
+        "mediation"
+      ]
+    },
+    "compliance": {
+      "display": "Compliance",
+      "domain": "legal",
+      "sub_domain": "compliance",
+      "aliases": [
+        "compliance",
+        "regulatory compliance",
+        "legal compliance"
+      ],
+      "implies": [],
+      "related": [
+        "risk_management",
+        "audit",
+        "regulatory_affairs",
+        "aml"
+      ]
+    },
+    "intellectual_property": {
+      "display": "Intellectual Property",
+      "domain": "legal",
+      "sub_domain": "ip",
+      "aliases": [
+        "intellectual property",
+        "ip law",
+        "ip",
+        "patents",
+        "trademarks",
+        "copyrights"
+      ],
+      "implies": [
+        "legal_research"
+      ],
+      "related": [
+        "patent_law",
+        "trademark_law",
+        "technology_law"
+      ]
+    },
+    "legal_research": {
+      "display": "Legal Research",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "legal research",
+        "case research",
+        "westlaw",
+        "lexisnexis"
+      ],
+      "implies": [],
+      "related": [
+        "legal_writing",
+        "litigation",
+        "due_diligence"
+      ]
+    },
+    "legal_writing": {
+      "display": "Legal Writing",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "legal writing",
+        "legal drafting",
+        "brief writing",
+        "memoranda"
+      ],
+      "implies": [],
+      "related": [
+        "legal_research",
+        "contract_law",
+        "litigation"
+      ]
+    },
+    "regulatory_affairs": {
+      "display": "Regulatory Affairs",
+      "domain": "legal",
+      "sub_domain": "regulatory",
+      "aliases": [
+        "regulatory affairs",
+        "regulatory",
+        "regulations"
+      ],
+      "implies": [
+        "compliance"
+      ],
+      "related": [
+        "fda",
+        "healthcare_law",
+        "environmental_law"
+      ]
+    },
+    "mergers_acquisitions": {
+      "display": "Mergers & Acquisitions",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "mergers and acquisitions",
+        "m&a",
+        "mergers & acquisitions"
+      ],
+      "implies": [
+        "corporate_law",
+        "due_diligence"
+      ],
+      "related": [
+        "securities_law",
+        "financial_analysis"
+      ]
+    },
+    "due_diligence": {
+      "display": "Due Diligence",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "due diligence"
+      ],
+      "implies": [],
+      "related": [
+        "mergers_acquisitions",
+        "compliance",
+        "risk_assessment"
+      ]
+    },
+    "dispute_resolution": {
+      "display": "Dispute Resolution",
+      "domain": "legal",
+      "sub_domain": "litigation",
+      "aliases": [
+        "dispute resolution",
+        "adr",
+        "alternative dispute resolution"
+      ],
+      "implies": [],
+      "related": [
+        "mediation",
+        "arbitration",
+        "litigation",
+        "negotiation"
+      ]
+    },
+    "securities_law": {
+      "display": "Securities Law",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "securities law",
+        "securities regulation",
+        "sec"
+      ],
+      "implies": [
+        "corporate_law"
+      ],
+      "related": [
+        "finance_law",
+        "compliance",
+        "investment_law"
+      ]
+    },
+    "aml": {
+      "display": "Anti-Money Laundering",
+      "domain": "legal",
+      "sub_domain": "compliance",
+      "aliases": [
+        "aml",
+        "anti-money laundering",
+        "anti money laundering",
+        "kyc"
+      ],
+      "implies": [
+        "compliance"
+      ],
+      "related": [
+        "financial_crime",
+        "regulatory_affairs",
+        "banking_law"
+      ]
+    },
+    "gdpr": {
+      "display": "GDPR",
+      "domain": "legal",
+      "sub_domain": "compliance",
+      "aliases": [
+        "gdpr",
+        "data privacy",
+        "data protection"
+      ],
+      "implies": [
+        "compliance",
+        "privacy_law"
+      ],
+      "related": [
+        "ccpa",
+        "hipaa",
+        "regulatory_affairs"
+      ]
+    },
+    "negotiation": {
+      "display": "Negotiation",
+      "domain": "legal",
+      "sub_domain": "corporate",
+      "aliases": [
+        "negotiation",
+        "deal negotiation",
+        "contract negotiation"
+      ],
+      "implies": [],
+      "related": [
+        "contract_law",
+        "dispute_resolution",
+        "mediation"
+      ]
+    },
+    "discrimination_law": {
+      "display": "Discrimination Law",
+      "domain": "legal",
+      "sub_domain": "employment",
+      "aliases": [
+        "discrimination law",
+        "equal employment",
+        "eeo",
+        "civil rights law"
+      ],
+      "implies": [
+        "employment_law"
+      ],
+      "related": [
+        "hr_law",
+        "compliance"
+      ]
+    },
+    "privacy_law": {
+      "display": "Privacy Law",
+      "domain": "legal",
+      "sub_domain": "compliance",
+      "aliases": [
+        "privacy law",
+        "data privacy law"
+      ],
+      "implies": [],
+      "related": [
+        "gdpr",
+        "ccpa",
+        "hipaa",
+        "cybersecurity_law"
+      ]
+    },
+    "hr_law": {
+      "display": "HR Law",
+      "domain": "legal",
+      "sub_domain": "employment",
+      "aliases": [
+        "hr law",
+        "human resources law"
+      ],
+      "implies": [
+        "employment_law"
+      ],
+      "related": [
+        "labor_relations",
+        "workers_compensation",
+        "discrimination_law"
+      ]
+    },
+    "___FINANCE___": "────────────────────────────────────────",
+    "financial_modeling": {
+      "display": "Financial Modeling",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "financial modeling",
+        "financial modelling",
+        "financial models"
+      ],
+      "implies": [
+        "financial_analysis",
+        "excel"
+      ],
+      "related": [
+        "valuation",
+        "dcf",
+        "forecasting"
+      ]
+    },
+    "financial_analysis": {
+      "display": "Financial Analysis",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "financial analysis",
+        "financial analytics"
+      ],
+      "implies": [],
+      "related": [
+        "financial_modeling",
+        "financial_reporting",
+        "budgeting"
+      ]
+    },
+    "risk_management": {
+      "display": "Risk Management",
+      "domain": "finance",
+      "sub_domain": "risk",
+      "aliases": [
+        "risk management",
+        "risk analysis",
+        "risk assessment"
+      ],
+      "implies": [],
+      "related": [
+        "compliance",
+        "audit",
+        "insurance",
+        "credit_risk"
+      ]
+    },
+    "portfolio_management": {
+      "display": "Portfolio Management",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "portfolio management",
+        "asset management",
+        "investment management"
+      ],
+      "implies": [
+        "financial_analysis"
+      ],
+      "related": [
+        "valuation",
+        "risk_management",
+        "equities"
+      ]
+    },
+    "investment_banking": {
+      "display": "Investment Banking",
+      "domain": "finance",
+      "sub_domain": "banking",
+      "aliases": [
+        "investment banking",
+        "ib"
+      ],
+      "implies": [
+        "financial_modeling",
+        "valuation"
+      ],
+      "related": [
+        "mergers_acquisitions",
+        "capital_markets",
+        "underwriting"
+      ]
+    },
+    "valuation": {
+      "display": "Valuation",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "valuation",
+        "business valuation",
+        "company valuation",
+        "dcf"
+      ],
+      "implies": [
+        "financial_analysis"
+      ],
+      "related": [
+        "financial_modeling",
+        "investment_banking"
+      ]
+    },
+    "financial_reporting": {
+      "display": "Financial Reporting",
+      "domain": "finance",
+      "sub_domain": "banking",
+      "aliases": [
+        "financial reporting",
+        "financial statements"
+      ],
+      "implies": [],
+      "related": [
+        "gaap",
+        "ifrs",
+        "accounting",
+        "audit"
+      ]
+    },
+    "bloomberg_terminal": {
+      "display": "Bloomberg Terminal",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "bloomberg",
+        "bloomberg terminal"
+      ],
+      "implies": [],
+      "related": [
+        "financial_analysis",
+        "trading",
+        "equities"
+      ]
+    },
+    "derivatives": {
+      "display": "Derivatives",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "derivatives",
+        "options",
+        "futures",
+        "swaps"
+      ],
+      "implies": [
+        "financial_analysis"
+      ],
+      "related": [
+        "risk_management",
+        "trading",
+        "quantitative_finance"
+      ]
+    },
+    "credit_risk": {
+      "display": "Credit Risk",
+      "domain": "finance",
+      "sub_domain": "risk",
+      "aliases": [
+        "credit risk",
+        "credit analysis",
+        "credit scoring"
+      ],
+      "implies": [
+        "risk_management"
+      ],
+      "related": [
+        "financial_analysis",
+        "banking"
+      ]
+    },
+    "budgeting": {
+      "display": "Budgeting",
+      "domain": "finance",
+      "sub_domain": "banking",
+      "aliases": [
+        "budgeting",
+        "budget management",
+        "budget planning"
+      ],
+      "implies": [],
+      "related": [
+        "financial_analysis",
+        "forecasting",
+        "accounting"
+      ]
+    },
+    "forecasting": {
+      "display": "Forecasting",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "forecasting",
+        "financial forecasting",
+        "business forecasting"
+      ],
+      "implies": [],
+      "related": [
+        "financial_modeling",
+        "budgeting",
+        "data_analysis"
+      ]
+    },
+    "excel": {
+      "display": "Excel",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "excel",
+        "microsoft excel",
+        "ms excel",
+        "spreadsheets",
+        "vlookup",
+        "pivot tables"
+      ],
+      "implies": [],
+      "related": [
+        "financial_modeling",
+        "data_analysis",
+        "vba"
+      ]
+    },
+    "quantitative_finance": {
+      "display": "Quantitative Finance",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "quantitative finance",
+        "quant",
+        "quantitative analysis"
+      ],
+      "implies": [
+        "financial_modeling",
+        "statistics"
+      ],
+      "related": [
+        "derivatives",
+        "risk_management",
+        "python"
+      ]
+    },
+    "capital_markets": {
+      "display": "Capital Markets",
+      "domain": "finance",
+      "sub_domain": "banking",
+      "aliases": [
+        "capital markets",
+        "equity markets",
+        "debt markets"
+      ],
+      "implies": [],
+      "related": [
+        "investment_banking",
+        "trading",
+        "securities"
+      ]
+    },
+    "trading": {
+      "display": "Trading",
+      "domain": "finance",
+      "sub_domain": "investment",
+      "aliases": [
+        "trading",
+        "equity trading",
+        "fixed income trading"
+      ],
+      "implies": [],
+      "related": [
+        "bloomberg_terminal",
+        "derivatives",
+        "capital_markets"
+      ]
+    },
+    "___HEALTHCARE___": "────────────────────────────────────────",
+    "patient_care": {
+      "display": "Patient Care",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "patient care",
+        "clinical care",
+        "bedside care",
+        "direct patient care"
+      ],
+      "implies": [],
+      "related": [
+        "nursing",
+        "vital_signs",
+        "clinical_assessment",
+        "medication_administration"
+      ]
+    },
+    "nursing": {
+      "display": "Nursing",
+      "domain": "healthcare",
+      "sub_domain": "nursing",
+      "aliases": [
+        "nursing",
+        "rn",
+        "registered nurse",
+        "bsn",
+        "nurse"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "vital_signs",
+        "medication_administration",
+        "clinical_assessment"
+      ]
+    },
+    "clinical_research": {
+      "display": "Clinical Research",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "clinical research",
+        "clinical trials",
+        "clinical studies"
+      ],
+      "implies": [],
+      "related": [
+        "fda",
+        "regulatory_affairs",
+        "pharmacology",
+        "gcp"
+      ]
+    },
+    "hipaa": {
+      "display": "HIPAA",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "hipaa",
+        "health insurance portability"
+      ],
+      "implies": [
+        "compliance",
+        "healthcare_privacy"
+      ],
+      "related": [
+        "emr",
+        "medical_records",
+        "regulatory_affairs"
+      ]
+    },
+    "emr": {
+      "display": "EMR/EHR",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "emr",
+        "ehr",
+        "electronic medical records",
+        "electronic health records",
+        "epic",
+        "cerner"
+      ],
+      "implies": [],
+      "related": [
+        "hipaa",
+        "medical_records",
+        "healthcare_it"
+      ]
+    },
+    "pharmacology": {
+      "display": "Pharmacology",
+      "domain": "healthcare",
+      "sub_domain": "pharma",
+      "aliases": [
+        "pharmacology",
+        "pharmacy",
+        "pharmaceuticals",
+        "drug development"
+      ],
+      "implies": [],
+      "related": [
+        "clinical_research",
+        "medication_administration",
+        "fda"
+      ]
+    },
+    "vital_signs": {
+      "display": "Vital Signs",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "vital signs",
+        "vitals",
+        "blood pressure",
+        "heart rate"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "nursing",
+        "clinical_assessment"
+      ]
+    },
+    "medication_administration": {
+      "display": "Medication Administration",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "medication administration",
+        "drug administration",
+        "iv therapy"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "nursing",
+        "pharmacology"
+      ]
+    },
+    "clinical_assessment": {
+      "display": "Clinical Assessment",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "clinical assessment",
+        "patient assessment",
+        "health assessment",
+        "triage"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "nursing",
+        "vital_signs",
+        "diagnosis"
+      ]
+    },
+    "medical_coding": {
+      "display": "Medical Coding",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "medical coding",
+        "icd-10",
+        "cpt coding",
+        "medical billing"
+      ],
+      "implies": [],
+      "related": [
+        "medical_records",
+        "healthcare_it",
+        "billing"
+      ]
+    },
+    "cpr_first_aid": {
+      "display": "CPR/First Aid",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "cpr",
+        "first aid",
+        "bls",
+        "basic life support",
+        "acls"
+      ],
+      "implies": [],
+      "related": [
+        "patient_care",
+        "emergency_medicine"
+      ]
+    },
+    "surgery": {
+      "display": "Surgery",
+      "domain": "healthcare",
+      "sub_domain": "clinical",
+      "aliases": [
+        "surgery",
+        "surgical",
+        "surgical procedures",
+        "operating room",
+        "or"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "anesthesia",
+        "sterile_technique"
+      ]
+    },
+    "mental_health": {
+      "display": "Mental Health",
+      "domain": "healthcare",
+      "sub_domain": "mental_health",
+      "aliases": [
+        "mental health",
+        "behavioral health",
+        "psychiatry",
+        "psychology",
+        "counseling"
+      ],
+      "implies": [
+        "patient_care"
+      ],
+      "related": [
+        "therapy",
+        "social_work",
+        "substance_abuse"
+      ]
+    },
+    "public_health": {
+      "display": "Public Health",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "public health",
+        "epidemiology",
+        "population health"
+      ],
+      "implies": [],
+      "related": [
+        "healthcare_policy",
+        "biostatistics",
+        "community_health"
+      ]
+    },
+    "medical_records": {
+      "display": "Medical Records",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "medical records",
+        "health records",
+        "patient records"
+      ],
+      "implies": [],
+      "related": [
+        "emr",
+        "hipaa",
+        "medical_coding"
+      ]
+    },
+    "healthcare_it": {
+      "display": "Healthcare IT",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "healthcare it",
+        "health informatics",
+        "health information technology"
+      ],
+      "implies": [],
+      "related": [
+        "emr",
+        "hipaa",
+        "medical_coding"
+      ]
+    },
+    "___HR___": "────────────────────────────────────────",
+    "talent_acquisition": {
+      "display": "Talent Acquisition",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "talent acquisition",
+        "recruiting",
+        "recruitment",
+        "sourcing",
+        "headhunting"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "interviewing",
+        "employer_branding",
+        "ats",
+        "onboarding"
+      ]
+    },
+    "employee_relations": {
+      "display": "Employee Relations",
+      "domain": "hr",
+      "sub_domain": "labor_relations",
+      "aliases": [
+        "employee relations",
+        "labor relations",
+        "labour relations",
+        "workplace relations"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "employment_law",
+        "conflict_resolution",
+        "grievance_handling"
+      ]
+    },
+    "compensation_benefits": {
+      "display": "Compensation & Benefits",
+      "domain": "hr",
+      "sub_domain": "compensation",
+      "aliases": [
+        "compensation",
+        "benefits",
+        "compensation and benefits",
+        "comp & ben",
+        "total rewards"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "payroll",
+        "benefits_administration",
+        "salary_benchmarking"
+      ]
+    },
+    "payroll": {
+      "display": "Payroll",
+      "domain": "hr",
+      "sub_domain": "compensation",
+      "aliases": [
+        "payroll",
+        "payroll management",
+        "payroll processing"
+      ],
+      "implies": [],
+      "related": [
+        "compensation_benefits",
+        "hris",
+        "tax"
+      ]
+    },
+    "hris": {
+      "display": "HRIS",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "hris",
+        "human resource information system",
+        "workday",
+        "successfactors",
+        "bamboohr"
+      ],
+      "implies": [],
+      "related": [
+        "ats",
+        "payroll",
+        "hr"
+      ]
+    },
+    "ats": {
+      "display": "ATS",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "ats",
+        "applicant tracking system",
+        "greenhouse",
+        "lever",
+        "icims"
+      ],
+      "implies": [],
+      "related": [
+        "talent_acquisition",
+        "hris",
+        "recruiting"
+      ]
+    },
+    "performance_management": {
+      "display": "Performance Management",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "performance management",
+        "performance reviews",
+        "performance appraisal",
+        "kpi"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "talent_development",
+        "employee_engagement"
+      ]
+    },
+    "training_development": {
+      "display": "Training & Development",
+      "domain": "hr",
+      "sub_domain": "training",
+      "aliases": [
+        "training",
+        "training and development",
+        "l&d",
+        "learning and development"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "onboarding",
+        "talent_development",
+        "instructional_design"
+      ]
+    },
+    "onboarding": {
+      "display": "Onboarding",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "onboarding",
+        "employee onboarding",
+        "new hire onboarding"
+      ],
+      "implies": [],
+      "related": [
+        "talent_acquisition",
+        "training_development"
+      ]
+    },
+    "hr": {
+      "display": "Human Resources",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "hr",
+        "human resources",
+        "people operations",
+        "people ops"
+      ],
+      "implies": [],
+      "related": [
+        "talent_acquisition",
+        "employee_relations",
+        "compensation_benefits"
+      ]
+    },
+    "organizational_development": {
+      "display": "Organizational Development",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "organizational development",
+        "org development",
+        "od",
+        "organization development"
+      ],
+      "implies": [
+        "hr"
+      ],
+      "related": [
+        "change_management",
+        "talent_development",
+        "culture"
+      ]
+    },
+    "conflict_resolution": {
+      "display": "Conflict Resolution",
+      "domain": "hr",
+      "sub_domain": "labor_relations",
+      "aliases": [
+        "conflict resolution",
+        "dispute resolution",
+        "mediation"
+      ],
+      "implies": [],
+      "related": [
+        "employee_relations",
+        "negotiation",
+        "grievance_handling"
+      ]
+    },
+    "interviewing": {
+      "display": "Interviewing",
+      "domain": "hr",
+      "sub_domain": "recruitment",
+      "aliases": [
+        "interviewing",
+        "behavioral interviewing",
+        "structured interviews"
+      ],
+      "implies": [],
+      "related": [
+        "talent_acquisition",
+        "hiring",
+        "candidate_assessment"
+      ]
+    },
+    "diversity_inclusion": {
+      "display": "Diversity & Inclusion",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "diversity",
+        "inclusion",
+        "dei",
+        "d&i",
+        "diversity and inclusion",
+        "equity"
+      ],
+      "implies": [],
+      "related": [
+        "hr",
+        "organizational_development",
+        "employee_relations"
+      ]
+    },
+    "change_management": {
+      "display": "Change Management",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "change management"
+      ],
+      "implies": [],
+      "related": [
+        "organizational_development",
+        "project_management",
+        "leadership"
+      ]
+    },
+    "___MARKETING___": "────────────────────────────────────────",
+    "seo": {
+      "display": "SEO",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "seo",
+        "search engine optimization"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "sem",
+        "google_analytics",
+        "content_marketing",
+        "keyword_research"
+      ]
+    },
+    "sem": {
+      "display": "SEM",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "sem",
+        "search engine marketing",
+        "ppc",
+        "pay per click",
+        "paid search"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "seo",
+        "google_ads",
+        "facebook_ads"
+      ]
+    },
+    "google_ads": {
+      "display": "Google Ads",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "google ads",
+        "google adwords",
+        "adwords"
+      ],
+      "implies": [
+        "sem",
+        "digital_marketing"
+      ],
+      "related": [
+        "ppc",
+        "facebook_ads",
+        "campaign_management"
+      ]
+    },
+    "facebook_ads": {
+      "display": "Facebook Ads",
+      "domain": "marketing",
+      "sub_domain": "social_media",
+      "aliases": [
+        "facebook ads",
+        "meta ads",
+        "instagram ads",
+        "fb ads"
+      ],
+      "implies": [
+        "social_media_marketing",
+        "digital_marketing"
+      ],
+      "related": [
+        "google_ads",
+        "campaign_management"
+      ]
+    },
+    "social_media_marketing": {
+      "display": "Social Media Marketing",
+      "domain": "marketing",
+      "sub_domain": "social_media",
+      "aliases": [
+        "social media marketing",
+        "smm",
+        "social media",
+        "social media management"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "content_marketing",
+        "facebook_ads",
+        "instagram_marketing"
+      ]
+    },
+    "content_marketing": {
+      "display": "Content Marketing",
+      "domain": "marketing",
+      "sub_domain": "content",
+      "aliases": [
+        "content marketing",
+        "content strategy",
+        "content creation"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "seo",
+        "copywriting",
+        "blogging",
+        "social_media_marketing"
+      ]
+    },
+    "email_marketing": {
+      "display": "Email Marketing",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "email marketing",
+        "email campaigns",
+        "mailchimp",
+        "hubspot email"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "marketing_automation",
+        "crm",
+        "campaign_management"
+      ]
+    },
+    "digital_marketing": {
+      "display": "Digital Marketing",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "digital marketing",
+        "online marketing",
+        "internet marketing"
+      ],
+      "implies": [],
+      "related": [
+        "seo",
+        "sem",
+        "social_media_marketing",
+        "content_marketing"
+      ]
+    },
+    "brand_management": {
+      "display": "Brand Management",
+      "domain": "marketing",
+      "sub_domain": "brand",
+      "aliases": [
+        "brand management",
+        "branding",
+        "brand strategy",
+        "brand identity"
+      ],
+      "implies": [],
+      "related": [
+        "marketing_strategy",
+        "creative_direction",
+        "market_research"
+      ]
+    },
+    "google_analytics": {
+      "display": "Google Analytics",
+      "domain": "marketing",
+      "sub_domain": "analytics",
+      "aliases": [
+        "google analytics",
+        "ga",
+        "ga4"
+      ],
+      "implies": [
+        "web_analytics"
+      ],
+      "related": [
+        "seo",
+        "data_analysis",
+        "marketing_analytics"
+      ]
+    },
+    "marketing_automation": {
+      "display": "Marketing Automation",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "marketing automation",
+        "hubspot",
+        "marketo",
+        "pardot"
+      ],
+      "implies": [
+        "digital_marketing"
+      ],
+      "related": [
+        "crm",
+        "email_marketing",
+        "lead_generation"
+      ]
+    },
+    "copywriting": {
+      "display": "Copywriting",
+      "domain": "marketing",
+      "sub_domain": "content",
+      "aliases": [
+        "copywriting",
+        "copy writing",
+        "ad copy"
+      ],
+      "implies": [],
+      "related": [
+        "content_marketing",
+        "creative_writing",
+        "brand_management"
+      ]
+    },
+    "market_research": {
+      "display": "Market Research",
+      "domain": "marketing",
+      "sub_domain": "analytics",
+      "aliases": [
+        "market research",
+        "competitive analysis",
+        "market analysis"
+      ],
+      "implies": [],
+      "related": [
+        "data_analysis",
+        "consumer_insights",
+        "marketing_strategy"
+      ]
+    },
+    "campaign_management": {
+      "display": "Campaign Management",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "campaign management",
+        "campaign planning",
+        "campaign execution"
+      ],
+      "implies": [],
+      "related": [
+        "google_ads",
+        "facebook_ads",
+        "email_marketing",
+        "marketing_strategy"
+      ]
+    },
+    "crm": {
+      "display": "CRM",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "crm",
+        "customer relationship management",
+        "salesforce",
+        "hubspot crm"
+      ],
+      "implies": [],
+      "related": [
+        "sales",
+        "marketing_automation",
+        "lead_generation"
+      ]
+    },
+    "web_analytics": {
+      "display": "Web Analytics",
+      "domain": "marketing",
+      "sub_domain": "analytics",
+      "aliases": [
+        "web analytics",
+        "analytics",
+        "website analytics"
+      ],
+      "implies": [],
+      "related": [
+        "google_analytics",
+        "data_analysis",
+        "seo"
+      ]
+    },
+    "lead_generation": {
+      "display": "Lead Generation",
+      "domain": "marketing",
+      "sub_domain": "digital",
+      "aliases": [
+        "lead generation",
+        "lead gen",
+        "demand generation",
+        "demand gen"
+      ],
+      "implies": [],
+      "related": [
+        "marketing_automation",
+        "crm",
+        "sales"
+      ]
+    },
+    "product_marketing": {
+      "display": "Product Marketing",
+      "domain": "marketing",
+      "sub_domain": "product_marketing",
+      "aliases": [
+        "product marketing",
+        "pmm"
+      ],
+      "implies": [],
+      "related": [
+        "go_to_market",
+        "market_research",
+        "positioning"
+      ]
+    },
+    "instagram_marketing": {
+      "display": "Instagram Marketing",
+      "domain": "marketing",
+      "sub_domain": "social_media",
+      "aliases": [
+        "instagram",
+        "instagram marketing",
+        "ig marketing"
+      ],
+      "implies": [
+        "social_media_marketing"
+      ],
+      "related": [
+        "facebook_ads",
+        "content_marketing"
+      ]
+    },
+    "marketing_strategy": {
+      "display": "Marketing Strategy",
+      "domain": "marketing",
+      "sub_domain": "brand",
+      "aliases": [
+        "marketing strategy",
+        "strategic marketing"
+      ],
+      "implies": [],
+      "related": [
+        "brand_management",
+        "market_research",
+        "campaign_management"
+      ]
+    },
+    "___ACCOUNTING___": "────────────────────────────────────────",
+    "gaap": {
+      "display": "GAAP",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "gaap",
+        "generally accepted accounting principles",
+        "us gaap"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "ifrs",
+        "financial_reporting",
+        "audit"
+      ]
+    },
+    "ifrs": {
+      "display": "IFRS",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "ifrs",
+        "international financial reporting standards"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "gaap",
+        "financial_reporting"
+      ]
+    },
+    "audit": {
+      "display": "Audit",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "audit",
+        "auditing",
+        "internal audit",
+        "external audit"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "gaap",
+        "compliance",
+        "sox",
+        "risk_management"
+      ]
+    },
+    "tax_preparation": {
+      "display": "Tax Preparation",
+      "domain": "accounting",
+      "sub_domain": "tax",
+      "aliases": [
+        "tax preparation",
+        "tax filing",
+        "tax returns",
+        "tax planning"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "tax_law",
+        "irs",
+        "corporate_tax"
+      ]
+    },
+    "bookkeeping": {
+      "display": "Bookkeeping",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "bookkeeping",
+        "book keeping",
+        "general ledger",
+        "gl"
+      ],
+      "implies": [],
+      "related": [
+        "accounting",
+        "accounts_payable",
+        "accounts_receivable",
+        "quickbooks"
+      ]
+    },
+    "accounts_payable": {
+      "display": "Accounts Payable",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "accounts payable",
+        "ap",
+        "a/p"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "accounts_receivable",
+        "bookkeeping",
+        "invoicing"
+      ]
+    },
+    "accounts_receivable": {
+      "display": "Accounts Receivable",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "accounts receivable",
+        "ar",
+        "a/r"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "accounts_payable",
+        "bookkeeping",
+        "collections"
+      ]
+    },
+    "quickbooks": {
+      "display": "QuickBooks",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "quickbooks",
+        "qb",
+        "quickbooks online",
+        "qbo"
+      ],
+      "implies": [],
+      "related": [
+        "bookkeeping",
+        "accounting",
+        "xero",
+        "sage"
+      ]
+    },
+    "sox": {
+      "display": "SOX Compliance",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "sox",
+        "sarbanes-oxley",
+        "sarbanes oxley"
+      ],
+      "implies": [
+        "compliance",
+        "audit"
+      ],
+      "related": [
+        "gaap",
+        "internal_controls"
+      ]
+    },
+    "cpa": {
+      "display": "CPA",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "cpa",
+        "certified public accountant"
+      ],
+      "implies": [
+        "accounting",
+        "audit"
+      ],
+      "related": [
+        "gaap",
+        "tax_preparation"
+      ]
+    },
+    "forensic_accounting": {
+      "display": "Forensic Accounting",
+      "domain": "accounting",
+      "sub_domain": "forensic",
+      "aliases": [
+        "forensic accounting",
+        "fraud investigation",
+        "fraud examination"
+      ],
+      "implies": [
+        "accounting",
+        "audit"
+      ],
+      "related": [
+        "compliance",
+        "aml",
+        "investigation"
+      ]
+    },
+    "management_accounting": {
+      "display": "Management Accounting",
+      "domain": "accounting",
+      "sub_domain": "management",
+      "aliases": [
+        "management accounting",
+        "cost accounting",
+        "managerial accounting"
+      ],
+      "implies": [
+        "accounting"
+      ],
+      "related": [
+        "budgeting",
+        "forecasting",
+        "financial_analysis"
+      ]
+    },
+    "accounting": {
+      "display": "Accounting",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "accounting"
+      ],
+      "implies": [],
+      "related": [
+        "bookkeeping",
+        "gaap",
+        "financial_reporting",
+        "tax_preparation"
+      ]
+    },
+    "internal_controls": {
+      "display": "Internal Controls",
+      "domain": "accounting",
+      "sub_domain": "audit",
+      "aliases": [
+        "internal controls",
+        "ic",
+        "control framework"
+      ],
+      "implies": [],
+      "related": [
+        "audit",
+        "sox",
+        "compliance",
+        "risk_management"
+      ]
+    },
+    "erp_accounting": {
+      "display": "ERP (Accounting)",
+      "domain": "accounting",
+      "sub_domain": "management",
+      "aliases": [
+        "erp",
+        "sap",
+        "oracle financials",
+        "netsuite"
+      ],
+      "implies": [],
+      "related": [
+        "accounting",
+        "financial_reporting",
+        "management_accounting"
+      ]
+    },
+    "xero": {
+      "display": "Xero",
+      "domain": "accounting",
+      "sub_domain": "bookkeeping",
+      "aliases": [
+        "xero"
+      ],
+      "implies": [],
+      "related": [
+        "quickbooks",
+        "bookkeeping",
+        "accounting"
+      ]
+    },
+    "corporate_tax": {
+      "display": "Corporate Tax",
+      "domain": "accounting",
+      "sub_domain": "tax",
+      "aliases": [
+        "corporate tax",
+        "corporate taxation",
+        "business tax"
+      ],
+      "implies": [
+        "tax_preparation",
+        "accounting"
+      ],
+      "related": [
+        "tax_law",
+        "transfer_pricing"
+      ]
+    },
+    "___CROSS_DOMAIN___": "────────────────────────────────────────",
+    "project_management": {
+      "display": "Project Management",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "project management",
+        "pm",
+        "pmp"
+      ],
+      "implies": [],
+      "related": [
+        "agile",
+        "scrum",
+        "jira",
+        "leadership"
+      ]
+    },
+    "leadership": {
+      "display": "Leadership",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "leadership",
+        "team leadership",
+        "people management"
+      ],
+      "implies": [],
+      "related": [
+        "management",
+        "change_management",
+        "coaching"
+      ]
+    },
+    "communication": {
+      "display": "Communication",
+      "domain": "hr",
+      "sub_domain": "org_development",
+      "aliases": [
+        "communication",
+        "communication skills",
+        "public speaking",
+        "presentations"
+      ],
+      "implies": [],
+      "related": [
+        "leadership",
+        "negotiation",
+        "stakeholder_management"
+      ]
+    },
+    "statistics": {
+      "display": "Statistics",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "statistics",
+        "statistical analysis",
+        "biostatistics"
+      ],
+      "implies": [],
+      "related": [
+        "data_science",
+        "r_lang",
+        "python",
+        "hypothesis_testing"
+      ]
+    },
+    "sales": {
+      "display": "Sales",
+      "domain": "marketing",
+      "sub_domain": "brand",
+      "aliases": [
+        "sales",
+        "b2b sales",
+        "b2c sales",
+        "business development"
+      ],
+      "implies": [],
+      "related": [
+        "crm",
+        "lead_generation",
+        "negotiation"
+      ]
+    },
+    "customer_service": {
+      "display": "Customer Service",
+      "domain": "hr",
+      "sub_domain": "training",
+      "aliases": [
+        "customer service",
+        "customer support",
+        "client relations"
+      ],
+      "implies": [],
+      "related": [
+        "communication",
+        "crm",
+        "conflict_resolution"
+      ]
+    },
+    "data_visualization": {
+      "display": "Data Visualization",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "data visualization",
+        "data viz"
+      ],
+      "implies": [],
+      "related": [
+        "tableau",
+        "power_bi",
+        "d3js",
+        "matplotlib"
+      ]
+    },
+    "caching": {
+      "display": "Caching",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "caching",
+        "cache"
+      ],
+      "implies": [],
+      "related": [
+        "redis",
+        "memcached",
+        "performance"
+      ]
+    },
+    "big_data": {
+      "display": "Big Data",
+      "domain": "engineering",
+      "sub_domain": "data",
+      "aliases": [
+        "big data",
+        "hadoop",
+        "data engineering"
+      ],
+      "implies": [],
+      "related": [
+        "spark",
+        "hadoop_eco",
+        "data_science"
+      ]
+    },
+    "search": {
+      "display": "Search",
+      "domain": "engineering",
+      "sub_domain": "backend",
+      "aliases": [
+        "search",
+        "full-text search",
+        "search engine"
+      ],
+      "implies": [],
+      "related": [
+        "elasticsearch",
+        "solr"
+      ]
+    },
+    "healthcare_privacy": {
+      "display": "Healthcare Privacy",
+      "domain": "healthcare",
+      "sub_domain": "health_admin",
+      "aliases": [
+        "healthcare privacy",
+        "health data privacy",
+        "phi"
+      ],
+      "implies": [
+        "compliance"
+      ],
+      "related": [
+        "hipaa",
+        "gdpr",
+        "privacy_law"
+      ]
+    }
+  }
+}

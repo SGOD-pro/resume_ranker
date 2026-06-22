@@ -6,10 +6,42 @@ Detects degree keywords as anchors:
 
 Wraps section_parser.EducationParser for tagged-text path.
 Output: [{ degree, institution, start, end, grade }]
+
+v2 fixes:
+  - Strip ||LOC: tags from input text before parsing
+  - Strip bullet prefixes and action verbs from degree text
+  - Clean garbled institution names
 """
 
 import re
 from typing import List, Dict, Any, Optional, Tuple
+
+# ── ||LOC: tag stripping ─────────────────────────────────────────────────────
+_LOC_TAG_RE = re.compile(r'\s*\|\|?LOC:[^\n]*', re.I)
+
+# Action verb prefixes that are not part of degree names
+_ACTION_VERB_PREFIX_RE = re.compile(
+    r'^\s*[•·▪▸►✓✔\*\-]?\s*'
+    r'(?:Received|Completed|Earned|Awarded|Obtained|Achieved|Pursued|Finished)'
+    r'\s+(?:a\s+|an\s+|the\s+)?',
+    re.I
+)
+
+
+def _strip_loc_tags(text: str) -> str:
+    """Remove all ||LOC:... tags from text."""
+    return _LOC_TAG_RE.sub('', text)
+
+
+def _clean_degree_text(text: str) -> str:
+    """Clean degree text by removing bullet prefixes and action verbs."""
+    if not text:
+        return text
+    # Strip leading bullet characters
+    cleaned = re.sub(r'^\s*[•·▪▸►✓✔\*\-]\s*', '', text)
+    # Strip action verb prefixes
+    cleaned = _ACTION_VERB_PREFIX_RE.sub('', cleaned)
+    return cleaned.strip()
 
 # ── Degree keyword regex ─────────────────────────────────────────────────────
 # Word boundaries on BOTH sides to prevent partial matches like
@@ -69,6 +101,9 @@ class EducationParser:
     def parse(self, text: str) -> List[Dict[str, Any]]:
         if not text or not text.strip():
             return []
+
+        # Strip ||LOC: tags from input (defense-in-depth)
+        text = _strip_loc_tags(text)
 
         # First pass: line-based structured parsing
         entries = self._parse_by_lines(text)
@@ -263,12 +298,16 @@ class EducationParser:
         into degree and institution parts.
         If institution keywords are found, split at the comma before them.
         """
-        # Remove dates and grades first
+        # Remove dates, grades, and ||LOC: tags first
         clean = DATE_RE.sub('', line)
-        clean = GRADE_RE.sub('', clean).strip().rstrip(',').strip()
+        clean = GRADE_RE.sub('', clean)
+        clean = _strip_loc_tags(clean).strip().rstrip(',').strip()
 
         if not clean or len(clean) <= 3:
             return None, None
+
+        # Clean action verb prefixes from degree text
+        clean = _clean_degree_text(clean)
 
         # Try to find where the institution starts (by institution keyword)
         inst_match = INST_RE.search(clean)

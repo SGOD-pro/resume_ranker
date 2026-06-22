@@ -186,6 +186,46 @@ def normalize(s: str) -> str:
     return s
 
 
+def normalize_for_graph(s: str) -> str:
+    """Normalize a skill name to a skill_graph.json key.
+
+    Maps surface forms to underscore-separated graph keys:
+        "Financial Modeling" → "financial_modeling"
+        "React.js"          → "reactjs"
+        "Node.js"           → "nodejs"
+        "C++"               → "cplusplus"
+        "C#"                → "csharp"
+        "Employment Law"    → "employment_law"
+
+    The graph key format uses underscores for multi-word domain skills
+    and no separators for tech names (matching existing SKILL_ALIASES).
+    """
+    s = s.lower().strip()
+
+    # Special cases
+    s = s.replace('c++', 'cplusplus')
+    s = s.replace('c#', 'csharp')
+    s = s.replace('.net', 'dotnet')
+    s = s.replace('asp.net', 'aspnet')
+
+    # Strip .js suffix then dots/dashes
+    s = re.sub(r'\.js$', 'js', s)
+    s = re.sub(r'[.\-/]', '', s)
+
+    # Replace spaces with underscores for multi-word skills
+    s = s.replace(' ', '_')
+
+    # Also try the alias-based resolution: collapse underscores for tech
+    # If the underscore form doesn't exist in graph but collapsed form does
+    # via SKILL_ALIASES, prefer alias resolution.
+    alias_form = s.replace('_', '')
+    canonical = SKILL_ALIASES.get(alias_form)
+    if canonical:
+        return canonical
+
+    return s
+
+
 def get_search_variants(term: str) -> List[str]:
     """Return all known surface forms for a skill or keyword term.
     Used for text-searching: given 'Node', returns ['node', 'nodejs', 'node.js'].

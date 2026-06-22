@@ -95,6 +95,53 @@ from src.ranking.similarity import (
     education_score as _education_score,
 )
 
+# ── Phase 2: Inference Engine & Domain Classification ─────────────────────
+from src.ranking.skill_inference import SkillInferenceEngine, WEIGHT_INFERRED
+from src.ranking.domain_classifier import DomainClassifier
+
+import json as _json
+import os as _os
+
+_DOMAIN_PROXIMITY_PATH = _os.path.join(
+    _os.path.dirname(__file__), '..', 'registries', 'domain_proximity.json'
+)
+_cached_proximity = None
+
+def _load_domain_proximity():
+    """Load and cache the domain proximity penalty matrix."""
+    global _cached_proximity
+    if _cached_proximity is not None:
+        return _cached_proximity
+    with open(_DOMAIN_PROXIMITY_PATH) as f:
+        _cached_proximity = _json.load(f)
+    return _cached_proximity
+
+def _get_domain_penalty(jd_domain: str, candidate_domain: str,
+                        jd_confidence: float, cand_confidence: float) -> float:
+    """Get domain mismatch penalty for skill_score.
+
+    Returns negative penalty percentage (e.g., -80 for severe mismatch).
+    Returns 0 when domains match or confidence is too low.
+    """
+    # No penalty for unknown domains (confidence < 0.4)
+    if not jd_domain or not candidate_domain:
+        return 0.0
+    if jd_confidence < 0.4 or cand_confidence < 0.4:
+        return 0.0
+    if jd_domain == candidate_domain:
+        return 0.0
+    if jd_domain == 'unknown' or candidate_domain == 'unknown':
+        return 0.0
+
+    prox = _load_domain_proximity()
+    penalties = prox.get('penalties', {})
+
+    # Look up JD domain → candidate domain penalty
+    jd_penalties = penalties.get(jd_domain, {})
+    penalty = jd_penalties.get(candidate_domain, -50.0)  # Default -50 for unmapped
+
+    return float(penalty)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Project-Skill Bonus Scoring
@@ -411,12 +458,16 @@ def _detect_anomalies(candidate: Dict[str, Any],
 
 class CandidateScorer:
     """
-    3-Phase candidate ranking engine.
+    3-Phase candidate ranking engine with inference-aware skill matching.
 
     Usage:
         scorer = CandidateScorer()
         results = scorer.rank(jd, candidates)
     """
+
+    def __init__(self):
+        self._inference_engine = SkillInferenceEngine()
+        self._domain_classifier = DomainClassifier(self._inference_engine)
 
     def rank(self, jd: JobDescription,
              candidates: List[Dict[str, Any]]) -> List[ScoredCandidate]:
@@ -483,8 +534,46 @@ class CandidateScorer:
             extraction_quality=candidate.get('extraction_quality', 0.0),
         )
 
-        # ── Phase 1: Hard Knockout ────────────────────────────────────────
-        ko_reasons = self._phase1_knockout(jd, candidate, c_skills, total_years)
+        # ── Phase 2 Pre-compute: Inference Engine ─────────────────────────
+        # Run inference matching BEFORE knockout so inferred skills can
+        # satisfy must-have requirements.
+        all_jd_skills = jd.must_have_skills + jd.nice_to_have_skills
+
+        # Augment skills with JD skills found in targeted text sections only.
+        skill_sections = self._get_skill_sections(candidate)
+        augmented_skills = list(c_skills)
+        for jd_sk in all_jd_skills:
+            if not any(_skill_match(cs, jd_sk) for cs in augmented_skills):
+                variants = _get_search_variants(jd_sk)
+                found = False
+                for variant in variants:
+                    if len(variant) >= 3 and re.search(
+                        r'\b' + re.escape(variant) + r'\b', skill_sections
+                    ):
+                        found = True
+                        break
+                if found:
+                    augmented_skills.append(jd_sk)
+
+        # Run inference engine for all JD skills
+        inference_result = self._inference_engine.match_skills(
+            augmented_skills, all_jd_skills
+        )
+
+        # Store inference results on the result object
+        result.skill_matches = [m.to_dict() for m in inference_result.all_matches]
+        result.matched_inferred = [m.skill for m in inference_result.inferred_skills]
+        result.matched_related = [m.skill for m in inference_result.related_skills]
+
+        # Domain classification
+        cand_domain, cand_conf = self._domain_classifier.classify(candidate)
+        result.candidate_domain = cand_domain
+        result.domain_confidence = cand_conf
+
+        # ── Phase 1: Hard Knockout (inference-aware) ──────────────────────
+        ko_reasons = self._phase1_knockout(
+            jd, candidate, c_skills, total_years, inference_result
+        )
         if ko_reasons:
             result.knocked_out = True
             result.knockout_reasons = ko_reasons
@@ -495,34 +584,31 @@ class CandidateScorer:
         # the UI can show actual skill/experience/keyword discrimination
         # even for knocked-out candidates.
 
-        # Augment skills with JD skills found in targeted text sections only.
-        # IMPORTANT: We restrict to skill-bearing sections (skills, summary,
-        # experience descriptions) to avoid false positives from URLs, footers,
-        # email addresses, or boilerplate that happen to contain skill names.
-        skill_sections = self._get_skill_sections(candidate)
-        augmented_skills = list(c_skills)
-        all_jd_skills = jd.must_have_skills + jd.nice_to_have_skills
-        for jd_sk in all_jd_skills:
-            if not any(_skill_match(cs, jd_sk) for cs in augmented_skills):
-                # Search all alias variants of this JD skill in text
-                variants = _get_search_variants(jd_sk)
-                found = False
-                for variant in variants:
-                    # Only augment for variants with 3+ chars to avoid noise
-                    if len(variant) >= 3 and re.search(
-                        r'\b' + re.escape(variant) + r'\b', skill_sections
-                    ):
-                        found = True
-                        break
-                if found:
-                    augmented_skills.append(jd_sk)
+        # Skill scoring (BM25) — use inference weights for fractional scoring
+        result.skill_score = _bm25_skill_score(
+            augmented_skills, all_jd_skills, all_skills,
+            skill_weights=inference_result.skill_weights,
+        )
 
-        # Skill scoring (BM25) — use augmented skills
-        result.skill_score = _bm25_skill_score(augmented_skills, all_jd_skills, all_skills)
-        matched_must, missing_must = _find_matching_skills(augmented_skills, jd.must_have_skills)
-        matched_nice, _ = _find_matching_skills(augmented_skills, jd.nice_to_have_skills)
+        # Build matched/missing from inference results
+        # Must-have: matched if weight >= WEIGHT_INFERRED (0.75)
+        matched_must = []
+        missing_must = []
+        for sk in jd.must_have_skills:
+            w = inference_result.skill_weights.get(sk, 0.0)
+            if w >= WEIGHT_INFERRED:
+                matched_must.append(sk)
+            else:
+                missing_must.append(sk)
         result.matched_must_have = matched_must
         result.missing_must_have = missing_must
+
+        # Nice-to-have: any match (even related at 0.50) counts
+        matched_nice = []
+        for sk in jd.nice_to_have_skills:
+            w = inference_result.skill_weights.get(sk, 0.0)
+            if w > 0:
+                matched_nice.append(sk)
         result.matched_nice_to_have = matched_nice
 
         # Extra skills (candidate has but JD doesn't mention)
@@ -553,6 +639,15 @@ class CandidateScorer:
         # ── Bonus: Certifications & hackathons ────────────────────────────
         result.cert_bonus, result.relevant_certs = \
             _cert_bonus(candidate, jd)
+
+        # ── Domain penalty (ONLY affects skill_score) ─────────────────────
+        jd_domain, jd_conf = self._domain_classifier.classify_jd(
+            jd.title, all_jd_skills, jd.description, jd.department
+        )
+        penalty = _get_domain_penalty(jd_domain, cand_domain, jd_conf, cand_conf)
+        if penalty < 0:
+            result.domain_penalty = penalty
+            result.skill_score = max(0.0, result.skill_score * (1.0 + penalty / 100.0))
 
         # ── Weighted final score ──────────────────────────────────────────
         w = jd.weights
@@ -631,14 +726,19 @@ class CandidateScorer:
     def _phase1_knockout(self, jd: JobDescription,
                          candidate: Dict[str, Any],
                          c_skills: List[str],
-                         total_years: float) -> List[str]:
+                         total_years: float,
+                         inference_result=None) -> List[str]:
         """
-        Phase 1: Hard knockout checks.
+        Phase 1: Hard knockout checks (inference-aware).
+
+        Inferred skills with weight >= 0.75 can satisfy must-have requirements.
+        Related skills (weight 0.50) do NOT satisfy must-have requirements.
+
         Returns list of reasons (empty = passes).
         """
         reasons = []
 
-        # ── Must-have skills check ────────────────────────────────────────
+        # ── Must-have skills check (inference-aware) ───────────────────────
         if jd.must_have_skills:
             _, missing = _find_matching_skills(c_skills, jd.must_have_skills)
             if missing:
@@ -651,10 +751,15 @@ class CandidateScorer:
                 still_missing = []
                 for sk in missing:
                     sk_lower = sk.lower().strip()
-                    # Only allow second-chance matches for skills >= 4 chars to
-                    # avoid false positives from short generic words.
+
+                    # Check inference engine: weight >= 0.75 satisfies must-have
+                    if inference_result:
+                        inferred_weight = inference_result.skill_weights.get(sk, 0.0)
+                        if inferred_weight >= WEIGHT_INFERRED:
+                            continue  # Satisfied via inference
+
+                    # Only allow second-chance text matches for skills >= 4 chars
                     if len(sk_lower) >= 4:
-                        # Search all alias variants of this skill
                         variants = _get_search_variants(sk)
                         found_in_text = False
                         for variant in variants:

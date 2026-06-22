@@ -1,0 +1,132 @@
+{
+  "description": "Domain proximity penalties for skill score adjustment. Penalty applies ONLY to skill_score. Negative values = penalty percentage.",
+
+  "penalties": {
+    "engineering": {
+      "engineering": 0,
+      "legal": -80,
+      "finance": -70,
+      "healthcare": -80,
+      "hr": -60,
+      "marketing": -50,
+      "accounting": -70
+    },
+    "legal": {
+      "engineering": -80,
+      "legal": 0,
+      "finance": -30,
+      "healthcare": -60,
+      "hr": -25,
+      "marketing": -70,
+      "accounting": -30
+    },
+    "finance": {
+      "engineering": -70,
+      "legal": -30,
+      "finance": 0,
+      "healthcare": -70,
+      "hr": -50,
+      "marketing": -50,
+      "accounting": -10
+    },
+    "healthcare": {
+      "engineering": -80,
+      "legal": -60,
+      "finance": -70,
+      "healthcare": 0,
+      "hr": -50,
+      "marketing": -70,
+      "accounting": -70
+    },
+    "hr": {
+      "engineering": -60,
+      "legal": -25,
+      "finance": -50,
+      "healthcare": -50,
+      "hr": 0,
+      "marketing": -30,
+      "accounting": -40
+    },
+    "marketing": {
+      "engineering": -50,
+      "legal": -70,
+      "finance": -50,
+      "healthcare": -70,
+      "hr": -30,
+      "marketing": 0,
+      "accounting": -60
+    },
+    "accounting": {
+      "engineering": -70,
+      "legal": -30,
+      "finance": -10,
+      "healthcare": -70,
+      "hr": -40,
+      "marketing": -60,
+      "accounting": 0
+    }
+  },
+
+  "sub_domain_penalties": {
+    "engineering.backend": {
+      "engineering.frontend": -20,
+      "engineering.fullstack": 0,
+      "engineering.devops": -10,
+      "engineering.data": -15,
+      "engineering.ml": -20,
+      "engineering.mobile": -25,
+      "engineering.security": -15,
+      "engineering.embedded": -25
+    },
+    "engineering.frontend": {
+      "engineering.backend": -20,
+      "engineering.fullstack": 0,
+      "engineering.devops": -25,
+      "engineering.data": -25,
+      "engineering.ml": -30,
+      "engineering.mobile": -15,
+      "engineering.security": -25,
+      "engineering.embedded": -35
+    },
+    "engineering.fullstack": {
+      "engineering.backend": 0,
+      "engineering.frontend": 0,
+      "engineering.devops": -10,
+      "engineering.data": -15,
+      "engineering.ml": -20,
+      "engineering.mobile": -10,
+      "engineering.security": -15,
+      "engineering.embedded": -25
+    },
+    "engineering.devops": {
+      "engineering.backend": -10,
+      "engineering.frontend": -25,
+      "engineering.fullstack": -10,
+      "engineering.data": -15,
+      "engineering.ml": -25,
+      "engineering.mobile": -30,
+      "engineering.security": -10,
+      "engineering.embedded": -15
+    },
+    "engineering.data": {
+      "engineering.backend": -15,
+      "engineering.frontend": -25,
+      "engineering.fullstack": -15,
+      "engineering.devops": -15,
+      "engineering.ml": -5,
+      "engineering.mobile": -30,
+      "engineering.security": -20,
+      "engineering.embedded": -25
+    },
+    "engineering.ml": {
+      "engineering.backend": -20,
+      "engineering.frontend": -30,
+      "engineering.fullstack": -20,
+      "engineering.devops": -25,
+      "engineering.data": -5,
+      "engineering.mobile": -30,
+      "engineering.security": -25,
+      "engineering.embedded": -25
+    }
+  }
+}
