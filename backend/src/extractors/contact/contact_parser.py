@@ -124,6 +124,42 @@ _TECH_WORDS = {
     'management', 'development', 'engineering', 'testing',
 }
 
+# Regex to split name from contact info on the same line
+# Matches: Email, email, E-mail, Phone, Tel, Mobile, |, ●, •, ⎪, ·
+_LINE_SPLIT_RE = re.compile(
+    r'\s*(?:'
+    r'[Ee]-?[Mm]ail\s*:?'          # Email : / email:
+    r'|[Pp]hone\s*:?'              # Phone : / phone:
+    r'|[Tt]el(?:ephone)?\s*:?'     # Tel : / Telephone:
+    r'|[Mm]obile\s*:?'             # Mobile :
+    r'|[Cc]ell\s*:?'               # Cell :
+    r'|[Cc]ontact\s*:?'            # Contact :
+    r'|\|'                          # | separator
+    r'|●|•|⎪|·|◆|►'               # bullet separators
+    r'|[\w._%+-]+@[\w.-]+\.\w{2,}' # raw email address
+    r'|\+?\d[\d\s\-().]{7,}'       # phone number
+    r'|https?://\S+'               # URL
+    r'|www\.\S+'                   # www URL
+    r')'
+)
+
+
+def _split_name_from_contact(line: str) -> str:
+    """Extract name portion from a line that may contain contact info.
+
+    Examples:
+        'Kiran Malhotra Email : kiran@m.com' → 'Kiran Malhotra'
+        'John Smith | john@x.com | 555-1234'  → 'John Smith'
+        'Jane Doe • jane@x.com'               → 'Jane Doe'
+        'Pure Name Line'                       → 'Pure Name Line'
+    """
+    m = _LINE_SPLIT_RE.search(line)
+    if m:
+        before = line[:m.start()].strip().rstrip(',').rstrip(':').strip()
+        if before:
+            return before
+    return line.strip()
+
 
 def _is_name_line(line: str) -> bool:
     """Return True if line looks like a person name."""
@@ -212,8 +248,14 @@ class ContactParser:
             lines = [l.strip() for l in text_src.split('\n') if l.strip()]
             for line in lines[:5]:
                 clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
+                # First try the full line
                 if _is_name_line(clean):
                     return clean
+                # Then try splitting name from contact info on same line
+                # e.g. "Kiran Malhotra Email : kiran@m.com" → "Kiran Malhotra"
+                split = _split_name_from_contact(clean)
+                if split != clean and _is_name_line(split):
+                    return split
 
         # Strategy 3: scan first 10 lines of raw_text (fallback)
         lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
@@ -221,13 +263,19 @@ class ContactParser:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
             if _is_name_line(clean):
                 return clean
+            split = _split_name_from_contact(clean)
+            if split != clean and _is_name_line(split):
+                return split
 
         # Strategy 4: ALL CAPS line in first 5 lines
         for line in lines[:5]:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-            words = clean.split()
-            if 2 <= len(words) <= 4 and clean.isupper() and not re.search(r'\d', clean):
-                return clean.title()
+            # Try split first for ALL CAPS check too
+            split = _split_name_from_contact(clean)
+            for candidate in [clean, split]:
+                words = candidate.split()
+                if 2 <= len(words) <= 4 and candidate.isupper() and not re.search(r'\d', candidate):
+                    return candidate.title()
 
         return None
 

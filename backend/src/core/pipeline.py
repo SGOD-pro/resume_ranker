@@ -165,6 +165,7 @@ class PDFPipelineV3:
             fields = self._extract_resume_fields(
                 doc, main_sections, sidebar_sections, combined_text,
                 fallback_used=fallback_used,
+                pdf_path=pdf_path,
             )
         else:
             # Non-resume: return raw sections
@@ -261,6 +262,7 @@ class PDFPipelineV3:
         sidebar_sections: Dict[str, list],
         combined_text: str,
         fallback_used: bool = False,
+        pdf_path: str = "",
     ) -> Dict[str, Any]:
         """
         Phase 4-10: Extract all resume fields into normalized schema.
@@ -497,6 +499,31 @@ class PDFPipelineV3:
         # Clean name: strip title suffixes
         if raw_name and ',' in raw_name:
             raw_name = raw_name.split(',')[0].strip()
+
+        # ── Fallback: parse name from filename ────────────────────────────
+        # Catches: CV_Kiran_Malhotra.pdf → Kiran Malhotra
+        if not raw_name:
+            import os
+            basename = os.path.splitext(os.path.basename(pdf_path))[0]
+            # Pattern: CV_Firstname_Lastname or Resume_Firstname_Lastname
+            if '_' in basename:
+                parts = basename.split('_')
+                # Remove common prefixes like CV, Resume, resume
+                if parts[0].lower() in ('cv', 'resume', 'r'):
+                    parts = parts[1:]
+                if 2 <= len(parts) <= 4:
+                    candidate_name = ' '.join(p.title() for p in parts)
+                    from src.extractors.contact.contact_parser import _is_name_line
+                    if _is_name_line(candidate_name):
+                        raw_name = candidate_name
+                        name_confidence = 0.6
+                        is_section_header = False
+
+        # ── Final fallback: "Unknown Candidate" ──────────────────────────
+        if not raw_name:
+            raw_name = "Unknown Candidate"
+            name_confidence = 0.0
+            is_section_header = False
 
         # ── Extract DOB from [PERSONAL INFO] section or full text ─────────
         dob = self._extract_dob(main_sections, combined_text)

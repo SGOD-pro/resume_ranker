@@ -1,29 +1,29 @@
-# Benchmark v5 — Trustworthy Production Report
-Generated: 2026-06-23T03:42:07.228247
-Version: 5.0.0
+# Benchmark v6 — Production Report with Quality Remediation
+Generated: 2026-06-23T14:12:01.456305
+Version: 6.0.0
 
 ## Production Readiness Scorecard
 
 | Category | Score | Weight | Formula |
 |----------|-------|--------|---------|
 | Extraction Quality | 69/100 █████████████░░░░░░░ | 25% | — |
-| Ranking Quality | 92/100 ██████████████████░░ | 20% | — |
+| Ranking Quality | 95/100 ███████████████████░ | 20% | — |
 | Knockout Reliability | 100/100 ████████████████████ | 15% | — |
-| Domain Accuracy | 85/100 █████████████████░░░ | 15% | — |
+| Domain Accuracy | 93/100 ██████████████████░░ | 15% | — |
 | False Positive Control | 88/100 █████████████████░░░ | 10% | — |
 | False Negative Control | 75/100 ███████████████░░░░░ | 10% | — |
 | Performance | 100/100 ████████████████████ | 5% | — |
-| **OVERALL** | **85/100** | **100%** | |
+| **OVERALL** | **86/100** | **100%** | |
 
-### Verdict: 🟡 BETA READY
+### Verdict: 🔵 PRODUCTION READY
 
 ### Metric Formulas (Phase 4 Audit)
-- Extraction composite: 0.20*name + 0.25*skills + 0.25*experience + 0.20*education + 0.10*email = 68.7
-- Ranking: 74 domain-matched in top-5 across 16 JDs = 74/(16×5)
+- Extraction composite: 0.20*name + 0.25*skills + 0.25*experience + 0.20*education + 0.10*email = 69.1
+- Ranking: 95 domain-matched in top-5 across 20 JDs = 95/(20×5)
 - Knockout: 3/3
-- Domain: (5076 - 761) / 5076 = 85.0%
-- FP: 4 / (16 × 10) = 2.5%
-- FN: 150 cases
+- Domain: (5076 - 339) / 5076 = 93.3%
+- FP: 5 / (20 × 10) = 2.5%
+- FN: 139 cases
 
 ---
 ## Phase 1 — Knockout Validation
@@ -46,13 +46,13 @@ Version: 5.0.0
 ## Phase 2 — Extraction Accuracy
 - **Total PDFs**: 5076
 - **Success Rate**: 100.0% (5076/5076)
-- **Composite Score**: 68.7/100
+- **Composite Score**: 69.1/100
 - **Formula**: `0.20*name + 0.25*skills + 0.25*experience + 0.20*education + 0.10*email`
 
 ### Field Extraction Rates
 | Field | Present | Rate | Formula | Avg Count |
 |-------|---------|------|---------|-----------|
-| name | 2601 | 51.2% | 2601/5076 | - |
+| name | 2711 | 53.4% | 2711/5076 | - |
 | email | 3809 | 75.0% | 3809/5076 | - |
 | phone | 3734 | 73.6% | 3734/5076 | - |
 | skills | 4653 | 91.7% | 4653/5076 | 13.9 |
@@ -62,24 +62,24 @@ Version: 5.0.0
 | certs | 793 | 15.6% | 793/5076 | - |
 
 ### Name Precision Audit
-- **Valid names**: 2601
-- **Blank names**: 2475
-- **Blacklisted names**: 1248
-- **Name Precision**: 67.6%
-- **Formula**: `2601/(2601+1248)`
-- **Confidence distribution**: {'high': 2263, 'medium': 242, 'low': 96, 'zero': 2475}
+- **Valid names**: 2711
+- **Blank names**: 2365
+- **Blacklisted names**: 96
+- **Name Precision**: 96.6%
+- **Formula**: `2711/(2711+96)`
+- **Confidence distribution**: {'high': 2373, 'medium': 242, 'low': 96, 'zero': 2365}
 
 ### Anomalies
 - Tag leaks: 4
 - Skill duplicates: 12
-- Low quality: 361
+- Low quality: 348
 
 ---
 ## Phase 2.5 — Deduplication Audit
 - **Total PDFs**: 5076
 - **Unique PDFs (by SHA256)**: 3856
 - **Exact duplicates**: 1220 (1051 groups)
-- **Near duplicates**: 156 (123 groups)
+- **Near duplicates**: 154 (123 groups)
 - **Dedup rate**: 27.1%
 
 ### Exact Duplicate Samples
@@ -90,9 +90,9 @@ Version: 5.0.0
 - `745cac622eea...`: cv (1170).pdf, cv (1171).pdf
 ### Near Duplicate Samples
 - `81285e886e96...`: cv (1002).pdf, cv (1393).pdf
-- `8eafc303168f...`: cv (101).pdf, cv (181).pdf, cv (1843).pdf
+- `4b45d2d2442d...`: cv (101).pdf, cv (53).pdf
 - `4d4a626d75b8...`: cv (102).pdf, cv (388).pdf
-- `b6aef17c9967...`: cv (104).pdf, cv (222).pdf, cv (372).pdf
+- `31940ae997e2...`: cv (104).pdf, cv (222).pdf, cv (372).pdf
 - `fdf04b4ed281...`: cv (1045).pdf, cv (1046).pdf
 
 ---
@@ -108,26 +108,26 @@ Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 |  | 60.0 | engineering | software_engineering | 5/10 | 3 |
-| #2 |  | 60.0 | engineering | software_engineering | 5/10 | 3 |
-| #3 |  | 60.0 | engineering | software_engineering | 5/10 | 3 |
-| #4 |  | 60.0 | engineering | software_engineering | 5/10 | 3 |
+| #1 | Kiran Malhotra | 60.0 | engineering | software_engineering | 5/10 | 3 |
+| #2 | Rahul Gupta | 60.0 | engineering | software_engineering | 5/10 | 3 |
+| #3 | Shalini Nair | 60.0 | engineering | software_engineering | 5/10 | 3 |
+| #4 | Vikram Rao | 60.0 | engineering | software_engineering | 5/10 | 3 |
 | #5 | ZOE THOMPSON | 60.0 | engineering | software_engineering | 5/10 | 3 |
 | #6 | MARCUS HALL | 60.0 | engineering | software_engineering | 5/10 | 3 |
-| #7 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #8 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #9 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #10 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #11 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #12 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
-| #13 |  | 55.0 | engineering | software_engineering | 3/10 | 4 |
-| #14 |  | 55.0 | engineering | software_engineering | 3/10 | 5 |
+| #7 | Aditya Joshi | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #8 | Amit Sharma | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #9 | Ananya Desai | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #10 | Neha Singh | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #11 | Priya Pa | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #12 | Rohan Mehra | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #13 | Unknown Candidate | 55.0 | engineering | software_engineering | 3/10 | 4 |
+| #14 | Unknown Candidate | 55.0 | engineering | software_engineering | 3/10 | 5 |
 | #15 | Pavithra Shetty | 55.0 | engineering | software_engineering | 3/10 | 4 |
-| #16 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #16 | Unknown Candidate | 55.0 | engineering | software_engineering | 4/10 | 3 |
 | #17 | John Smith | 50.0 | engineering | software_engineering | 4/10 | 2 |
-| #18 |  | 50.0 | engineering | software_engineering | 2/10 | 5 |
+| #18 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 5 |
 | #19 | Mashad Abbas | 50.0 | engineering | software_engineering | 2/10 | 23 |
-| #20 |  | 50.0 | engineering | software_engineering | 2/10 | 7 |
+| #20 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 7 |
 
 ### Frontend Engineer
 Total candidates: 5076
@@ -136,24 +136,24 @@ Total candidates: 5076
 |------|------|-------|--------|------------|--------|-----|
 | #1 | MARCUS HALL | 65.0 | engineering | software_engineering | 6/10 | 3 |
 | #2 | Harper Garcia | 60.0 | engineering | software_engineering | 5/10 | 3 |
-| #3 |  | 55.0 | engineering | software_engineering | 3/10 | 5 |
-| #4 |  | 55.0 | engineering | software_engineering | 3/10 | 8 |
-| #5 |  | 55.0 | engineering | software_engineering | 4/10 | 3 |
+| #3 | Unknown Candidate | 55.0 | engineering | software_engineering | 3/10 | 5 |
+| #4 | Ujjwal Kumar | 55.0 | engineering | software_engineering | 3/10 | 8 |
+| #5 | Unknown Candidate | 55.0 | engineering | software_engineering | 4/10 | 3 |
 | #6 | DANIEL GAN | 50.0 | engineering | civil_engineering | 6/10 | 2 |
 | #7 | HARI KRISHNAN | 50.0 | engineering | software_engineering | 2/10 | 9 |
-| #8 |  | 50.0 | engineering | software_engineering | 2/10 | 5 |
+| #8 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 5 |
 | #9 | Ramya. M | 50.0 | engineering | software_engineering | 2/10 | 5 |
-| #10 |  | 50.0 | engineering | software_engineering | 2/10 | 7 |
-| #11 |  | 50.0 | engineering | software_engineering | 2/10 | 9 |
-| #12 |  | 50.0 | engineering | software_engineering | 2/10 | 9 |
-| #13 |  | 50.0 | engineering | software_engineering | 2/10 | 7 |
-| #14 |  | 50.0 | engineering | software_engineering | 5/10 | 1 |
-| #15 |  | 50.0 | engineering | software_engineering | 5/10 | 1 |
-| #16 |  | 45.0 | engineering | software_engineering | 2/10 | 3 |
-| #17 | Frederick Chen | 45.0 | engineering | software_engineering | 3/10 | 2 |
-| #18 | Priya Elza | 45.0 | engineering | software_engineering | 3/10 | 2 |
-| #19 |  | 45.0 | engineering | software_engineering | 3/10 | 2 |
-| #20 |  | 45.0 | engineering | software_engineering | 2/10 | 3 |
+| #10 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 7 |
+| #11 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 9 |
+| #12 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 9 |
+| #13 | Unknown Candidate | 50.0 | engineering | software_engineering | 2/10 | 7 |
+| #14 | Unknown Candidate | 50.0 | engineering | software_engineering | 5/10 | 1 |
+| #15 | Unknown Candidate | 50.0 | engineering | software_engineering | 5/10 | 1 |
+| #16 | Amit Sharma | 45.0 | engineering | software_engineering | 2/10 | 3 |
+| #17 | Priya Elza | 45.0 | engineering | software_engineering | 3/10 | 2 |
+| #18 | Unknown Candidate | 45.0 | engineering | software_engineering | 3/10 | 2 |
+| #19 | Karthika Kumanan | 45.0 | engineering | software_engineering | 1/10 | 4 |
+| #20 | Unknown Candidate | 45.0 | engineering | software_engineering | 1/10 | 6 |
 
 ### Fullstack Engineer
 Total candidates: 5076
@@ -161,25 +161,25 @@ Total candidates: 5076
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
 | #1 | MARCUS HALL | 62.8 | engineering | software_engineering | 5/9 | 3 |
-| #2 |  | 57.2 | engineering | software_engineering | 4/9 | 3 |
+| #2 | Amit Sharma | 57.2 | engineering | software_engineering | 4/9 | 3 |
 | #3 | ZOE THOMPSON | 57.2 | engineering | software_engineering | 4/9 | 3 |
-| #4 |  | 57.2 | engineering | software_engineering | 4/9 | 3 |
-| #5 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #6 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #7 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #8 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #9 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #10 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #11 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #12 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #13 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #4 | Unknown Candidate | 57.2 | engineering | software_engineering | 4/9 | 3 |
+| #5 | Aditya Joshi | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #6 | Ananya Desai | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #7 | Kiran Malhotra | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #8 | Neha Singh | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #9 | Priya Pa | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #10 | Rahul Gupta | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #11 | Rohan Mehra | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #12 | Shalini Nair | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #13 | Vikram Rao | 51.7 | engineering | software_engineering | 3/9 | 3 |
 | #14 | VICTORIA BAKER | 51.7 | engineering | software_engineering | 3/9 | 3 |
 | #15 | Harper Garcia | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #16 |  | 51.1 | engineering | software_engineering | 2/9 | 5 |
+| #16 | Unknown Candidate | 51.1 | engineering | software_engineering | 2/9 | 5 |
 | #17 | Pavithra Shetty | 51.1 | engineering | software_engineering | 2/9 | 4 |
-| #18 |  | 47.2 | engineering | software_engineering | 4/9 | 1 |
-| #19 |  | 45.6 | engineering | software_engineering | 1/9 | 4 |
-| #20 |  | 45.6 | engineering | software_engineering | 1/9 | 5 |
+| #18 | Unknown Candidate | 47.2 | engineering | software_engineering | 4/9 | 1 |
+| #19 | Unknown Candidate | 45.6 | engineering | software_engineering | 1/9 | 4 |
+| #20 | Unknown Candidate | 45.6 | engineering | software_engineering | 1/9 | 5 |
 
 ### DevOps Engineer
 Total candidates: 5076
@@ -187,73 +187,73 @@ Total candidates: 5076
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
 | #1 | VICTORIA BAKER | 73.9 | engineering | software_engineering | 7/9 | 3 |
-| #2 |  | 62.8 | engineering | software_engineering | 5/9 | 3 |
-| #3 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #4 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #5 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #6 |  | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #7 |  | 51.1 | engineering | software_engineering | 2/9 | 5 |
+| #2 | Amit Sharma | 62.8 | engineering | software_engineering | 5/9 | 3 |
+| #3 | Ananya Desai | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #4 | Neha Singh | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #5 | Rahul Gupta | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #6 | Shalini Nair | 51.7 | engineering | software_engineering | 3/9 | 3 |
+| #7 | Unknown Candidate | 51.1 | engineering | software_engineering | 2/9 | 5 |
 | #8 | Joseline | 47.2 | engineering | software_engineering | 4/9 | 1 |
 | #9 | Joseline | 47.2 | engineering | software_engineering | 4/9 | 1 |
-| #10 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #11 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #12 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #13 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #14 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #10 | Aditya Joshi | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #11 | Kiran Malhotra | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #12 | Priya Pa | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #13 | Rohan Mehra | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #14 | Vikram Rao | 46.1 | engineering | software_engineering | 2/9 | 3 |
 | #15 | ZOE THOMPSON | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #16 |  | 46.1 | engineering | software_engineering | 2/9 | 3 |
+| #16 | Unknown Candidate | 46.1 | engineering | software_engineering | 2/9 | 3 |
 | #17 | MARCUS HALL | 46.1 | engineering | software_engineering | 2/9 | 3 |
-| #18 |  | 45.6 | engineering | software_engineering | 1/9 | 4 |
+| #18 | Unknown Candidate | 45.6 | engineering | software_engineering | 1/9 | 4 |
 | #19 | HARI KRISHNAN | 45.6 | engineering | software_engineering | 1/9 | 9 |
-| #20 |  | 45.6 | engineering | software_engineering | 1/9 | 5 |
+| #20 | Unknown Candidate | 45.6 | engineering | software_engineering | 1/9 | 5 |
 
 ### Data Engineer
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 |  | 73.9 | engineering | software_engineering | 7/9 | 3 |
-| #2 |  | 73.9 | engineering | software_engineering | 7/9 | 3 |
-| #3 |  | 73.9 | engineering | software_engineering | 7/9 | 3 |
-| #4 |  | 73.9 | engineering | software_engineering | 7/9 | 3 |
-| #5 |  | 68.3 | engineering | software_engineering | 6/9 | 3 |
-| #6 |  | 68.3 | engineering | software_engineering | 6/9 | 3 |
-| #7 |  | 68.3 | engineering | software_engineering | 6/9 | 3 |
+| #1 | Aditya Joshi | 73.9 | engineering | software_engineering | 7/9 | 3 |
+| #2 | Ananya Desai | 73.9 | engineering | software_engineering | 7/9 | 3 |
+| #3 | Rohan Mehra | 73.9 | engineering | software_engineering | 7/9 | 3 |
+| #4 | Shalini Nair | 73.9 | engineering | software_engineering | 7/9 | 3 |
+| #5 | Kiran Malhotra | 68.3 | engineering | software_engineering | 6/9 | 3 |
+| #6 | Neha Singh | 68.3 | engineering | software_engineering | 6/9 | 3 |
+| #7 | Priya Pa | 68.3 | engineering | software_engineering | 6/9 | 3 |
 | #8 | John Smith | 63.3 | engineering | software_engineering | 6/9 | 2 |
-| #9 |  | 62.8 | engineering | software_engineering | 5/9 | 3 |
-| #10 |  | 62.8 | engineering | software_engineering | 5/9 | 3 |
-| #11 |  | 57.2 | engineering | software_engineering | 4/9 | 3 |
+| #9 | Amit Sharma | 62.8 | engineering | software_engineering | 5/9 | 3 |
+| #10 | Vikram Rao | 62.8 | engineering | software_engineering | 5/9 | 3 |
+| #11 | Rahul Gupta | 57.2 | engineering | software_engineering | 4/9 | 3 |
 | #12 | MARCUS HALL | 51.7 | engineering | software_engineering | 3/9 | 3 |
-| #13 |  | 51.1 | engineering | software_engineering | 2/9 | 4 |
+| #13 | Unknown Candidate | 51.1 | engineering | software_engineering | 2/9 | 4 |
 | #14 | Mashad Abbas | 51.1 | engineering | software_engineering | 2/9 | 23 |
-| #15 |  | 51.1 | engineering | software_engineering | 2/9 | 5 |
+| #15 | Unknown Candidate | 51.1 | engineering | software_engineering | 2/9 | 5 |
 | #16 | Pavithra Shetty | 51.1 | engineering | software_engineering | 2/9 | 4 |
-| #17 |  | 47.2 | engineering | software_engineering | 4/9 | 1 |
-| #18 |  | 47.2 | engineering | software_engineering | 4/9 | 1 |
+| #17 | Unknown Candidate | 47.2 | engineering | software_engineering | 4/9 | 1 |
+| #18 | Unknown Candidate | 47.2 | engineering | software_engineering | 4/9 | 1 |
 | #19 | HARI KRISHNAN | 45.6 | engineering | software_engineering | 1/9 | 9 |
-| #20 |  | 45.6 | engineering | software_engineering | 1/9 | 5 |
+| #20 | Unknown Candidate | 45.6 | engineering | software_engineering | 1/9 | 5 |
 
 ### Data Scientist
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 |  | 66.2 | engineering | software_engineering | 5/8 | 3 |
-| #2 |  | 66.2 | engineering | software_engineering | 5/8 | 3 |
-| #3 |  | 66.2 | engineering | software_engineering | 5/8 | 3 |
-| #4 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #5 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #6 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #7 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #8 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #9 |  | 58.8 | engineering | software_engineering | 3/8 | 5 |
+| #1 | Aditya Joshi | 66.2 | engineering | software_engineering | 5/8 | 3 |
+| #2 | Rahul Gupta | 66.2 | engineering | software_engineering | 5/8 | 3 |
+| #3 | Rohan Mehra | 66.2 | engineering | software_engineering | 5/8 | 3 |
+| #4 | Amit Sharma | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #5 | Ananya Desai | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #6 | Kiran Malhotra | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #7 | Neha Singh | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #8 | Priya Pa | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #9 | Unknown Candidate | 58.8 | engineering | software_engineering | 3/8 | 5 |
 | #10 | Pavithra Shetty | 58.8 | engineering | software_engineering | 3/8 | 4 |
 | #11 | Chechnik | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #12 | Gruvil Technologies | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #13 | Chechnik | 56.2 | engineering | software_engineering | 5/8 | 1 |
-| #14 |  | 56.2 | engineering | software_engineering | 5/8 | 1 |
+| #14 | Unknown Candidate | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #15 | Joseline | 56.2 | engineering | software_engineering | 5/8 | 1 |
-| #16 |  | 56.2 | engineering | software_engineering | 5/8 | 1 |
+| #16 | Unknown Candidate | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #17 | Joseline | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #18 | Edison | 56.2 | engineering | software_engineering | 5/8 | 1 |
 | #19 | BLAKE MESTLY | 56.2 | engineering | software_engineering | 5/8 | 1 |
@@ -264,25 +264,25 @@ Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 |  | 66.2 | engineering | software_engineering | 5/8 | 3 |
-| #2 |  | 62.5 | engineering | software_engineering | 6/8 | 1 |
+| #1 | Rahul Gupta | 66.2 | engineering | software_engineering | 5/8 | 3 |
+| #2 | Unknown Candidate | 62.5 | engineering | software_engineering | 6/8 | 1 |
 | #3 | Joseline | 62.5 | engineering | software_engineering | 6/8 | 1 |
-| #4 |  | 62.5 | engineering | software_engineering | 6/8 | 1 |
+| #4 | Unknown Candidate | 62.5 | engineering | software_engineering | 6/8 | 1 |
 | #5 | Joseline | 62.5 | engineering | software_engineering | 6/8 | 1 |
-| #6 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #7 |  | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #6 | Amit Sharma | 60.0 | engineering | software_engineering | 4/8 | 3 |
+| #7 | Kiran Malhotra | 60.0 | engineering | software_engineering | 4/8 | 3 |
 | #8 | VICTORIA BAKER | 60.0 | engineering | software_engineering | 4/8 | 3 |
-| #9 |  | 53.8 | engineering | software_engineering | 3/8 | 3 |
-| #10 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #11 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #12 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #13 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #14 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #15 |  | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #9 | Priya Pa | 53.8 | engineering | software_engineering | 3/8 | 3 |
+| #10 | Aditya Joshi | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #11 | Ananya Desai | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #12 | Neha Singh | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #13 | Rohan Mehra | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #14 | Shalini Nair | 47.5 | engineering | software_engineering | 2/8 | 3 |
+| #15 | Vikram Rao | 47.5 | engineering | software_engineering | 2/8 | 3 |
 | #16 | MARCUS HALL | 47.5 | engineering | software_engineering | 2/8 | 3 |
-| #17 |  | 46.2 | engineering | software_engineering | 1/8 | 4 |
-| #18 |  | 46.2 | engineering | software_engineering | 1/8 | 5 |
-| #19 |  | 46.2 | engineering | software_engineering | 1/8 | 5 |
+| #17 | Unknown Candidate | 46.2 | engineering | software_engineering | 1/8 | 4 |
+| #18 | Unknown Candidate | 46.2 | engineering | software_engineering | 1/8 | 5 |
+| #19 | Unknown Candidate | 46.2 | engineering | software_engineering | 1/8 | 5 |
 | #20 | Pavithra Shetty | 46.2 | engineering | software_engineering | 1/8 | 4 |
 
 ### Marketing Manager
@@ -293,75 +293,75 @@ Total candidates: 5076
 | #1 | LIAM | 65.7 | marketing | marketing | 5/7 | 2 |
 | #2 | Christopher Fowler | 63.6 | marketing | marketing | 4/7 | 3 |
 | #3 | ELIJAH BROWN | 63.6 | marketing | marketing | 4/7 | 3 |
-| #4 |  | 54.3 | marketing | marketing | 2/7 | 13 |
+| #4 | SAYYED SHAIFAL ABBAS | 54.3 | marketing | marketing | 2/7 | 8 |
 | #5 | SAYYED SHAIFAL ABBAS | 54.3 | marketing | marketing | 2/7 | 8 |
-| #6 | SAYYED SHAIFAL ABBAS | 54.3 | marketing | marketing | 2/7 | 8 |
-| #7 |  | 54.3 | marketing | marketing | 2/7 | 13 |
-| #8 |  | 54.3 | marketing | marketing | 2/7 | 9 |
-| #9 |  | 54.3 | marketing | marketing | 2/7 | 7 |
-| #10 |  | 54.3 | marketing | marketing | 2/7 | 4 |
-| #11 | Daiana Rocha | 54.3 | marketing | marketing | 2/7 | 4 |
-| #12 |  | 54.3 | marketing | marketing | 2/7 | 6 |
-| #13 |  | 53.6 | marketing | marketing | 4/7 | 1 |
-| #14 |  | 53.6 | marketing | marketing | 4/7 | 1 |
-| #15 |  | 49.3 | marketing | marketing | 2/7 | 3 |
-| #16 | Alfred (Yi) Zhang | 49.3 | marketing | marketing | 2/7 | 3 |
-| #17 |  | 47.1 | marketing | marketing | 1/7 | 11 |
-| #18 | Anju Sasi | 47.1 | marketing | marketing | 1/7 | 5 |
-| #19 |  | 47.1 | marketing | marketing | 1/7 | 9 |
-| #20 | Reetabrata Bhattacharya | 47.1 | marketing | marketing | 1/7 | 6 |
+| #6 | Unknown Candidate | 54.3 | marketing | marketing | 2/7 | 9 |
+| #7 | Unknown Candidate | 54.3 | marketing | marketing | 2/7 | 7 |
+| #8 | Daiana Rocha | 54.3 | marketing | marketing | 2/7 | 4 |
+| #9 | Unknown Candidate | 53.6 | marketing | marketing | 4/7 | 1 |
+| #10 | Unknown Candidate | 49.3 | marketing | marketing | 2/7 | 3 |
+| #11 | Alfred (Yi) Zhang | 49.3 | marketing | marketing | 2/7 | 3 |
+| #12 | Anju Sasi | 47.1 | marketing | marketing | 1/7 | 5 |
+| #13 | Unknown Candidate | 47.1 | marketing | marketing | 1/7 | 9 |
+| #14 | Reetabrata Bhattacharya | 47.1 | marketing | marketing | 1/7 | 6 |
+| #15 | Unknown Candidate | 47.1 | marketing | marketing | 1/7 | 4 |
+| #16 | Unknown Candidate | 47.1 | marketing | marketing | 1/7 | 4 |
+| #17 | Esteemed Organization | 47.1 | marketing | marketing | 1/7 | 4 |
+| #18 | Christopher Fowler | 46.4 | marketing | marketing | 3/7 | 1 |
+| #19 | Unknown Candidate | 46.4 | marketing | marketing | 3/7 | 1 |
+| #20 | Unknown Candidate | 46.4 | marketing | marketing | 3/7 | 1 |
 
 ### Sales Executive
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 | ISAAC HALL | 55.0 | marketing | marketing | 4/5 | 3 |
-| #2 |  | 50.0 | healthcare | healthcare | 3/5 | 11 |
-| #3 | SALIK SHAIKH | 50.0 | marketing | marketing | 3/5 | 5 |
-| #4 | SALIK SHAIKH | 50.0 | marketing | marketing | 3/5 | 5 |
-| #5 |  | 50.0 | healthcare | healthcare | 3/5 | 11 |
-| #6 |  | 45.0 | engineering | software_engineering | 3/5 | 3 |
-| #7 | Gaurav Kumar | 45.0 | healthcare | healthcare | 3/5 | 3 |
-| #8 |  | 45.0 | hr | hr | 4/5 | 1 |
-| #9 | M S | 40.0 | finance | finance | 2/5 | 6 |
-| #10 | Oman Career Software | 40.0 | accounting | accounting | 2/5 | 4 |
-| #11 | Hussein Masoud | 40.0 | accounting | accounting | 2/5 | 7 |
-| #12 |  | 40.0 | healthcare | healthcare | 2/5 | 34 |
-| #13 | Unmesh Ramesh Thorat | 40.0 | healthcare | healthcare | 2/5 | 17 |
-| #14 | Shahriar Saaed Niazi | 40.0 | healthcare | healthcare | 2/5 | 5 |
-| #15 | SHOIAB KHAN | 40.0 | engineering | software_engineering | 2/5 | 12 |
-| #16 | MOHAMED ISMAIL | 40.0 | healthcare | healthcare | 2/5 | 41 |
-| #17 | MOHAMED ISMAIL | 40.0 | healthcare | healthcare | 2/5 | 41 |
-| #18 |  | 40.0 | healthcare | healthcare | 2/5 | 5 |
-| #19 |  | 35.0 | hr | hr | 2/5 | 3 |
-| #20 | Dheeraj S. Sharma | 35.0 | marketing | marketing | 3/5 | 1 |
+| #1 | ISAAC HALL | 75.0 | sales | sales | 4/5 | 3 |
+| #2 | PRAKASH PINDARI | 70.0 | sales | sales | 3/5 | 11 |
+| #3 | SALIK SHAIKH | 70.0 | sales | sales | 3/5 | 5 |
+| #4 | SALIK SHAIKH | 70.0 | sales | sales | 3/5 | 5 |
+| #5 | PRAKASH PINDARI | 70.0 | sales | sales | 3/5 | 11 |
+| #6 | Unknown Candidate | 65.0 | sales | sales | 4/5 | 1 |
+| #7 | M S | 60.0 | sales | sales | 2/5 | 6 |
+| #8 | Oman Career Software | 60.0 | sales | sales | 2/5 | 4 |
+| #9 | Shahriar Saaed Niazi | 60.0 | sales | sales | 2/5 | 5 |
+| #10 | SHOIAB KHAN | 60.0 | sales | sales | 2/5 | 12 |
+| #11 | Unknown Candidate | 55.0 | sales | sales | 2/5 | 3 |
+| #12 | Dheeraj S. Sharma | 55.0 | sales | sales | 3/5 | 1 |
+| #13 | MOHITH KRISHNAN | 55.0 | sales | sales | 2/5 | 3 |
+| #14 | Unknown Candidate | 55.0 | sales | sales | 2/5 | 3 |
+| #15 | Shahadat Hussain | 55.0 | sales | sales | 2/5 | 3 |
+| #16 | Shahadat Hussain | 55.0 | sales | sales | 2/5 | 3 |
+| #17 | Unknown Candidate | 55.0 | sales | sales | 3/5 | 1 |
+| #18 | Unknown Candidate | 55.0 | sales | sales | 3/5 | 1 |
+| #19 | Career Overview | 55.0 | sales | sales | 3/5 | 1 |
+| #20 | SEBASTIAN MARTIN | 55.0 | sales | sales | 2/5 | 3 |
 
 ### HR Manager
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 | UPADHYAY | 56.7 | hr | hr | 2/6 | 6 |
-| #2 |  | 56.7 | hr | hr | 2/6 | 13 |
-| #3 |  | 50.0 | hr | hr | 3/6 | 1 |
-| #4 |  | 50.0 | hr | hr | 3/6 | 1 |
-| #5 | Mahendra Kumar Yogi | 48.3 | hr | hr | 1/6 | 13 |
-| #6 | M Priyadharsini | 48.3 | hr | hr | 1/6 | 4 |
-| #7 |  | 48.3 | hr | hr | 1/6 | 8 |
-| #8 |  | 48.3 | hr | hr | 1/6 | 8 |
-| #9 | ARIF AHAMED M | 48.3 | hr | hr | 1/6 | 5 |
-| #10 | Radha HG | 48.3 | hr | hr | 1/6 | 6 |
-| #11 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 9 |
-| #12 |  | 48.3 | hr | hr | 1/6 | 8 |
-| #13 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 9 |
-| #14 | Radha HG | 48.3 | hr | hr | 1/6 | 6 |
-| #15 | ARIF AHAMED M | 48.3 | hr | hr | 1/6 | 5 |
-| #16 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 13 |
-| #17 | Hitesh Sagar | 48.3 | hr | hr | 1/6 | 11 |
-| #18 | Mohammed Hidayath | 45.0 | hr | hr | 3/6 | 0 |
-| #19 | Mohammed Hidayath | 45.0 | hr | hr | 3/6 | 0 |
-| #20 |  | 43.3 | hr | hr | 1/6 | 3 |
+| #1 | Unknown Candidate | 50.0 | hr | hr | 3/6 | 1 |
+| #2 | Unknown Candidate | 50.0 | hr | hr | 3/6 | 1 |
+| #3 | Mahendra Kumar Yogi | 48.3 | hr | hr | 1/6 | 13 |
+| #4 | M Priyadharsini | 48.3 | hr | hr | 1/6 | 4 |
+| #5 | Unknown Candidate | 48.3 | hr | hr | 1/6 | 8 |
+| #6 | Unknown Candidate | 48.3 | hr | hr | 1/6 | 8 |
+| #7 | Radha HG | 48.3 | hr | hr | 1/6 | 6 |
+| #8 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 9 |
+| #9 | Unknown Candidate | 48.3 | hr | hr | 1/6 | 8 |
+| #10 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 9 |
+| #11 | Radha HG | 48.3 | hr | hr | 1/6 | 6 |
+| #12 | Bhola Nagar | 48.3 | hr | hr | 1/6 | 13 |
+| #13 | Mohammed Hidayath | 45.0 | hr | hr | 3/6 | 0 |
+| #14 | Mohammed Hidayath | 45.0 | hr | hr | 3/6 | 0 |
+| #15 | LOGISTICS AND SHIPPING | 43.3 | hr | hr | 1/6 | 3 |
+| #16 | LOGISTICS AND SHIPPING | 43.3 | hr | hr | 1/6 | 3 |
+| #17 | Unknown Candidate | 41.7 | hr | hr | 2/6 | 1 |
+| #18 | Unknown Candidate | 41.7 | hr | hr | 2/6 | 1 |
+| #19 | Unknown Candidate | 41.7 | hr | hr | 2/6 | 1 |
+| #20 | Unknown Candidate | 41.7 | hr | hr | 2/6 | 1 |
 
 ### Accountant
 Total candidates: 5076
@@ -372,100 +372,100 @@ Total candidates: 5076
 | #2 | Abdullatif A. Shehadeh | 54.3 | finance | finance | 2/7 | 5 |
 | #3 | ABU RAIS SIDDIQUI | 54.3 | finance | finance | 2/7 | 5 |
 | #4 | Sammy Musungu | 48.6 | accounting | accounting | 4/7 | 6 |
-| #5 | Finance Minister | 47.1 | finance | finance | 1/7 | 4 |
-| #6 | Finance Minister | 47.1 | finance | finance | 1/7 | 4 |
-| #7 | Khulood Rashed Al-Saad | 47.1 | finance | finance | 1/7 | 5 |
-| #8 |  | 47.1 | finance | finance | 1/7 | 14 |
-| #9 | VINEET MATHRADAS | 42.1 | finance | finance | 1/7 | 3 |
-| #10 | Virak Internship Hdfc | 40.0 | finance | finance | 0/7 | 10 |
-| #11 | M S | 40.0 | finance | finance | 0/7 | 6 |
-| #12 | Dinesh Joghee Sockkan | 40.0 | finance | finance | 0/7 | 6 |
-| #13 |  | 40.0 | finance | finance | 0/7 | 10 |
-| #14 |  | 40.0 | finance | finance | 0/7 | 7 |
-| #15 | CHAISE JAYAPRAKASH (CPSM) | 40.0 | finance | finance | 0/7 | 4 |
-| #16 |  | 40.0 | finance | finance | 0/7 | 12 |
-| #17 |  | 40.0 | finance | finance | 0/7 | 12 |
-| #18 |  | 40.0 | finance | finance | 0/7 | 28 |
-| #19 |  | 40.0 | finance | finance | 0/7 | 12 |
-| #20 |  | 40.0 | finance | finance | 0/7 | 12 |
+| #5 | Khulood Rashed Al-Saad | 47.1 | finance | finance | 1/7 | 5 |
+| #6 | Unknown Candidate | 47.1 | finance | finance | 1/7 | 14 |
+| #7 | VINEET MATHRADAS | 42.1 | finance | finance | 1/7 | 3 |
+| #8 | Virak Internship Hdfc | 40.0 | finance | finance | 0/7 | 10 |
+| #9 | Dinesh Joghee Sockkan | 40.0 | finance | finance | 0/7 | 6 |
+| #10 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 10 |
+| #11 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 7 |
+| #12 | CHAISE JAYAPRAKASH (CPSM) | 40.0 | finance | finance | 0/7 | 4 |
+| #13 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #14 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #15 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #16 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #17 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #18 | Unknown Candidate | 40.0 | finance | finance | 0/7 | 12 |
+| #19 | CHAISE JAYAPRAKASH (CPSM) | 40.0 | finance | finance | 0/7 | 4 |
+| #20 | Unknown Candidate | 39.3 | finance | finance | 2/7 | 1 |
 
 ### Civil Engineer
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 | MOHD AAMIR | 59.3 | engineering | civil_engineering | 2/7 | 12 |
-| #2 |  | 52.1 | engineering | civil_engineering | 1/7 | 11 |
-| #3 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #4 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #5 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #6 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #7 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #8 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #9 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #10 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #11 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #12 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #13 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #14 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #15 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #16 | RAHIL | 52.1 | engineering | civil_engineering | 1/7 | 5 |
-| #17 |  | 51.4 | engineering | civil_engineering | 3/7 | 1 |
-| #18 |  | 51.4 | engineering | civil_engineering | 3/7 | 1 |
-| #19 |  | 51.4 | engineering | civil_engineering | 3/7 | 1 |
-| #20 | Emily Davies | 47.1 | engineering | civil_engineering | 1/7 | 3 |
+| #1 | Unknown Candidate | 51.4 | engineering | civil_engineering | 3/7 | 1 |
+| #2 | Unknown Candidate | 51.4 | engineering | civil_engineering | 3/7 | 1 |
+| #3 | Unknown Candidate | 51.4 | engineering | civil_engineering | 3/7 | 1 |
+| #4 | Emily Davies | 47.1 | engineering | civil_engineering | 1/7 | 3 |
+| #5 | Unknown Candidate | 47.1 | engineering | civil_engineering | 1/7 | 3 |
+| #6 | September IBIS Ho | 46.4 | engineering | civil_engineering | 3/7 | 0 |
+| #7 | ASEEM PEER MOHAMMAD | 46.4 | engineering | civil_engineering | 3/7 | 0 |
+| #8 | Unknown Candidate | 45.0 | engineering | civil_engineering | 0/7 | 67 |
+| #9 | Unknown Candidate | 45.0 | engineering | civil_engineering | 0/7 | 4 |
+| #10 | Mohammed Abdul Nayeem. | 44.3 | engineering | civil_engineering | 2/7 | 1 |
+| #11 | Mohammed Abdul Nayeem. | 44.3 | engineering | civil_engineering | 2/7 | 1 |
+| #12 | Mohammed Abdul Nayeem. | 44.3 | engineering | civil_engineering | 2/7 | 1 |
+| #13 | Unknown Candidate | 44.3 | engineering | civil_engineering | 2/7 | 1 |
+| #14 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 7 |
+| #15 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 12 |
+| #16 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 7 |
+| #17 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 7 |
+| #18 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 7 |
+| #19 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 12 |
+| #20 | RAJESH K R | 41.4 | healthcare | healthcare | 3/7 | 7 |
 
 ### Electrical Engineer
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 | IMRAN ALI | 45.0 | engineering | electrical_engineering | 0/7 | 9 |
-| #2 | Shahbaz Khurram | 45.0 | engineering | electrical_engineering | 0/7 | 11 |
-| #3 | IMRAN ALI | 45.0 | engineering | electrical_engineering | 0/7 | 9 |
-| #4 | ___________________________ | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
-| #5 | WORKING RF SYSTEMS ENGINEER | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
-| #6 | Project Manager | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
-| #7 | AVIATION ENGINEER | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
-| #8 |  | 32.1 | engineering | software_engineering | 1/7 | 5 |
-| #9 | Ramya. M | 32.1 | engineering | software_engineering | 1/7 | 5 |
-| #10 |  | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
-| #11 |  | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
-| #12 |  | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
-| #13 |  | 32.1 | engineering | software_engineering | 1/7 | 8 |
-| #14 |  | 32.1 | engineering | civil_engineering | 1/7 | 5 |
-| #15 | CVCV | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
-| #16 | RAJA PAULRAJ | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
-| #17 | Kumar N.Y. | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
-| #18 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
-| #19 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
-| #20 | Motars Qatar Qatar | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #1 | WORKING RF SYSTEMS ENGINEER | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
+| #2 | Project Manager | 37.1 | engineering | electrical_engineering | 1/7 | 1 |
+| #3 | Unknown Candidate | 32.1 | engineering | software_engineering | 1/7 | 5 |
+| #4 | Ramya. M | 32.1 | engineering | software_engineering | 1/7 | 5 |
+| #5 | Unknown Candidate | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
+| #6 | Unknown Candidate | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
+| #7 | Unknown Candidate | 32.1 | engineering | electrical_engineering | 1/7 | 0 |
+| #8 | Ujjwal Kumar | 32.1 | engineering | software_engineering | 1/7 | 8 |
+| #9 | CVCV | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #10 | Kumar N.Y. | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #11 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #12 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #13 | Unknown Candidate | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #14 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #15 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #16 | Unknown Candidate | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #17 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #18 | Kumar N.Y. | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #19 | Kumar N.Y. | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
+| #20 | Mohammad Fahimuddin | 30.0 | engineering | electrical_engineering | 0/7 | 1 |
 
 ### Mechanical Engineer
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 | SA | 59.3 | engineering | mechanical_engineering | 2/7 | 4 |
-| #2 |  | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
-| #3 |  | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
-| #4 |  | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
-| #5 |  | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
-| #6 | ANUJ UPPAL | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
-| #7 |  | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
-| #8 | M.YAKOOTH | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
-| #9 |  | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
-| #10 | JAGDISH CHAUDHARY | 52.1 | engineering | mechanical_engineering | 1/7 | 5 |
-| #11 |  | 51.4 | engineering | mechanical_engineering | 3/7 | 1 |
-| #12 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #13 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #14 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #15 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #16 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #17 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #18 |  | 49.3 | engineering | mechanical_engineering | 2/7 | 2 |
-| #19 | GYANESH GULSHAN | 48.6 | hr | hr | 4/7 | 7 |
-| #20 | Deepak Patel | 48.6 | hr | hr | 4/7 | 6 |
+| #1 | Unknown Candidate | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
+| #2 | Unknown Candidate | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
+| #3 | Unknown Candidate | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
+| #4 | Unknown Candidate | 54.3 | engineering | mechanical_engineering | 2/7 | 3 |
+| #5 | ANUJ UPPAL | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
+| #6 | Unknown Candidate | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
+| #7 | M.YAKOOTH | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
+| #8 | Unknown Candidate | 53.6 | engineering | mechanical_engineering | 4/7 | 0 |
+| #9 | Unknown Candidate | 51.4 | engineering | mechanical_engineering | 3/7 | 1 |
+| #10 | GYANESH GULSHAN | 48.6 | sales | sales | 4/7 | 7 |
+| #11 | Deepak Patel | 48.6 | hr | hr | 4/7 | 6 |
+| #12 | Kesava Career Work | 48.6 | healthcare | healthcare | 4/7 | 5 |
+| #13 | JOHNS K ABRAHAM | 48.6 | healthcare | healthcare | 4/7 | 8 |
+| #14 | Pankaj Kumar Gupt | 47.1 | engineering | mechanical_engineering | 1/7 | 3 |
+| #15 | Unknown Candidate | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
+| #16 | Unknown Candidate | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
+| #17 | Unknown Candidate | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
+| #18 | Unknown Candidate | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
+| #19 | Aditya | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
+| #20 | Aditya | 46.4 | engineering | mechanical_engineering | 3/7 | 0 |
 
 ### Legal Advisor
 Total candidates: 5076
@@ -475,79 +475,184 @@ Total candidates: 5076
 | #1 | John Smith | 60.0 | legal | legal | 3/5 | 2 |
 | #2 | Adarsh Ramesh | 60.0 | legal | legal | 2/5 | 4 |
 | #3 | Court Procedures Due Dilligenc | 55.0 | legal | legal | 3/5 | 1 |
-| #4 |  | 55.0 | legal | legal | 3/5 | 1 |
+| #4 | Unknown Candidate | 55.0 | legal | legal | 3/5 | 1 |
 | #5 | MOHAMMED JAVED KHAN | 50.0 | legal | legal | 1/5 | 6 |
-| #6 |  | 50.0 | legal | legal | 1/5 | 7 |
-| #7 | VIVEK RAJA | 50.0 | legal | legal | 1/5 | 4 |
-| #8 | INSTRUMENT & CONTROL ENGINEER/ | 50.0 | legal | legal | 1/5 | 5 |
-| #9 |  | 50.0 | legal | legal | 1/5 | 10 |
-| #10 | Siddharth Aggarwal | 50.0 | legal | legal | 1/5 | 23 |
-| #11 | INSTRUMENT & CONTROL ENGINEER/ | 50.0 | legal | legal | 1/5 | 5 |
-| #12 | INSTRUMENT & CONTROL ENGINEER/ | 50.0 | legal | legal | 1/5 | 5 |
-| #13 | Siddharth Aggarwal | 50.0 | legal | legal | 1/5 | 23 |
-| #14 |  | 50.0 | legal | legal | 1/5 | 10 |
-| #15 |  | 50.0 | legal | legal | 1/5 | 9 |
-| #16 | Information Technology Special | 50.0 | legal | legal | 1/5 | 4 |
-| #17 | SADATH BASHA.A.M | 50.0 | legal | legal | 1/5 | 5 |
-| #18 |  | 45.0 | legal | legal | 1/5 | 3 |
-| #19 |  | 45.0 | legal | legal | 1/5 | 3 |
-| #20 | ZAFER HUSSAIN | 45.0 | legal | legal | 1/5 | 3 |
+| #6 | Siddharth Aggarwal | 50.0 | legal | legal | 1/5 | 23 |
+| #7 | Siddharth Aggarwal | 50.0 | legal | legal | 1/5 | 23 |
+| #8 | Information Technology Special | 50.0 | legal | legal | 1/5 | 4 |
+| #9 | ZAFER HUSSAIN | 45.0 | legal | legal | 1/5 | 3 |
+| #10 | DR.R. Pradheep Kumar | 45.0 | legal | legal | 2/5 | 1 |
+| #11 | DR.R. Pradheep Kumar | 45.0 | legal | legal | 2/5 | 1 |
+| #12 | Unknown Candidate | 45.0 | legal | legal | 2/5 | 1 |
+| #13 | Unknown Candidate | 45.0 | legal | legal | 2/5 | 1 |
+| #14 | Unknown Candidate | 40.0 | education | education | 2/5 | 29 |
+| #15 | Shabina P | 40.0 | marketing | marketing | 3/5 | 2 |
+| #16 | Shabina P | 40.0 | marketing | marketing | 3/5 | 2 |
+| #17 | Sonu Kumar Yadav | 40.0 | legal | legal | 0/5 | 4 |
+| #18 | Unknown Candidate | 40.0 | legal | legal | 0/5 | 7 |
+| #19 | Paulos Mubi Nkosi | 40.0 | legal | legal | 0/5 | 12 |
+| #20 | Mechanical Engineer (Plumbing  | 40.0 | legal | legal | 0/5 | 8 |
 
 ### Healthcare Specialist
 Total candidates: 5076
 
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
-| #1 |  | 68.3 | healthcare | healthcare | 4/6 | 3 |
-| #2 |  | 58.3 | healthcare | healthcare | 4/6 | 1 |
+| #1 | Unknown Candidate | 68.3 | healthcare | healthcare | 4/6 | 3 |
+| #2 | Unknown Candidate | 58.3 | healthcare | healthcare | 4/6 | 1 |
 | #3 | University Departmental Post | 56.7 | healthcare | healthcare | 2/6 | 5 |
 | #4 | Charly Dolman | 51.7 | healthcare | healthcare | 2/6 | 3 |
-| #5 | Microsoft Office | 51.7 | healthcare | healthcare | 2/6 | 3 |
-| #6 | Core Accomplishments | 50.0 | healthcare | healthcare | 3/6 | 1 |
-| #7 |  | 50.0 | healthcare | healthcare | 3/6 | 1 |
-| #8 | WANGILA Abraham Masinde | 48.3 | healthcare | healthcare | 1/6 | 4 |
-| #9 |  | 48.3 | healthcare | healthcare | 1/6 | 11 |
-| #10 |  | 48.3 | healthcare | healthcare | 1/6 | 6 |
-| #11 |  | 48.3 | healthcare | healthcare | 1/6 | 4 |
-| #12 |  | 48.3 | healthcare | healthcare | 1/6 | 6 |
-| #13 |  | 48.3 | healthcare | healthcare | 1/6 | 23 |
-| #14 | S.Patterson Gnanasamy | 48.3 | healthcare | healthcare | 1/6 | 25 |
-| #15 |  | 48.3 | healthcare | healthcare | 1/6 | 8 |
-| #16 |  | 48.3 | healthcare | healthcare | 1/6 | 13 |
-| #17 | EDUCATIONAL & PERSONAL DETAIL | 48.3 | healthcare | healthcare | 1/6 | 6 |
-| #18 |  | 48.3 | healthcare | healthcare | 1/6 | 15 |
-| #19 | K. HENRY JOSEPH | 48.3 | healthcare | healthcare | 1/6 | 6 |
-| #20 | K. HENRY JOSEPH | 48.3 | healthcare | healthcare | 1/6 | 6 |
+| #5 | Core Accomplishments | 50.0 | healthcare | healthcare | 3/6 | 1 |
+| #6 | Unknown Candidate | 50.0 | healthcare | healthcare | 3/6 | 1 |
+| #7 | WANGILA Abraham Masinde | 48.3 | healthcare | healthcare | 1/6 | 4 |
+| #8 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 11 |
+| #9 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 6 |
+| #10 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 23 |
+| #11 | S.Patterson Gnanasamy | 48.3 | healthcare | healthcare | 1/6 | 25 |
+| #12 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 8 |
+| #13 | EDUCATIONAL & PERSONAL DETAIL | 48.3 | healthcare | healthcare | 1/6 | 6 |
+| #14 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 15 |
+| #15 | K. HENRY JOSEPH | 48.3 | healthcare | healthcare | 1/6 | 6 |
+| #16 | K. HENRY JOSEPH | 48.3 | healthcare | healthcare | 1/6 | 6 |
+| #17 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 15 |
+| #18 | PREEDIPRAJ. M Mob. No. | 48.3 | healthcare | healthcare | 1/6 | 9 |
+| #19 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 23 |
+| #20 | Unknown Candidate | 48.3 | healthcare | healthcare | 1/6 | 22 |
+
+### Teacher
+Total candidates: 5076
+
+| Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
+|------|------|-------|--------|------------|--------|-----|
+| #1 | RISHA SRITHARAN | 55.0 | education | education | 2/4 | 2 |
+| #2 | Kimberly Fisheli | 52.5 | education | education | 1/4 | 6 |
+| #3 | CLASSROOM TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #4 | ART TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #5 | HOMEBOUND TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #6 | Unknown Candidate | 50.0 | education | education | 2/4 | 1 |
+| #7 | ENGLISH TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #8 | HISTORY TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #9 | Unknown Candidate | 50.0 | education | education | 2/4 | 1 |
+| #10 | Unknown Candidate | 50.0 | education | education | 2/4 | 1 |
+| #11 | LEAD TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #12 | Unknown Candidate | 50.0 | education | education | 2/4 | 1 |
+| #13 | Unknown Candidate | 50.0 | education | education | 2/4 | 1 |
+| #14 | Science Education. | 50.0 | education | education | 2/4 | 1 |
+| #15 | READING TEACHER | 50.0 | education | education | 2/4 | 1 |
+| #16 | Microsoft Office | 47.5 | education | education | 1/4 | 3 |
+| #17 | Unknown Candidate | 47.5 | education | education | 1/4 | 3 |
+| #18 | U. Jagadeeswari | 42.5 | education | education | 1/4 | 2 |
+| #19 | LEAD TEACHER | 42.5 | education | education | 1/4 | 2 |
+| #20 | SURESH.S | 40.0 | education | education | 0/4 | 5 |
+
+### Hotel Manager
+Total candidates: 5076
+
+| Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
+|------|------|-------|--------|------------|--------|-----|
+| #1 | Unknown Candidate | 45.0 | healthcare | healthcare | 2/4 | 23 |
+| #2 | Unknown Candidate | 45.0 | healthcare | healthcare | 2/4 | 23 |
+| #3 | Unknown Candidate | 40.0 | hospitality | hospitality | 0/4 | 5 |
+| #4 | Unknown Candidate | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #5 | Geoffrey Makoe | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #6 | Unknown Candidate | 40.0 | hospitality | hospitality | 0/4 | 7 |
+| #7 | UPADHYAY | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #8 | CURRICULAM VITEA | 40.0 | hospitality | hospitality | 0/4 | 8 |
+| #9 | CHETAN SWARUP | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #10 | Mohammed Fazil.F.M | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #11 | Sabique Hasan | 40.0 | hospitality | hospitality | 0/4 | 23 |
+| #12 | Unknown Candidate | 40.0 | hospitality | hospitality | 0/4 | 8 |
+| #13 | Mohammad Anwar Hussain | 40.0 | hospitality | hospitality | 0/4 | 4 |
+| #14 | Mohammad Anwar Hussain | 40.0 | hospitality | hospitality | 0/4 | 4 |
+| #15 | Unknown Candidate | 40.0 | hospitality | hospitality | 0/4 | 8 |
+| #16 | Sabique Hasan | 40.0 | hospitality | hospitality | 0/4 | 23 |
+| #17 | Mohammed Fazil.F.M | 40.0 | hospitality | hospitality | 0/4 | 6 |
+| #18 | SADATH BASHA.A.M | 40.0 | hospitality | hospitality | 0/4 | 5 |
+| #19 | Unknown Candidate | 37.5 | hospitality | hospitality | 1/4 | 1 |
+| #20 | Gaurav Kumar | 35.0 | hospitality | hospitality | 0/4 | 3 |
+
+### Construction Manager
+Total candidates: 5076
+
+| Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
+|------|------|-------|--------|------------|--------|-----|
+| #1 | Ramkumar Kasilingam | 77.5 | construction | construction | 3/4 | 5 |
+| #2 | Ramkumar Kasilingam | 77.5 | construction | construction | 3/4 | 5 |
+| #3 | AQEEL AHMED | 67.5 | construction | construction | 3/4 | 2 |
+| #4 | Unknown Candidate | 65.0 | construction | construction | 2/4 | 4 |
+| #5 | Senior Planning | 65.0 | construction | construction | 2/4 | 16 |
+| #6 | Career Objectives | 65.0 | construction | construction | 2/4 | 12 |
+| #7 | Career Objectives | 65.0 | construction | construction | 2/4 | 12 |
+| #8 | Unknown Candidate | 65.0 | construction | construction | 2/4 | 4 |
+| #9 | ELECTRICAL ENGINEER | 65.0 | construction | construction | 2/4 | 4 |
+| #10 | Unknown Candidate | 55.0 | construction | construction | 2/4 | 2 |
+| #11 | RAMKUMAR | 55.0 | construction | construction | 2/4 | 2 |
+| #12 | RAMKUMAR | 55.0 | construction | construction | 2/4 | 2 |
+| #13 | Unknown Candidate | 52.5 | construction | construction | 1/4 | 11 |
+| #14 | Unknown Candidate | 52.5 | construction | construction | 1/4 | 4 |
+| #15 | KAVIYALAN ANNADURAI | 52.5 | construction | construction | 1/4 | 16 |
+| #16 | RAHIL | 52.5 | construction | construction | 1/4 | 5 |
+| #17 | RAHIL | 52.5 | construction | construction | 1/4 | 5 |
+| #18 | Unknown Candidate | 52.5 | construction | construction | 1/4 | 16 |
+| #19 | RAHIL | 52.5 | construction | construction | 1/4 | 5 |
+| #20 | MOHD AAMIR | 52.5 | construction | construction | 1/4 | 12 |
+
+### Office Admin
+Total candidates: 5076
+
+| Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
+|------|------|-------|--------|------------|--------|-----|
+| #1 | Premananda Das | 52.5 | admin | admin | 1/4 | 8 |
+| #2 | Taniamangalam VILL | 52.5 | admin | admin | 1/4 | 9 |
+| #3 | Maintenance Executive ABFRL GR | 52.5 | admin | admin | 1/4 | 5 |
+| #4 | MAHESH CHANDRA S | 52.5 | admin | admin | 1/4 | 34 |
+| #5 | Taniamangalam VILL | 52.5 | admin | admin | 1/4 | 9 |
+| #6 | K.J.MOHAMMED IRFAN | 52.5 | admin | admin | 1/4 | 4 |
+| #7 | K.J.MOHAMMED IRFAN | 52.5 | admin | admin | 1/4 | 4 |
+| #8 | Taniamangalam VILL | 52.5 | admin | admin | 1/4 | 9 |
+| #9 | MAHESH CHANDRA S | 52.5 | admin | admin | 1/4 | 34 |
+| #10 | Maintenance Executive ABFRL GR | 52.5 | admin | admin | 1/4 | 5 |
+| #11 | Maintenance Executive ABFRL GR | 52.5 | admin | admin | 1/4 | 5 |
+| #12 | JEWELRY CONSULTANT | 50.0 | admin | admin | 2/4 | 1 |
+| #13 | Unknown Candidate | 50.0 | admin | admin | 2/4 | 1 |
+| #14 | Unknown Candidate | 50.0 | admin | admin | 2/4 | 1 |
+| #15 | Unknown Candidate | 45.0 | healthcare | healthcare | 2/4 | 4 |
+| #16 | Unknown Candidate | 45.0 | healthcare | healthcare | 2/4 | 4 |
+| #17 | Unknown Candidate | 42.5 | admin | admin | 1/4 | 2 |
+| #18 | Unknown Candidate | 42.5 | admin | admin | 1/4 | 2 |
+| #19 | Position Desire | 42.5 | admin | admin | 1/4 | 2 |
+| #20 | Unknown Candidate | 42.5 | admin | admin | 1/4 | 2 |
 
 ---
 ## Phase 5 — False Positive Audit
-- **Count**: 4
+- **Count**: 5
 - **FP Rate**: 2.5%
-- **Formula**: 4 / (16 × 10)
+- **Formula**: 5 / (20 × 10)
 
 | JD | Name | Score | Domain | Sub-Domain | Skills | Exp | Reason |
 |----|------|-------|--------|------------|--------|-----|--------|
 | Frontend Engineer | DANIEL GAN | 50.0 | engineering | civil_engineering | 6/10 | 2 | civil_engineering candidate in software JD 'Fronte |
-| Sales Executive |  | 45.0 | engineering | software_engineering | 3/5 | 3 | engineering candidate in non-eng JD 'Sales Executi |
-| Electrical Engineer |  | 32.1 | engineering | software_engineering | 1/7 | 5 | software_engineering candidate in Electrical Engin |
+| Electrical Engineer | Unknown Candidate | 32.1 | engineering | software_engineering | 1/7 | 5 | software_engineering candidate in Electrical Engin |
 | Electrical Engineer | Ramya. M | 32.1 | engineering | software_engineering | 1/7 | 5 | software_engineering candidate in Electrical Engin |
+| Electrical Engineer | Ujjwal Kumar | 32.1 | engineering | software_engineering | 1/7 | 8 | software_engineering candidate in Electrical Engin |
+| Mechanical Engineer | GYANESH GULSHAN | 48.6 | sales | sales | 4/7 | 7 | sales candidate in Mechanical Engineer JD |
 
 ---
 ## Phase 6 — False Negative Audit
-- **Count**: 150
+- **Count**: 139
 
 | JD | Name | Domain | Sub-Domain | Skills | Overlap | Reason |
 |----|------|--------|------------|--------|---------|--------|
-| Backend Engineer |  | engineering | software_engineering | 18 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Backend Engineer |  | engineering | software_engineering | 11 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Backend Engineer | Unknown Candidate | engineering | software_engineering | 18 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Backend Engineer | Unknown Candidate | engineering | software_engineering | 11 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | Shanbagam Thanikachalam | engineering | software_engineering | 39 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | KEISUKE YAMAMOTO | engineering | software_engineering | 12 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | NOLAN | engineering | software_engineering | 15 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | WORKING RF SYSTEMS ENGINE | engineering | electrical_engineering | 46 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Backend Engineer |  | engineering | software_engineering | 55 | 4 | Domain match + 4/10 skill overlap but not in  |
-| Backend Engineer |  | engineering | software_engineering | 49 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Backend Engineer | Unknown Candidate | engineering | software_engineering | 55 | 4 | Domain match + 4/10 skill overlap but not in  |
+| Backend Engineer | Unknown Candidate | engineering | software_engineering | 49 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | People Centered Leadershi | engineering | civil_engineering | 27 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Backend Engineer |  | engineering | software_engineering | 63 | 4 | Domain match + 4/10 skill overlap but not in  |
+| Backend Engineer | Unknown Candidate | engineering | software_engineering | 63 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | JACOB | engineering | software_engineering | 16 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | Jose Curricular | engineering | software_engineering | 10 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | FRESHER | engineering | software_engineering | 7 | 3 | Domain match + 3/10 skill overlap but not in  |
@@ -559,42 +664,48 @@ Total candidates: 5076
 | Backend Engineer | RODNEY | engineering | software_engineering | 17 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Backend Engineer | E Express | engineering | software_engineering | 11 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Frontend Engineer | Thiruvallam P.O | engineering | software_engineering | 33 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Frontend Engineer |  | engineering | software_engineering | 31 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Frontend Engineer | Unknown Candidate | engineering | software_engineering | 31 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Frontend Engineer | CARRIER OBJECTIVES | engineering | software_engineering | 24 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Frontend Engineer | CARRIER OBJECTIVES | engineering | software_engineering | 24 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Frontend Engineer | Akila Palanimuthu | engineering | software_engineering | 33 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Frontend Engineer | MOHD RASHID | engineering | software_engineering | 7 | 3 | Domain match + 3/10 skill overlap but not in  |
 | Frontend Engineer | KEISUKE YAMAMOTO | engineering | software_engineering | 12 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Frontend Engineer |  | engineering | software_engineering | 8 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Frontend Engineer |  | engineering | software_engineering | 27 | 3 | Domain match + 3/10 skill overlap but not in  |
-| Frontend Engineer |  | engineering | software_engineering | 17 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Frontend Engineer | MOHD. RASHID | engineering | software_engineering | 8 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Frontend Engineer | Unknown Candidate | engineering | software_engineering | 27 | 3 | Domain match + 3/10 skill overlap but not in  |
+| Frontend Engineer | Unknown Candidate | engineering | software_engineering | 17 | 3 | Domain match + 3/10 skill overlap but not in  |
 
 ---
 ## Phase 6b — Domain Classification
-- **Classified**: 85.0%
-- **Formula**: `(5076 - 761) / 5076`
-- **Unknown**: 761 (15.0%)
+- **Classified**: 93.3%
+- **Formula**: `(5076 - 339) / 5076`
+- **Unknown**: 339 (6.7%)
 
 | Domain | Count | % | Avg Confidence |
 |--------|-------|---|----------------|
-| engineering | 1532 | 30.2% | 0.725 |
-| healthcare | 1269 | 25.0% | 0.669 |
-| unknown | 761 | 15.0% | 0.0 |
-| hr | 600 | 11.8% | 0.643 |
-| marketing | 290 | 5.7% | 0.557 |
-| accounting | 286 | 5.6% | 0.543 |
-| legal | 242 | 4.8% | 0.53 |
-| finance | 96 | 1.9% | 0.539 |
+| engineering | 1383 | 27.2% | 0.728 |
+| healthcare | 765 | 15.1% | 0.565 |
+| hr | 530 | 10.4% | 0.658 |
+| insufficient_data | 407 | 8.0% | 0.0 |
+| unknown | 339 | 6.7% | 0.0 |
+| construction | 300 | 5.9% | 0.49 |
+| education | 285 | 5.6% | 0.483 |
+| accounting | 250 | 4.9% | 0.508 |
+| marketing | 228 | 4.5% | 0.491 |
+| sales | 221 | 4.4% | 0.43 |
+| legal | 142 | 2.8% | 0.539 |
+| hospitality | 80 | 1.6% | 0.477 |
+| finance | 77 | 1.5% | 0.528 |
+| admin | 69 | 1.4% | 0.417 |
 
 ---
 ## Phase 7 — Performance
 | PDFs | Extract | Rank | Per-PDF | Memory | Failures |
 |------|---------|------|---------|--------|----------|
-| 1 | 0.16s | 0.005s | 162.6ms | 225.4MB | 0 |
-| 10 | 1.4s | 0.058s | 139.8ms | 225.4MB | 0 |
-| 100 | 13.72s | 2.32s | 137.2ms | 257.0MB | 0 |
-| 1000 | 180.69s | 222.991s | 180.7ms | 257.0MB | 0 |
-| 5076 | 886.93s | N/A | 174.7ms | 257.0MB | 0 | (Phase 1 batch extraction data)
+| 1 | 0.16s | 0.005s | 157.1ms | 224.9MB | 0 |
+| 10 | 1.33s | 0.062s | 132.7ms | 224.9MB | 0 |
+| 100 | 15.17s | 2.53s | 151.7ms | 257.1MB | 0 |
+| 1000 | 185.12s | 223.007s | 185.1ms | 257.1MB | 0 |
+| 5076 | 881.46s | N/A | 173.7ms | 257.1MB | 0 | (Phase 1 batch extraction data)
 
 ---
 ## Phase 8 — Frontend Consistency

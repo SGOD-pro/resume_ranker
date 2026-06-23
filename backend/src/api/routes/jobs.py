@@ -162,6 +162,7 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
     Server-side validation:
     - Only .pdf files accepted
     - Max 10 MB per file
+    - Duplicate detection via SHA256
 
     Files are saved to disk so the extraction pipeline can process them.
     """
@@ -173,6 +174,10 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
     # Create job-specific upload directory
     job_upload_dir = UPLOAD_DIR / job_id
     job_upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize dedup index for this job if not exists
+    if "_hash_index" not in _jobs[job_id]:
+        _jobs[job_id]["_hash_index"] = {}
 
     accepted: List[str] = []
     rejected: List[dict] = []
@@ -195,6 +200,18 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
             rejected.append({"filename": f.filename, "reason": f"File too large: {size_mb}MB (max 10MB)"})
             continue
 
+        # ── Duplicate detection via SHA256 ────────────────────────────
+        import hashlib
+        file_hash = hashlib.sha256(content).hexdigest()
+        if file_hash in _jobs[job_id]["_hash_index"]:
+            original = _jobs[job_id]["_hash_index"][file_hash]
+            rejected.append({
+                "filename": f.filename,
+                "reason": f"Duplicate of '{original}' (SHA256 match)",
+            })
+            continue
+        _jobs[job_id]["_hash_index"][file_hash] = f.filename
+
         # Save file to disk
         # Use UUID prefix to avoid filename collisions across uploads
         safe_name = f"{uuid.uuid4().hex[:8]}_{f.filename}"
@@ -206,6 +223,7 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
             "filename": f.filename,
             "size": len(content),
             "path": str(file_path),
+            "sha256": file_hash,
         })
 
     return UploadResponse(

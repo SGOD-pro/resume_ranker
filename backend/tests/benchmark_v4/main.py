@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-benchmark_v5 — Trustworthy Production Benchmark (5000+ PDFs)
+benchmark_v6 — Production Benchmark with Quality Remediation
 =============================================================
-Remediation of v4: fixes metric integrity, name audit, deduplication,
-domain taxonomy, and honest scoring. Every metric has an explicit formula.
+Post v5: name extraction hardening, domain expansion, ranking
+explainability, dedup, and honest scoring.
 
 Usage:
     cd backend && .venv/bin/python tests/benchmark_v4/main.py
@@ -202,6 +202,46 @@ JOB_DESCRIPTIONS = {
         keywords=["patient", "clinical", "health", "care", "medical", "treatment"],
         weights={"skills": 0.30, "experience": 0.30, "keywords": 0.25, "education": 0.15},
     ),
+    "Teacher": JobDescription(
+        title="Teacher", department="education",
+        description="Classroom teacher responsible for curriculum delivery",
+        must_have_skills=[], nice_to_have_skills=["Curriculum", "Lesson Planning", "Assessment", "Classroom Management"],
+        min_years=0, max_years=15, required_degree="any", preferred_field="Education",
+        keywords=["teaching", "student", "classroom", "curriculum", "lesson", "school"],
+        weights={"skills": 0.30, "experience": 0.30, "keywords": 0.25, "education": 0.15},
+    ),
+    "Hotel Manager": JobDescription(
+        title="Hotel Manager", department="hospitality",
+        description="Hotel operations manager overseeing guest services",
+        must_have_skills=[], nice_to_have_skills=["Hospitality", "Guest Relations", "Front Desk", "Revenue Management"],
+        min_years=0, max_years=15, required_degree="any", preferred_field="Hospitality",
+        keywords=["hotel", "guest", "reservation", "hospitality", "front desk", "concierge"],
+        weights={"skills": 0.30, "experience": 0.30, "keywords": 0.25, "education": 0.15},
+    ),
+    "Construction Manager": JobDescription(
+        title="Construction Manager", department="construction",
+        description="Construction site manager overseeing building projects",
+        must_have_skills=[], nice_to_have_skills=["Project Management", "AutoCAD", "Safety", "Budgeting"],
+        min_years=0, max_years=15, required_degree="any", preferred_field="Construction",
+        keywords=["construction", "site", "building", "contractor", "safety", "concrete"],
+        weights={"skills": 0.30, "experience": 0.30, "keywords": 0.25, "education": 0.15},
+    ),
+    "Office Admin": JobDescription(
+        title="Office Administrator", department="admin",
+        description="Office administrator managing day-to-day operations",
+        must_have_skills=[], nice_to_have_skills=["Microsoft Office", "Scheduling", "Data Entry", "Filing"],
+        min_years=0, max_years=15, required_degree="any", preferred_field="Administration",
+        keywords=["office", "administrative", "scheduling", "correspondence", "filing"],
+        weights={"skills": 0.30, "experience": 0.30, "keywords": 0.25, "education": 0.15},
+    ),
+    "Sales Executive": JobDescription(
+        title="Sales Executive", department="sales",
+        description="Sales executive managing client relationships",
+        must_have_skills=[], nice_to_have_skills=["Sales", "CRM", "Lead Generation", "Negotiation", "Salesforce"],
+        min_years=0, max_years=15, required_degree="any", preferred_field="Business",
+        keywords=["revenue", "target", "client", "pipeline", "quota", "deal"],
+        weights={"skills": 0.30, "experience": 0.35, "keywords": 0.20, "education": 0.15},
+    ),
 }
 
 
@@ -329,7 +369,7 @@ def extract_all_batches(pipe, classifier, pdfs):
                 name_conf = pi.get("name_confidence", 1.0)
                 is_header = pi.get("candidate_name_is_section_header", False)
 
-                if name:
+                if name and name != "Unknown Candidate":
                     name_present += 1
                     if name_conf >= 0.8:
                         confidence_dist["high"] += 1
@@ -337,6 +377,9 @@ def extract_all_batches(pipe, classifier, pdfs):
                         confidence_dist["medium"] += 1
                     else:
                         confidence_dist["low"] += 1
+                elif name == "Unknown Candidate":
+                    name_blank += 1
+                    confidence_dist["zero"] += 1
                 else:
                     name_blank += 1
                     confidence_dist["zero"] += 1
@@ -377,6 +420,10 @@ def extract_all_batches(pipe, classifier, pdfs):
 
                 # Domain
                 domain, conf = classifier.classify(fields)
+                # Classify as insufficient_data if no skills AND no experience
+                if not skills and not exp:
+                    domain = "insufficient_data"
+                    conf = 0.0
                 domain_counts[domain] += 1
                 domain_conf_sum[domain] += conf
                 if conf < 0.3:
@@ -948,9 +995,9 @@ def phase9_scorecard(phases):
 
 def generate_report(phases, scorecard):
     L = []
-    L.append(f"# Benchmark v5 — Trustworthy Production Report")
+    L.append(f"# Benchmark v6 — Production Report with Quality Remediation")
     L.append(f"Generated: {datetime.now().isoformat()}")
-    L.append(f"Version: 5.0.0")
+    L.append(f"Version: 6.0.0")
     L.append("")
 
     # Scorecard
@@ -1136,7 +1183,7 @@ def generate_report(phases, scorecard):
 
 def main():
     print("\n" + "█" * 70)
-    print("  ██  BENCHMARK v5: TRUSTWORTHY PRODUCTION EVALUATION  ██")
+    print("  ██  BENCHMARK v6: PRODUCTION QUALITY EVALUATION  ██")
     print("█" * 70)
     print(f"  Timestamp: {datetime.now().isoformat()}")
     print(f"  Resume Dir: {RESUME_DIR}")
@@ -1245,7 +1292,7 @@ def main():
     print(f"\n  📄 Report: {REPORT_PATH}")
 
     json_report = {
-        "timestamp": datetime.now().isoformat(), "version": "5.0.0",
+        "timestamp": datetime.now().isoformat(), "version": "6.0.0",
         "total_pdfs": len(pdfs), "phases": phases, "scorecard": scorecard,
     }
     with open(JSON_PATH, "w") as f:
