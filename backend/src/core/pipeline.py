@@ -433,16 +433,19 @@ class PDFPipelineV3:
         ]
         name_confidence = 1.0
         is_section_header = False
+        missing_name_reason = None  # Track WHY name extraction failed
 
         if raw_name:
             name_lower = raw_name.strip().lower().rstrip(':').strip()
             # Exact match blacklist
             if name_lower in _NAME_BLACKLIST:
+                missing_name_reason = "BLACKLISTED_TITLE"
                 raw_name = None
                 name_confidence = 0.0
                 is_section_header = True
             # Prefix match blacklist
             elif any(name_lower.startswith(p) for p in _NAME_BLACKLIST_PREFIXES):
+                missing_name_reason = "BLACKLISTED_TITLE"
                 raw_name = None
                 name_confidence = 0.0
                 is_section_header = True
@@ -463,12 +466,16 @@ class PDFPipelineV3:
                                   'qualification', 'department', 'representative'}
                     for w in words
                 ):
+                    missing_name_reason = "SECTION_HEADER"
                     raw_name = None
                     name_confidence = 0.0
                     is_section_header = True
                 # Normal 2-3 word name → high confidence
                 elif 2 <= len(words) <= 4:
                     name_confidence = 0.95
+        else:
+            # contact_parser returned no name at all
+            missing_name_reason = "NO_NAME_FOUND"
 
         # Fallback: try first [JOB_TITLE] in main_text that looks like "Name, Title"
         if not raw_name:
@@ -481,6 +488,7 @@ class PDFPipelineV3:
                     from src.extractors.contact.contact_parser import _is_name_line
                     if _is_name_line(name_part):
                         raw_name = name_part
+                        missing_name_reason = None  # recovered
 
         # Fallback: detect name from sidebar single-word tags like [EMILY] [DAVIES]
         if not raw_name and doc.sidebar_text:
@@ -495,6 +503,7 @@ class PDFPipelineV3:
                 from src.extractors.contact.contact_parser import _is_name_line
                 if _is_name_line(candidate):
                     raw_name = candidate
+                    missing_name_reason = None  # recovered
 
         # Clean name: strip title suffixes
         if raw_name and ',' in raw_name:
@@ -518,9 +527,23 @@ class PDFPipelineV3:
                         raw_name = candidate_name
                         name_confidence = 0.6
                         is_section_header = False
+                        missing_name_reason = None  # recovered from filename
 
-        # ── Final fallback: "Unknown Candidate" ──────────────────────────
+        # ── Classify missing name reason ──────────────────────────────────
         if not raw_name:
+            # Determine WHY we couldn't find a name
+            text_len = len(combined_text.strip())
+            if text_len < 50:
+                missing_name_reason = "EMPTY_DOCUMENT"
+            elif text_quality_score < 0.3:
+                missing_name_reason = "OCR_FAILURE"
+            elif semantic_quality_score < 0.3:
+                missing_name_reason = "IMAGE_PDF"
+            elif not contact.get('email') and not contact.get('phone'):
+                missing_name_reason = "NO_CONTACT_SECTION"
+            elif missing_name_reason is None:
+                missing_name_reason = "NO_NAME_FOUND"
+
             raw_name = "Unknown Candidate"
             name_confidence = 0.0
             is_section_header = False
@@ -538,6 +561,7 @@ class PDFPipelineV3:
             "dob":      dob,
             "name_confidence": round(name_confidence, 2),
             "candidate_name_is_section_header": is_section_header,
+            "missing_name_reason": missing_name_reason,
         }
         # Fix: if location looks like a skill list, clear it
         _LOCATION_BLOCKLIST = [

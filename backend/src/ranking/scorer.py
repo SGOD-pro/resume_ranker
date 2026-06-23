@@ -488,9 +488,45 @@ class CandidateScorer:
         all_jd_skills = list(set(jd.must_have_skills + jd.nice_to_have_skills))
         precomputed_idf = _precompute_bm25_idf(all_jd_skills, all_skills)
 
-        results = []
+        # ── Domain pre-filter: skip clearly unrelated candidates ──────────
+        # This prevents healthcare/legal/accounting candidates from polluting
+        # engineering rankings. Only filter when we have high JD confidence.
+        jd_domain, jd_conf = self._domain_classifier.classify_jd(
+            jd.title, all_jd_skills, jd.description, jd.department
+        )
+        prox = _load_domain_proximity()
+        penalties_matrix = prox.get('penalties', {})
+
+        # Construction is related to civil engineering — never filter
+        _RELATED_DOMAINS = {
+            ('engineering', 'construction'),
+            ('construction', 'engineering'),
+        }
+
+        filtered_candidates = []
         for candidate in candidates:
-            result = self._score_candidate(jd, candidate, all_skills, precomputed_idf=precomputed_idf)
+            cand_domain, cand_conf = self._domain_classifier.classify(candidate)
+
+            # Only filter if BOTH sides have reasonable confidence
+            if jd_conf >= 0.35 and cand_conf >= 0.35:
+                pair = (jd_domain, cand_domain)
+                if jd_domain != cand_domain and jd_domain != 'unknown' and cand_domain != 'unknown':
+                    if pair not in _RELATED_DOMAINS:
+                        jd_penalties = penalties_matrix.get(jd_domain, {})
+                        penalty = jd_penalties.get(cand_domain, -50.0)
+                        # Skip candidates with severe domain mismatch (penalty <= -60)
+                        if penalty <= -60:
+                            continue
+
+            filtered_candidates.append(candidate)
+
+        # Recompute all_skills for filtered set (for BM25 IDF)
+        filtered_all_skills = [c.get('skills', []) for c in filtered_candidates]
+        precomputed_idf = _precompute_bm25_idf(all_jd_skills, filtered_all_skills)
+
+        results = []
+        for candidate in filtered_candidates:
+            result = self._score_candidate(jd, candidate, filtered_all_skills, precomputed_idf=precomputed_idf)
             results.append(result)
 
         # ── Phase 3: Rank & Explain ───────────────────────────────────────
@@ -514,6 +550,38 @@ class CandidateScorer:
                     r.percentile = 0.0
 
         return results
+
+    def _classify_jd_subdomain(self, jd: JobDescription) -> str:
+        """Classify JD into engineering subdomain based on title/department."""
+        title_lower = jd.title.lower()
+        dept_lower = jd.department.lower()
+        combined = f"{title_lower} {dept_lower}"
+
+        # Direct mapping from common JD titles
+        _JD_SUBDOMAIN_MAP = {
+            'civil': 'civil',
+            'structural': 'civil',
+            'electrical': 'electrical',
+            'mechanical': 'mechanical',
+            'frontend': 'frontend',
+            'front-end': 'frontend',
+            'backend': 'backend',
+            'back-end': 'backend',
+            'full stack': 'fullstack',
+            'fullstack': 'fullstack',
+            'devops': 'devops',
+            'sre': 'devops',
+            'data engineer': 'data',
+            'data scientist': 'ml',
+            'ml engineer': 'ml',
+            'machine learning': 'ml',
+            'embedded': 'embedded',
+            'firmware': 'embedded',
+        }
+        for keyword, subdomain in _JD_SUBDOMAIN_MAP.items():
+            if keyword in combined:
+                return subdomain
+        return 'software'  # Default for unspecified engineering
 
     def _score_candidate(self, jd: JobDescription,
                          candidate: Dict[str, Any],
@@ -570,10 +638,11 @@ class CandidateScorer:
         result.matched_inferred = [m.skill for m in inference_result.inferred_skills]
         result.matched_related = [m.skill for m in inference_result.related_skills]
 
-        # Domain classification
-        cand_domain, cand_conf = self._domain_classifier.classify(candidate)
+        # Domain classification (with subdomain for engineering)
+        cand_domain, cand_subdomain, cand_conf = self._domain_classifier.classify_with_subdomain(candidate)
         result.candidate_domain = cand_domain
         result.domain_confidence = cand_conf
+        result.candidate_subdomain = cand_subdomain
 
         # ── Phase 1: Hard Knockout (inference-aware) ──────────────────────
         ko_reasons = self._phase1_knockout(
@@ -651,6 +720,21 @@ class CandidateScorer:
             jd.title, all_jd_skills, jd.description, jd.department
         )
         penalty = _get_domain_penalty(jd_domain, cand_domain, jd_conf, cand_conf)
+
+        # ── Subdomain penalty for engineering JDs ─────────────────────────
+        # If both JD and candidate are "engineering", apply subdomain penalty
+        if jd_domain == 'engineering' and cand_domain == 'engineering' and penalty == 0.0:
+            jd_subdomain = self._classify_jd_subdomain(jd)
+            if jd_subdomain and cand_subdomain and jd_subdomain != cand_subdomain:
+                prox = _load_domain_proximity()
+                sub_penalties = prox.get('sub_domain_penalties', {})
+                jd_sub_key = f'engineering.{jd_subdomain}'
+                cand_sub_key = f'engineering.{cand_subdomain}'
+                jd_sub_penalties = sub_penalties.get(jd_sub_key, {})
+                subdomain_penalty = jd_sub_penalties.get(cand_sub_key, -30.0)
+                if subdomain_penalty < 0:
+                    penalty = float(subdomain_penalty)
+
         if penalty < 0:
             result.domain_penalty = penalty
             result.skill_score = max(0.0, result.skill_score * (1.0 + penalty / 100.0))

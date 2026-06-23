@@ -126,7 +126,74 @@
       "engineering.data": -5,
       "engineering.mobile": -30,
       "engineering.security": -25,
-      "engineering.embedded": -25
+      "engineering.embedded": -25,
+      "engineering.civil": -70,
+      "engineering.electrical": -50,
+      "engineering.mechanical": -50
+    },
+    "engineering.civil": {
+      "engineering.backend": -70,
+      "engineering.frontend": -70,
+      "engineering.fullstack": -70,
+      "engineering.devops": -60,
+      "engineering.data": -60,
+      "engineering.ml": -70,
+      "engineering.electrical": -30,
+      "engineering.mechanical": -25,
+      "engineering.software": -70,
+      "engineering.embedded": -50
+    },
+    "engineering.electrical": {
+      "engineering.backend": -60,
+      "engineering.frontend": -70,
+      "engineering.fullstack": -65,
+      "engineering.devops": -55,
+      "engineering.data": -55,
+      "engineering.ml": -50,
+      "engineering.civil": -30,
+      "engineering.mechanical": -20,
+      "engineering.software": -60,
+      "engineering.embedded": -10
+    },
+    "engineering.mechanical": {
+      "engineering.backend": -65,
+      "engineering.frontend": -70,
+      "engineering.fullstack": -65,
+      "engineering.devops": -60,
+      "engineering.data": -55,
+      "engineering.ml": -50,
+      "engineering.civil": -25,
+      "engineering.electrical": -20,
+      "engineering.software": -65,
+      "engineering.embedded": -30
+    },
+    "engineering.software": {
+      "engineering.civil": -70,
+      "engineering.electrical": -60,
+      "engineering.mechanical": -65,
+      "engineering.embedded": -25,
+      "engineering.backend": 0,
+      "engineering.frontend": 0,
+      "engineering.fullstack": 0,
+      "engineering.devops": -10,
+      "engineering.data": -15,
+      "engineering.ml": -20
+    },
+    "engineering.embedded": {
+      "engineering.backend": -25,
+      "engineering.frontend": -35,
+      "engineering.fullstack": -25,
+      "engineering.devops": -15,
+      "engineering.data": -25,
+      "engineering.ml": -25,
+      "engineering.civil": -50,
+      "engineering.electrical": -10,
+      "engineering.mechanical": -30,
+      "engineering.software": -25
     }
+  },
+
+  "domain_notes": {
+    "construction_civil": "Construction candidates get -10 for civil JD (related domain, not FP)"
   }
 }

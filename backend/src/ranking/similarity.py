@@ -26,29 +26,105 @@ _MONTH_MAP = {
 
 
 def parse_date(date_str: Optional[str]) -> Optional[datetime]:
-    """Parse a date string like 'January 2021', 'Jan 2021', '2021', 'Present'."""
+    """Parse a date string into a datetime.
+
+    Supports:
+        - 'January 2021', 'Jan 2021', 'Jan. 2021'
+        - '2021' (year only → June 1)
+        - 'Present', 'Current', 'Now', 'Till Date', 'Till Now', 'To Date', 'Ongoing'
+        - 'MM/YYYY', 'MM-YYYY', 'MM.YYYY'
+        - 'YYYY/MM'
+        - 'DD/MM/YYYY', 'DD-MM-YYYY'
+        - "Jan'20", 'Jan-20', 'Jan.2020'
+        - '1 June 2020', '15 January 2019'
+    """
     if not date_str:
         return None
-    d = date_str.strip().lower()
-    if d in ('present', 'current', 'now', 'ongoing'):
+    d = date_str.strip()
+    dl = d.lower()
+    if dl in ('present', 'current', 'now', 'ongoing') or dl.startswith('till') or dl.startswith('to date'):
         return datetime.now()
 
-    # Try "Month Year" format
-    m = re.match(r'(\w+)\s+(\d{4})', d)
-    if m:
-        month_str, year = m.group(1), int(m.group(2))
-        if year < 1900 or year > 2100:
-            return None
-        month = _MONTH_MAP.get(month_str, 1)
-        return datetime(year, month, 1)
+    # Helper: convert 2-digit year to 4-digit
+    def _fix_year(y: int) -> int:
+        if y < 100:
+            return 2000 + y if y <= 40 else 1900 + y
+        return y
 
-    # Try just year
+    # "DD Month YYYY" — e.g., "1 June 2020", "15 January 2019"
+    m = re.match(r'(\d{1,2})\s+(\w+)\s+(\d{4})', d)
+    if m:
+        day, month_str, year = int(m.group(1)), m.group(2).lower(), int(m.group(3))
+        if 1900 <= year <= 2100:
+            month = _MONTH_MAP.get(month_str[:3], None)
+            if month:
+                return datetime(year, month, min(day, 28))
+
+    # "Month Year" — e.g., "January 2021", "Jan 2021", "Jan. 2021"
+    m = re.match(r'(\w+)\.?\s+(\d{4})', d)
+    if m:
+        month_str, year = m.group(1).lower(), int(m.group(2))
+        if 1900 <= year <= 2100:
+            month = _MONTH_MAP.get(month_str[:3], 1)
+            return datetime(year, month, 1)
+
+    # "Mon.YYYY" (no space) — e.g., "Jan.2020"
+    m = re.match(r'(\w+)\.(\d{4})', d)
+    if m:
+        month_str, year = m.group(1).lower(), int(m.group(2))
+        if 1900 <= year <= 2100 and month_str[:3] in _MONTH_MAP:
+            month = _MONTH_MAP[month_str[:3]]
+            return datetime(year, month, 1)
+
+    # "Mon'YY" — e.g., "Jan'20"
+    m = re.match(r"(\w+)'(\d{2})", d)
+    if m:
+        month_str, yr = m.group(1).lower(), int(m.group(2))
+        year = _fix_year(yr)
+        if 1900 <= year <= 2100:
+            month = _MONTH_MAP.get(month_str[:3], 1)
+            return datetime(year, month, 1)
+
+    # "Mon-YY" or "Mon-YYYY" — e.g., "Jan-20", "Jan-2020"
+    m = re.match(r'(\w+)-(\d{2,4})', d)
+    if m:
+        month_str, yr = m.group(1).lower(), int(m.group(2))
+        year = _fix_year(yr)
+        if 1900 <= year <= 2100 and month_str[:3] in _MONTH_MAP:
+            month = _MONTH_MAP[month_str[:3]]
+            return datetime(year, month, 1)
+
+    # DD/MM/YYYY or DD-MM-YYYY — e.g., "01/06/2020", "01-06-2020"
+    m = re.match(r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})', d)
+    if m:
+        a, b, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1900 <= year <= 2100:
+            # Heuristic: if first number > 12, it's DD/MM; otherwise MM/DD
+            if a > 12 and 1 <= b <= 12:
+                return datetime(year, b, min(a, 28))
+            elif 1 <= a <= 12:
+                return datetime(year, a, min(b, 28))
+
+    # MM/YYYY or MM-YYYY or MM.YYYY — e.g., "06/2020", "06-2020", "06.2020"
+    m = re.match(r'(\d{1,2})[/\-.](\d{4})', d)
+    if m:
+        month, year = int(m.group(1)), int(m.group(2))
+        if 1 <= month <= 12 and 1900 <= year <= 2100:
+            return datetime(year, month, 1)
+
+    # YYYY/MM — e.g., "2020/06"
+    m = re.match(r'(\d{4})/(\d{1,2})', d)
+    if m:
+        year, month = int(m.group(1)), int(m.group(2))
+        if 1 <= month <= 12 and 1900 <= year <= 2100:
+            return datetime(year, month, 1)
+
+    # Just year — "2021"
     m = re.match(r'^(\d{4})$', d)
     if m:
         year = int(m.group(1))
-        if year < 1900 or year > 2100:
-            return None
-        return datetime(year, 6, 1)  # Assume mid-year
+        if 1900 <= year <= 2100:
+            return datetime(year, 6, 1)  # Assume mid-year
 
     return None
 

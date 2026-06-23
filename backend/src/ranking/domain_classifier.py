@@ -34,8 +34,10 @@ class DomainClassifier:
         """Classify candidate domain from resume fields.
 
         Returns:
-            (domain, confidence) where domain is one of the 7 supported domains
+            (domain, confidence) where domain is one of the supported domains
             and confidence is 0.0–1.0.
+
+        Also sets self._last_subdomain for retrieval via classify_with_subdomain().
         """
         domain_scores: Dict[str, float] = {}
 
@@ -88,6 +90,56 @@ class DomainClassifier:
         confidence = domain_scores[best_domain] / total if total > 0 else 0.0
 
         return best_domain, round(confidence, 3)
+
+    def classify_with_subdomain(self, candidate: Dict[str, Any]) -> Tuple[str, str, float]:
+        """Classify domain AND subdomain.
+
+        Returns:
+            (domain, subdomain, confidence)
+
+        For engineering candidates, subdomain is one of:
+            software, civil, electrical, mechanical, data, frontend,
+            backend, devops, fullstack, embedded, ml
+
+        For non-engineering candidates, subdomain == domain.
+        """
+        domain, confidence = self.classify(candidate)
+
+        if domain != 'engineering':
+            return domain, domain, confidence
+
+        # Classify engineering subdomain
+        subdomain = self._classify_engineering_subdomain(candidate)
+        return domain, subdomain, confidence
+
+    def _classify_engineering_subdomain(self, candidate: Dict[str, Any]) -> str:
+        """Classify engineering candidate into subdomain using keyword matching."""
+        skills = candidate.get('skills', [])
+        experience = candidate.get('experience', [])
+        education = candidate.get('education', [])
+
+        # Build searchable text
+        text_parts = [s.lower() for s in skills]
+        for exp in experience:
+            text_parts.append((exp.get('role') or '').lower())
+            text_parts.append((exp.get('description') or '').lower())
+            for ach in (exp.get('achievements') or []):
+                text_parts.append(str(ach).lower())
+        for edu in education:
+            text_parts.append((edu.get('degree') or '').lower())
+        all_text = ' '.join(text_parts)
+
+        # Score each subdomain
+        subdomain_scores: Dict[str, int] = {}
+        for subdomain, keywords in _ENGINEERING_SUBDOMAIN_KEYWORDS.items():
+            hits = sum(1 for k in keywords if k in all_text)
+            if hits >= 2:
+                subdomain_scores[subdomain] = hits
+
+        if not subdomain_scores:
+            return 'software'  # Default for unclassified engineering
+
+        return max(subdomain_scores, key=subdomain_scores.get)  # type: ignore
 
     def _classify_text_snippet(self, text: str) -> Dict[str, float]:
         """Score a text snippet against domain keyword dictionaries.
@@ -312,4 +364,78 @@ _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
         ("channel partner", 2.5), ("key account", 2.5),
         ("upsell", 2.0), ("cross-sell", 2.0),
     ],
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Engineering subdomain keyword sets for fine-grained classification
+# ─────────────────────────────────────────────────────────────────────────────
+# Each subdomain needs ≥2 keyword hits to be considered.
+
+_ENGINEERING_SUBDOMAIN_KEYWORDS: Dict[str, set] = {
+    "civil": {
+        "civil", "structural", "construction", "bridge", "road", "highway",
+        "concrete", "surveying", "geotechnical", "infrastructure", "building",
+        "site engineer", "quantity surveyor", "autocad", "staad", "revit",
+        "pile", "foundation", "masonry", "plumbing", "drainage",
+        "reinforcement", "beam", "column", "slab", "rcc",
+        "primavera", "etabs", "safe", "csi",
+    },
+    "electrical": {
+        "electrical", "circuit", "power", "voltage", "current", "transformer",
+        "relay", "plc", "scada", "pcb", "embedded", "vhdl", "verilog",
+        "motor", "generator", "switchgear", "substation", "wiring",
+        "inverter", "rectifier", "capacitor", "inductor", "oscilloscope",
+        "power distribution", "electrical design", "panel", "breaker",
+    },
+    "mechanical": {
+        "mechanical", "solidworks", "catia", "ansys", "thermodynamics",
+        "cnc", "manufacturing", "assembly", "tolerance", "material",
+        "hydraulic", "pneumatic", "hvac", "turbine", "gear", "lathe",
+        "cad/cam", "machining", "forging", "casting", "welding",
+        "stress analysis", "fatigue", "vibration", "fluid dynamics",
+        "creo", "unigraphics", "nx", "pro/e",
+    },
+    "software": {
+        "python", "javascript", "react", "angular", "vue", "node",
+        "django", "flask", "spring", "docker", "kubernetes", "aws",
+        "azure", "microservices", "api", "rest", "graphql", "git",
+        "github", "ci/cd", "agile", "scrum", "devops",
+        "typescript", "java", "c#", ".net", "ruby", "rails", "php",
+        "mongodb", "postgresql", "mysql", "redis", "elasticsearch",
+        "software engineer", "web developer", "full stack",
+    },
+    "data": {
+        "data engineer", "etl", "spark", "hadoop", "kafka", "airflow",
+        "snowflake", "redshift", "bigquery", "data warehouse", "data lake",
+        "data pipeline", "dbt", "data modeling", "sql", "nosql",
+        "data science", "data analyst", "pandas", "numpy",
+    },
+    "ml": {
+        "machine learning", "deep learning", "neural network", "tensorflow",
+        "pytorch", "keras", "nlp", "computer vision", "reinforcement learning",
+        "model training", "inference", "bert", "gpt", "transformer",
+        "classification", "regression", "clustering", "scikit",
+    },
+    "frontend": {
+        "frontend", "front-end", "react", "angular", "vue", "css",
+        "html", "responsive", "ui/ux", "user interface", "sass", "less",
+        "webpack", "vite", "nextjs", "gatsby", "svelte",
+    },
+    "backend": {
+        "backend", "back-end", "server-side", "api", "microservices",
+        "database", "sql", "nosql", "rest api", "graphql",
+        "spring boot", "express", "fastapi", "django", "flask",
+    },
+    "devops": {
+        "devops", "sre", "infrastructure", "terraform", "ansible",
+        "jenkins", "gitlab ci", "github actions", "kubernetes", "docker",
+        "monitoring", "prometheus", "grafana", "cloud", "aws",
+        "ci/cd", "deployment", "linux", "container",
+    },
+    "embedded": {
+        "embedded", "firmware", "rtos", "microcontroller", "arm",
+        "fpga", "vhdl", "verilog", "iot", "sensor", "raspberry pi",
+        "arduino", "stm32", "esp32", "bare metal",
+    },
 }

@@ -338,6 +338,7 @@ def extract_all_batches(pipe, classifier, pdfs):
     skill_dupes = 0
     low_quality = []
     confidence_dist = {"high": 0, "medium": 0, "low": 0, "zero": 0}
+    missing_name_reasons = Counter()  # Track WHY names are missing
     # Domain
     domain_counts = Counter()
     domain_conf_sum = defaultdict(float)
@@ -395,9 +396,13 @@ def extract_all_batches(pipe, classifier, pdfs):
                 elif name == "Unknown Candidate":
                     name_blank += 1
                     confidence_dist["zero"] += 1
+                    reason = pi.get("missing_name_reason", "UNKNOWN")
+                    missing_name_reasons[reason] += 1
                 else:
                     name_blank += 1
                     confidence_dist["zero"] += 1
+                    reason = pi.get("missing_name_reason", "UNKNOWN")
+                    missing_name_reasons[reason] += 1
 
                 if is_header:
                     name_blacklisted += 1
@@ -443,32 +448,15 @@ def extract_all_batches(pipe, classifier, pdfs):
                 if conf < 0.3:
                     low_conf_domains += 1
 
-                # Sub-domain
-                sub_domain = domain
-                if domain == "engineering":
-                    all_text = " ".join([
-                        " ".join(skills).lower(),
-                        " ".join((e.get("role") or "") for e in exp).lower(),
-                        " ".join((e.get("description") or "") for e in exp).lower(),
-                        " ".join((e.get("degree") or "") for e in edu).lower(),
-                    ])
-                    civil_hits = sum(1 for k in CIVIL_KEYWORDS if k in all_text)
-                    elec_hits = sum(1 for k in ELECTRICAL_KEYWORDS if k in all_text)
-                    mech_hits = sum(1 for k in MECHANICAL_KEYWORDS if k in all_text)
-                    max_hits = max(civil_hits, elec_hits, mech_hits)
-                    if max_hits >= 2:
-                        if civil_hits == max_hits:
-                            sub_domain = "civil_engineering"
-                        elif elec_hits == max_hits:
-                            sub_domain = "electrical_engineering"
-                        elif mech_hits == max_hits:
-                            sub_domain = "mechanical_engineering"
-                    else:
-                        sub_domain = "software_engineering"
+                # Sub-domain — use production DomainClassifier
+                from src.ranking.domain_classifier import DomainClassifier as _DC
+                _dc = _DC()
+                _, sub_domain, _ = _dc.classify_with_subdomain(fields)
 
                 candidate_index[pdf_path.name] = {
                     "name": name, "email": pi.get("email"), "phone": pi.get("phone"),
                     "name_confidence": name_conf, "is_section_header": is_header,
+                    "missing_name_reason": pi.get("missing_name_reason"),
                     "domain": domain, "sub_domain": sub_domain, "confidence": round(conf, 3),
                     "skill_count": len(skills), "skills": skills[:30],
                     "exp_count": len(exp), "edu_count": len(edu),
@@ -512,6 +500,7 @@ def extract_all_batches(pipe, classifier, pdfs):
             "name_precision": round(name_present / (name_present + name_blacklisted) * 100, 1) if (name_present + name_blacklisted) else 0,
             "name_precision_formula": f"{name_present}/({name_present}+{name_blacklisted})",
             "confidence_distribution": confidence_dist,
+            "missing_name_reasons": dict(missing_name_reasons),
         },
         # Composite extraction quality (Phase 4 honest metric)
         "composite_score": round(
@@ -737,7 +726,7 @@ def phase4_ranking(candidate_index):
                 "name": r.name or "Unknown Candidate",
                 "score": round(r.final_score, 1),
                 "domain": r.candidate_domain or "unknown",
-                "sub_domain": getattr(r, 'best_title_match', '') or '',
+                "sub_domain": getattr(r, 'candidate_subdomain', '') or '',
                 "skill_overlap": f"{len(r.matched_nice_to_have)}/{len(jd_skills_all)}",
                 "exp_count": int(r.total_exp_years),
                 "skill_score": round(r.skill_score, 1),
@@ -764,7 +753,9 @@ def phase4_ranking(candidate_index):
 # ═════════════════════════════════════════════════════════════════
 
 def phase5_6_fp_fn(jd_rankings, candidate_index):
-    fp_cases = []
+    true_fp_cases = []
+    related_domain_cases = []
+    same_domain_cases = []
     fn_cases = []
 
     eng_jds = {"Backend Engineer", "Frontend Engineer", "Fullstack Engineer",
@@ -772,7 +763,14 @@ def phase5_6_fp_fn(jd_rankings, candidate_index):
     civil_jds = {"Civil Engineer"}
     elec_jds = {"Electrical Engineer"}
     mech_jds = {"Mechanical Engineer"}
-    non_eng = {"marketing", "accounting", "legal", "healthcare", "hr", "finance"}
+    non_eng = {"marketing", "accounting", "legal", "healthcare", "hr", "finance",
+               "education", "hospitality", "admin", "sales"}
+
+    # Related-domain pairs (NOT true FP)
+    RELATED_PAIRS = {
+        ("Civil Engineer", "construction"),       # construction ↔ civil is related
+        ("Construction Manager", "engineering"),  # engineering ↔ construction is related
+    }
 
     for jd_name, ranking in jd_rankings.items():
         top20 = ranking["top20"]
@@ -780,45 +778,107 @@ def phase5_6_fp_fn(jd_rankings, candidate_index):
 
         for entry in top20[:10]:
             cand_domain = entry["domain"]
-            sub_domain = entry["sub_domain"]
+            sub_domain = entry.get("sub_domain", "")
             score = entry["score"]
-            reason_parts = []
 
-            # FP logic: wrong domain or wrong sub-domain in top 10
-            is_fp = False
+            # Skip unknown domains
+            if cand_domain == "unknown" or score <= 30:
+                continue
+
+            # Check if this is a known related-domain pair
+            is_related = (jd_name, cand_domain) in RELATED_PAIRS
+
             if jd_name in eng_jds:  # Software engineering JDs
-                if cand_domain in non_eng and score > 30:
-                    is_fp = True
-                    reason_parts.append(f"{cand_domain} candidate in software engineering JD '{jd_name}'")
-                elif cand_domain == "engineering" and sub_domain in ("civil_engineering", "mechanical_engineering", "electrical_engineering") and score > 30:
-                    is_fp = True
-                    reason_parts.append(f"{sub_domain} candidate in software JD '{jd_name}'")
+                if cand_domain in non_eng:
+                    # healthcare/legal/accounting → software = TRUE FP
+                    true_fp_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "true_fp",
+                        "reason": f"{cand_domain} candidate in software JD '{jd_name}'",
+                    })
+                elif cand_domain == "engineering" and sub_domain in ("civil", "mechanical", "electrical"):
+                    # Civil eng in software JD = same-domain (different subdomain)
+                    same_domain_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "same_domain",
+                        "reason": f"engineering.{sub_domain} in software JD '{jd_name}'",
+                    })
             elif jd_name in civil_jds:
-                if sub_domain != "civil_engineering" and cand_domain != "unknown" and score > 30:
-                    is_fp = True
-                    reason_parts.append(f"{sub_domain or cand_domain} candidate in Civil Engineer JD")
+                if cand_domain == "construction" or is_related:
+                    # construction → civil = related domain (NOT FP)
+                    related_domain_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "related_domain",
+                        "reason": f"construction candidate in Civil Engineer (related)",
+                    })
+                elif cand_domain in non_eng:
+                    # healthcare/finance/legal → civil = TRUE FP
+                    true_fp_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "true_fp",
+                        "reason": f"{cand_domain} candidate in Civil Engineer JD",
+                    })
+                elif cand_domain == "engineering" and sub_domain not in ("civil", ""):
+                    same_domain_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "same_domain",
+                        "reason": f"engineering.{sub_domain} in Civil Engineer JD",
+                    })
             elif jd_name in elec_jds:
-                if sub_domain != "electrical_engineering" and cand_domain != "unknown" and score > 30:
-                    is_fp = True
-                    reason_parts.append(f"{sub_domain or cand_domain} candidate in Electrical Engineer JD")
+                if cand_domain in non_eng:
+                    # healthcare → electrical = TRUE FP (NOT related)
+                    true_fp_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "true_fp",
+                        "reason": f"{cand_domain} candidate in Electrical Engineer JD",
+                    })
+                elif cand_domain == "engineering" and sub_domain not in ("electrical", "embedded", ""):
+                    same_domain_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "same_domain",
+                        "reason": f"engineering.{sub_domain} in Electrical Engineer JD",
+                    })
             elif jd_name in mech_jds:
-                if sub_domain != "mechanical_engineering" and cand_domain != "unknown" and score > 30:
-                    is_fp = True
-                    reason_parts.append(f"{sub_domain or cand_domain} candidate in Mechanical Engineer JD")
+                if cand_domain in non_eng:
+                    # healthcare → mechanical = TRUE FP (NOT related)
+                    true_fp_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "true_fp",
+                        "reason": f"{cand_domain} candidate in Mechanical Engineer JD",
+                    })
+                elif cand_domain == "engineering" and sub_domain not in ("mechanical", ""):
+                    same_domain_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "same_domain",
+                        "reason": f"engineering.{sub_domain} in Mechanical Engineer JD",
+                    })
             else:  # Non-engineering JDs
                 if cand_domain == "engineering" and score > 40:
-                    is_fp = True
-                    reason_parts.append(f"engineering candidate in non-eng JD '{jd_name}'")
-
-            if is_fp:
-                fp_cases.append({
-                    "jd": jd_name, "jd_dept": jd_dept,
-                    "file": entry["file"], "name": entry["name"],
-                    "score": score, "domain": cand_domain, "sub_domain": sub_domain,
-                    "skill_overlap": entry["skill_overlap"],
-                    "exp_count": entry["exp_count"],
-                    "reason": "; ".join(reason_parts),
-                })
+                    true_fp_cases.append({
+                        "jd": jd_name, "jd_dept": jd_dept,
+                        "file": entry["file"], "name": entry["name"],
+                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                        "tier": "true_fp",
+                        "reason": f"engineering candidate in non-eng JD '{jd_name}'",
+                    })
 
     # FN: domain-matching candidates with many skills NOT in top 20
     for jd_name, jd in JOB_DESCRIPTIONS.items():
@@ -856,10 +916,19 @@ def phase5_6_fp_fn(jd_rankings, candidate_index):
         if len(fn_cases) >= 200:
             break
 
-    fp_rate = len(fp_cases) / (len(jd_rankings) * 10) * 100 if jd_rankings else 0
+    # Only count TRUE FP in headline rate
+    total_slots = len(jd_rankings) * 10
+    true_fp_rate = len(true_fp_cases) / total_slots * 100 if total_slots else 0
+    all_fp_rate = (len(true_fp_cases) + len(related_domain_cases) + len(same_domain_cases)) / total_slots * 100 if total_slots else 0
+
     return (
-        {"count": len(fp_cases), "rate": round(fp_rate, 1),
-         "formula": f"{len(fp_cases)} / ({len(jd_rankings)} × 10)", "cases": fp_cases[:50]},
+        {"count": len(true_fp_cases), "rate": round(true_fp_rate, 1),
+         "formula": f"{len(true_fp_cases)} / ({len(jd_rankings)} × 10)",
+         "cases": true_fp_cases[:50],
+         "related_domain": {"count": len(related_domain_cases), "cases": related_domain_cases[:20]},
+         "same_domain": {"count": len(same_domain_cases), "cases": same_domain_cases[:20]},
+         "all_fp_rate": round(all_fp_rate, 1),
+        },
         {"count": len(fn_cases), "cases": fn_cases[:50]},
     )
 
@@ -1130,6 +1199,15 @@ def generate_report(phases, scorecard):
     L.append(f"- **Name Precision**: {na['name_precision']}%")
     L.append(f"- **Formula**: `{na['name_precision_formula']}`")
     L.append(f"- **Confidence distribution**: {na['confidence_distribution']}")
+    if na.get('missing_name_reasons'):
+        L.append("")
+        L.append("### Unknown Candidate Breakdown (missing_name_reason)")
+        L.append("| Reason | Count | % of Unknown |")
+        L.append("|--------|-------|-------------|")
+        total_unknown = sum(na['missing_name_reasons'].values())
+        for reason, count in sorted(na['missing_name_reasons'].items(), key=lambda x: -x[1]):
+            pct = round(count / total_unknown * 100, 1) if total_unknown else 0
+            L.append(f"| {reason} | {count} | {pct}% |")
     L.append("")
 
     # Anomalies
@@ -1183,17 +1261,40 @@ def generate_report(phases, scorecard):
 
     # Phase 5: FP
     L.append("---")
-    L.append("## Phase 5 — False Positive Audit")
+    L.append("## Phase 5 — False Positive Audit (3-Tier)")
     fp = phases["fp"]
-    L.append(f"- **Count**: {fp['count']}")
-    L.append(f"- **FP Rate**: {fp['rate']}%")
+    L.append(f"- **True FP Count**: {fp['count']}")
+    L.append(f"- **True FP Rate**: {fp['rate']}%")
     L.append(f"- **Formula**: {fp['formula']}")
+    related = fp.get("related_domain", {})
+    same = fp.get("same_domain", {})
+    L.append(f"- **Related-Domain Count**: {related.get('count', 0)}")
+    L.append(f"- **Same-Domain Count**: {same.get('count', 0)}")
+    L.append(f"- **All-inclusive FP Rate**: {fp.get('all_fp_rate', 0)}%")
     L.append("")
+
     if fp["cases"]:
-        L.append("| JD | Name | Score | Domain | Sub-Domain | Skills | Exp | Reason |")
-        L.append("|----|------|-------|--------|------------|--------|-----|--------|")
+        L.append("### True FP Cases (wrong domain entirely)")
+        L.append("| JD | Name | Score | Domain | Sub-Domain | Tier | Reason |")
+        L.append("|----|------|-------|--------|------------|------|--------|")
         for c in fp["cases"][:30]:
-            L.append(f"| {c['jd']} | {c['name'][:25]} | {c['score']} | {c['domain']} | {c['sub_domain']} | {c['skill_overlap']} | {c['exp_count']} | {c['reason'][:50]} |")
+            L.append(f"| {c['jd']} | {c['name'][:25]} | {c['score']} | {c['domain']} | {c['sub_domain']} | {c['tier']} | {c['reason'][:50]} |")
+    L.append("")
+
+    if related.get("cases"):
+        L.append("### Related-Domain Cases (not counted as FP)")
+        L.append("| JD | Name | Score | Domain | Sub-Domain | Reason |")
+        L.append("|----|------|-------|--------|------------|--------|")
+        for c in related["cases"][:15]:
+            L.append(f"| {c['jd']} | {c['name'][:25]} | {c['score']} | {c['domain']} | {c['sub_domain']} | {c['reason'][:50]} |")
+    L.append("")
+
+    if same.get("cases"):
+        L.append("### Same-Domain Cases (wrong subdomain)")
+        L.append("| JD | Name | Score | Domain | Sub-Domain | Reason |")
+        L.append("|----|------|-------|--------|------------|--------|")
+        for c in same["cases"][:15]:
+            L.append(f"| {c['jd']} | {c['name'][:25]} | {c['score']} | {c['domain']} | {c['sub_domain']} | {c['reason'][:50]} |")
     L.append("")
 
     # Phase 6: FN

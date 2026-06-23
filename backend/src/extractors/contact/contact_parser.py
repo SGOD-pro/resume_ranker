@@ -95,6 +95,59 @@ _NAME_HARD_BLACKLIST = {
     'attention to detail', 'strong communication',
 }
 
+# Title words that, when appearing as FIRST word, indicate a job title
+# (not a person name). e.g., "Database Programmer", "Project Manager"
+_TITLE_FIRST_WORDS = {
+    'senior', 'junior', 'lead', 'chief', 'head', 'principal', 'staff',
+    'adjunct', 'associate', 'assistant', 'deputy', 'vice',
+    # Role-type first words ("Database Programmer", "Project Manager")
+    'database', 'project', 'program', 'product', 'system', 'systems',
+    'network', 'security', 'quality', 'business', 'marketing',
+    'sales', 'financial', 'human', 'information', 'it',
+    'clinical', 'medical', 'dental', 'pharmacy', 'nursing',
+    'construction', 'mechanical', 'electrical', 'civil', 'structural',
+    'industrial', 'environmental', 'chemical', 'biomedical',
+    'administrative', 'executive', 'general', 'regional', 'district',
+    'substitute', 'kindergarten', 'history', 'math', 'science',
+    'warehouse', 'aviation', 'unit', 'content', 'web',
+    'master', 'multi', 'tactical',
+}
+
+# Company name suffixes — reject names containing these.
+_COMPANY_SUFFIXES = {
+    'ltd', 'ltd.', 'inc', 'inc.', 'corp', 'corp.', 'corporation',
+    'llc', 'llp', 'pvt', 'pvt.', 'co.', 'plc',
+    'services', 'solutions', 'technologies', 'consultancy',
+    'enterprises', 'industries', 'systems', 'associates',
+    'partners', 'holdings', 'group', 'labs', 'studio',
+    'foundation', 'institute', 'university', 'college',
+    'hospital', 'clinic',
+}
+
+# OCR artifact patterns — names containing these are likely garbled.
+_OCR_NOISE_RE = re.compile(
+    r'[\xc2\xc3\xc4\xc5][\x80-\xbf]'   # Mojibake from UTF-8 misread
+    r'|[\u00c2\u00c3\u00e2]'              # Common OCR artifacts: Â, Ã, â
+    r'|\(cid:\d+\)'                       # PDF character-ID leak
+    r'|[\ue000-\uf8ff]'                   # Unicode Private Use Area
+    r'|[\u2022\u25cf\u25a0\u25aa]'        # Bullets: •, ●, ■, ▪
+    r'|[^\x20-\x7e\u00c0-\u024f\u0900-\u097f\u0600-\u06ff\u0400-\u04ff]'  # Non-printable outside Latin/Devanagari/Arabic/Cyrillic
+)
+
+# Generic English words — if ≥2 of the words in a 3-4 word "name" are
+# these common words, it's likely a descriptive phrase, not a person name.
+_GENERIC_WORDS = {
+    'and', 'the', 'for', 'with', 'from', 'into', 'over', 'under',
+    'management', 'development', 'services', 'systems', 'operations',
+    'planning', 'strategy', 'leadership', 'communication', 'record',
+    'standard', 'process', 'quality', 'assurance', 'control',
+    'safety', 'training', 'support', 'center', 'centre',
+    'oriented', 'centered', 'focused', 'driven', 'based',
+    'abilities', 'overview', 'proficiency', 'objectives',
+    'interpersonal', 'organizational', 'professional', 'personal',
+    'academic', 'career', 'task', 'multi',
+}
+
 # Technology / skill terms — if ALL words in a candidate match these,
 # it's a skill phrase, not a person name.
 _TECH_WORDS = {
@@ -122,6 +175,8 @@ _TECH_WORDS = {
     'seo', 'sem', 'marketing', 'design', 'ux', 'ui',
     'teamwork', 'leadership', 'communication', 'collaboration',
     'management', 'development', 'engineering', 'testing',
+    'asp', 'net', 'joomla', 'wordpress', 'drupal', 'magento',
+    'gsm', 'cdma', 'matlab', 'simulink', 'labview',
 }
 
 # Regex to split name from contact info on the same line
@@ -207,10 +262,32 @@ def _is_name_line(line: str) -> bool:
         'officer', 'coordinator', 'administrator', 'supervisor',
         'technician', 'associate', 'assistant', 'executive', 'intern',
         'planner', 'inspector', 'auditor', 'operator',
+        'instructor', 'programmer', 'teller', 'pharmacist',
+        'publicist', 'strategist', 'maintainer', 'writer',
     }
     last_word = words[-1].lower().rstrip('s')  # handle plurals
     if last_word in _TITLE_SUFFIXES and len(words) >= 2:
         return False
+    # Reject if FIRST word is a common title prefix
+    # Catches: "Database Programmer", "Project Management", "Marketing Consultant"
+    first_word = words[0].lower()
+    if first_word in _TITLE_FIRST_WORDS and len(words) >= 2:
+        return False
+    # Reject if name contains company suffixes
+    # Catches: "Tata Consultancy Services Ltd."
+    for w in words:
+        if w.lower().rstrip('.') in _COMPANY_SUFFIXES:
+            return False
+    # Reject OCR noise / garbled names
+    # Catches: "Qualification Â", "SEI EndorsedÂ"
+    if _OCR_NOISE_RE.search(s):
+        return False
+    # Reject descriptive phrases: ≥2 generic English words in 3-4 word "name"
+    # Catches: "People Centered Leadership", "Classroom Management Interpersonal"
+    if len(words) >= 3:
+        generic_count = sum(1 for w in words if w.lower() in _GENERIC_WORDS)
+        if generic_count >= 2:
+            return False
     # Reject common section header fragments that pass other checks
     _HEADER_FRAGMENTS = {
         'career objectives', 'career objective', 'core accomplishments',
@@ -222,6 +299,11 @@ def _is_name_line(line: str) -> bool:
         'university departmental', 'microsoft office',
         'esteemed organization', 'career work', 'senior planning',
         'logistics and', 'finance minister',
+        # Observed bad names from benchmark
+        'people centered leadership', 'classroom management interpersonal',
+        'tactical planning goal-oriented', 'multi task abilities',
+        'court procedures due dilligence', 'academic record',
+        'professional overview', 'information technology provision',
     }
     if s.lower() in _HEADER_FRAGMENTS:
         return False

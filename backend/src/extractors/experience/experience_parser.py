@@ -15,15 +15,57 @@ v2 fixes:
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
+# ── Date component patterns ──────────────────────────────────────────────
+# Month names: full or abbreviated, with optional period
+_MONTH = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
+
+# Start date patterns (order matters — most specific first)
+_START_PATTERNS = '|'.join([
+    _MONTH + r'\.?\s+\d{4}',           # January 2020, Jan. 2020, Jan 2020
+    _MONTH + r'\.\d{4}',               # Jan.2020 (no space)
+    _MONTH + r"'\d{2}",                 # Jan'20
+    _MONTH + r'-\d{2,4}',              # Jan-20, Jan-2020
+    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',  # 1 June 2020, 15 January 2019
+    r'\d{1,2}/\d{1,2}/\d{4}',          # DD/MM/YYYY or MM/DD/YYYY
+    r'\d{1,2}-\d{1,2}-\d{4}',          # DD-MM-YYYY or MM-DD-YYYY
+    r'\d{1,2}/\d{4}',                  # MM/YYYY
+    r'\d{1,2}-\d{4}',                  # MM-YYYY
+    r'\d{1,2}\.\d{4}',                 # MM.YYYY
+    r'\d{4}/\d{1,2}',                  # YYYY/MM
+    r'\d{4}',                          # YYYY
+])
+
+# End date patterns (same as start + Present/Current/Now/Till Date)
+_END_PATTERNS = '|'.join([
+    _MONTH + r'\.?\s+\d{4}',
+    _MONTH + r'\.\d{4}',
+    _MONTH + r"'\d{2}",
+    _MONTH + r'-\d{2,4}',
+    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',
+    r'\d{1,2}/\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{4}',
+    r'\d{1,2}\.\d{4}',
+    r'\d{4}/\d{1,2}',
+    r'Present|Current|Now|Till\s+Date|Till\s+Now|To\s+Date|Ongoing',
+    r'\d{4}',
+])
+
+# Separator between start–end: dashes, em-dashes, "to", "till"
+_DATE_SEP = r'\s*(?:[–—\-–]+|to|till)\s*'
+
 DATE_RANGE_RE = re.compile(
-    r'(?P<start>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}'
-    r'|\d{1,2}/\d{4}'  # MM/YYYY format
-    r'|\d{4})'
-    r'\s*[–—\-–]+\s*'
-    r'(?P<end>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}'
-    r'|\d{1,2}/\d{4}'  # MM/YYYY format
-    r'|Present|Current|Now|\d{4})',
+    r'(?P<start>' + _START_PATTERNS + r')'
+    + _DATE_SEP +
+    r'(?P<end>' + _END_PATTERNS + r')',
     re.I)
+
+# "Since YYYY" / "From YYYY" → treated as YYYY – Present
+SINCE_RE = re.compile(
+    r'(?:Since|From)\s+(?P<start>\d{4})',
+    re.I)
+
 BULLET_RE = re.compile(r'^[•·▪▸►✓✔\*\-]\s+(.+)')
 SEP_RE = re.compile(r'\s*[|/]\s*')
 
@@ -150,6 +192,10 @@ class ExperienceParser:
             return []
         date_matches = list(DATE_RANGE_RE.finditer(text))
         if not date_matches:
+            # Try "Since YYYY" / "From YYYY" patterns
+            since_entries = self._parse_since(text)
+            if since_entries:
+                return since_entries
             return self._parse_year_only(text)
 
         entries = []
@@ -293,6 +339,34 @@ class ExperienceParser:
                 entries.append({
                     "role": role, "company": company,
                     "start": dm.group('start'), "end": dm.group('end'),
+                    "description": None, "achievements": [],
+                })
+        return entries
+
+    def _parse_since(self, text: str) -> List[Dict[str, Any]]:
+        """Parse 'Since YYYY' / 'From YYYY' patterns as YYYY – Present."""
+        entries = []
+        for dm in SINCE_RE.finditer(text):
+            before = text[max(0, dm.start()-200):dm.start()].strip()
+            lines = [l.strip() for l in before.split('\n') if l.strip()]
+            clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+
+            if len(clean_lines) >= 2:
+                role, company = self._disambiguate_role_company(
+                    clean_lines[-1], clean_lines[-2]
+                )
+            elif clean_lines:
+                role, company = self._split_role_company(clean_lines[-1])
+            else:
+                continue
+
+            role = _clean_loc_tags(role)
+            company = _clean_loc_tags(company)
+
+            if role or company:
+                entries.append({
+                    "role": role, "company": company,
+                    "start": dm.group('start'), "end": "Present",
                     "description": None, "achievements": [],
                 })
         return entries

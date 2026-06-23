@@ -75,6 +75,7 @@ class ScoredCandidate:
 
     # Domain classification (Phase 2)
     candidate_domain: str = ""
+    candidate_subdomain: str = ""     # Engineering subdomain (civil/electrical/mechanical/software...)
     domain_confidence: float = 0.0
     domain_penalty: float = 0.0      # Applied penalty (0.0 = no penalty)
 
