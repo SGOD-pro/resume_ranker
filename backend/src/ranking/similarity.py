@@ -37,13 +37,18 @@ def parse_date(date_str: Optional[str]) -> Optional[datetime]:
     m = re.match(r'(\w+)\s+(\d{4})', d)
     if m:
         month_str, year = m.group(1), int(m.group(2))
+        if year < 1900 or year > 2100:
+            return None
         month = _MONTH_MAP.get(month_str, 1)
         return datetime(year, month, 1)
 
     # Try just year
     m = re.match(r'^(\d{4})$', d)
     if m:
-        return datetime(int(m.group(1)), 6, 1)  # Assume mid-year
+        year = int(m.group(1))
+        if year < 1900 or year > 2100:
+            return None
+        return datetime(year, 6, 1)  # Assume mid-year
 
     return None
 
@@ -169,7 +174,7 @@ def keyword_score(candidate: Dict[str, Any],
     )
 
     if not jd.keywords:
-        return 100.0, [], []
+        return 0.0, [], []
 
     full_text = (candidate.get('raw_text_sections', {}).get('full_text', '') or '').lower()
     # Also include structured fields as text

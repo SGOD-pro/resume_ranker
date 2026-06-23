@@ -85,7 +85,7 @@ from src.ranking.tfidf_scorer import (
     text_cosine_sim as _text_cosine_sim,
 )
 
-from src.ranking.bm25_scorer import bm25_skill_score as _bm25_skill_score
+from src.ranking.bm25_scorer import bm25_skill_score as _bm25_skill_score, precompute_bm25_idf as _precompute_bm25_idf
 from src.ranking.similarity import (
     parse_date as _parse_date,
     compute_total_experience_years as _compute_total_experience_years,
@@ -484,9 +484,13 @@ class CandidateScorer:
         # Pre-compute all candidate skills for BM25 IDF
         all_skills = [c.get('skills', []) for c in candidates]
 
+        # Pre-compute IDF ONCE (was O(n²) when done per-candidate)
+        all_jd_skills = list(set(jd.must_have_skills + jd.nice_to_have_skills))
+        precomputed_idf = _precompute_bm25_idf(all_jd_skills, all_skills)
+
         results = []
         for candidate in candidates:
-            result = self._score_candidate(jd, candidate, all_skills)
+            result = self._score_candidate(jd, candidate, all_skills, precomputed_idf=precomputed_idf)
             results.append(result)
 
         # ── Phase 3: Rank & Explain ───────────────────────────────────────
@@ -513,7 +517,8 @@ class CandidateScorer:
 
     def _score_candidate(self, jd: JobDescription,
                          candidate: Dict[str, Any],
-                         all_skills: List[List[str]]) -> ScoredCandidate:
+                         all_skills: List[List[str]],
+                         precomputed_idf=None) -> ScoredCandidate:
         """Score a single candidate through Phase 1 and Phase 2."""
         pi = candidate.get('personal_info', {})
         name = pi.get('name') or 'Unknown'
@@ -588,6 +593,7 @@ class CandidateScorer:
         result.skill_score = _bm25_skill_score(
             augmented_skills, all_jd_skills, all_skills,
             skill_weights=inference_result.skill_weights,
+            precomputed_idf=precomputed_idf,
         )
 
         # Build matched/missing from inference results
@@ -651,10 +657,30 @@ class CandidateScorer:
 
         # ── Weighted final score ──────────────────────────────────────────
         w = jd.weights
-        result.skill_weighted = result.skill_score * w.get('skills', 0.4)
-        result.experience_weighted = result.experience_score * w.get('experience', 0.25)
-        result.keyword_weighted = result.keyword_score * w.get('keywords', 0.2)
-        result.education_weighted = result.education_score * w.get('education', 0.15)
+        skill_w = w.get('skills', 0.4)
+        exp_w = w.get('experience', 0.25)
+        kw_w = w.get('keywords', 0.2)
+        edu_w = w.get('education', 0.15)
+
+        # If JD has no keywords, redistribute keyword weight proportionally
+        if not jd.keywords and kw_w > 0:
+            remaining = skill_w + exp_w + edu_w
+            if remaining > 0:
+                skill_w = skill_w / remaining * (skill_w + exp_w + edu_w + kw_w)
+                exp_w = exp_w / remaining * (w.get('skills', 0.4) + w.get('experience', 0.25) + w.get('education', 0.15) + kw_w)
+                edu_w = edu_w / remaining * (w.get('skills', 0.4) + w.get('experience', 0.25) + w.get('education', 0.15) + kw_w)
+                # Recalculate proportionally from originals
+                orig_s, orig_e, orig_d = w.get('skills', 0.4), w.get('experience', 0.25), w.get('education', 0.15)
+                total_non_kw = orig_s + orig_e + orig_d
+                skill_w = orig_s / total_non_kw
+                exp_w = orig_e / total_non_kw
+                edu_w = orig_d / total_non_kw
+            kw_w = 0.0
+
+        result.skill_weighted = result.skill_score * skill_w
+        result.experience_weighted = result.experience_score * exp_w
+        result.keyword_weighted = result.keyword_score * kw_w
+        result.education_weighted = result.education_score * edu_w
 
         base_score = (
             result.skill_weighted +

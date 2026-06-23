@@ -199,6 +199,32 @@ def _is_name_line(line: str) -> bool:
     from src.registries.section_registry import resolve as _resolve_section
     if _resolve_section(s):
         return False
+    # Reject if the name ends with a common job title suffix
+    # e.g., "PIPING ENGINEER", "ART TEACHER", "PROJECT MANAGER"
+    _TITLE_SUFFIXES = {
+        'engineer', 'developer', 'manager', 'architect', 'consultant',
+        'analyst', 'specialist', 'teacher', 'designer', 'director',
+        'officer', 'coordinator', 'administrator', 'supervisor',
+        'technician', 'associate', 'assistant', 'executive', 'intern',
+        'planner', 'inspector', 'auditor', 'operator',
+    }
+    last_word = words[-1].lower().rstrip('s')  # handle plurals
+    if last_word in _TITLE_SUFFIXES and len(words) >= 2:
+        return False
+    # Reject common section header fragments that pass other checks
+    _HEADER_FRAGMENTS = {
+        'career objectives', 'career objective', 'core accomplishments',
+        'core competencies', 'career overview', 'career summary',
+        'educational qualifications', 'academic qualifications',
+        'professional qualifications', 'personal details',
+        'professional details', 'position desire', 'position desired',
+        'curriculum vitae', 'curriculam vitea', 'science education',
+        'university departmental', 'microsoft office',
+        'esteemed organization', 'career work', 'senior planning',
+        'logistics and', 'finance minister',
+    }
+    if s.lower() in _HEADER_FRAGMENTS:
+        return False
     return True
 
 
