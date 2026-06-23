@@ -1,5 +1,5 @@
 # Benchmark v7 — Ranking Integrity & Truthfulness Report
-Generated: 2026-06-24T00:10:23.993119
+Generated: 2026-06-24T01:39:40.030974
 Version: 7.0.0
 
 ## Production Readiness Scorecard
@@ -124,9 +124,9 @@ Total candidates: 457
 | #14 | John Smith | 53.9 | engineering | data | 5/10 | 5 |
 | #15 | VICTORIA BAKER | 52.7 | engineering | devops | 4/10 | 6 |
 | #16 | Pavithra Shetty | 52.6 | engineering | software | 5/10 | 11 |
-| #17 | Wms Consultant | 51.0 | engineering | backend | 4/10 | 14 |
+| #17 | Wms Consultant | 51.1 | engineering | backend | 4/10 | 14 |
 | #18 | Souvik Karmakar | 49.8 | engineering | software | 8/10 | 0 |
-| #19 | Database Programmer/Analyst (. | 49.5 | engineering | software | 6/10 | 0 |
+| #19 | Database Programmer/Analyst (. | 49.6 | engineering | software | 6/10 | 0 |
 | #20 | Database Programmer/Analyst (. | 49.3 | engineering | software | 7/10 | 1 |
 
 ### Frontend Engineer
@@ -231,7 +231,7 @@ Total candidates: 448
 | #17 | Pavithra Shetty | 44.4 | engineering | software | 2/9 | 11 |
 | #18 | ALEXIS | 44.0 | engineering | ml | 1/9 | 6 |
 | #19 | GRANT | 42.4 | engineering | software | 2/9 | 7 |
-| #20 | MARCUS HALL | 41.4 | engineering | software | 5/9 | 10 |
+| #20 | Mashad Abbas | 42.0 | engineering | data | 2/9 | 0 |
 
 ### Data Scientist
 Total candidates: 429
@@ -320,16 +320,16 @@ Total candidates: 500
 | #2 | PRAKASH PINDARI | 80.3 | sales | sales | 5/5 | 0 |
 | #3 | MAHAMMADJUBER M. PATEL | 79.6 | sales | sales | 5/5 | 14 |
 | #4 | Core Compentencies | 73.9 | sales | sales | 5/5 | 9 |
-| #5 | Dheeraj S. Sharma | 73.0 | sales | sales | 5/5 | 0 |
-| #6 | SEBASTIAN MARTIN | 73.0 | sales | sales | 5/5 | 12 |
-| #7 | MS Office | 72.6 | sales | sales | 5/5 | 11 |
-| #8 | Shahadat Hussain | 72.3 | sales | sales | 5/5 | 0 |
+| #5 | SEBASTIAN MARTIN | 73.1 | sales | sales | 5/5 | 12 |
+| #6 | Dheeraj S. Sharma | 73.0 | sales | sales | 5/5 | 0 |
+| #7 | MS Office | 72.5 | sales | sales | 5/5 | 11 |
+| #8 | Shahadat Hussain | 72.4 | sales | sales | 5/5 | 0 |
 | #9 | Mail Id | 72.2 | sales | sales | 5/5 | 14 |
 | #10 | Mohd Abid Ahmad Siddiqui | 71.2 | sales | sales | 5/5 | 12 |
 | #11 | SALIK SHAIKH | 71.1 | sales | sales | 5/5 | 0 |
-| #12 | Shahriar Saaed Niazi | 70.9 | sales | sales | 5/5 | 0 |
+| #12 | Shahriar Saaed Niazi | 70.8 | sales | sales | 5/5 | 0 |
 | #13 | Geoffrey Makoe | 69.6 | hospitality | hospitality | 5/5 | 14 |
-| #14 | Mohammed Imran Khan | 68.1 | marketing | marketing | 5/5 | 0 |
+| #14 | Mohammed Imran Khan | 68.2 | marketing | marketing | 5/5 | 0 |
 | #15 | Customer Service. | 67.1 | healthcare | healthcare | 5/5 | 11 |
 | #16 | Oman Career Software | 66.7 | sales | sales | 5/5 | 0 |
 | #17 | SHOIAB KHAN | 66.4 | sales | sales | 5/5 | 0 |
@@ -577,16 +577,16 @@ Total candidates: 500
 | Rank | Name | Score | Domain | Sub-Domain | Skills | Exp |
 |------|------|-------|--------|------------|--------|-----|
 | #1 | Construction Consultant | 76.6 | construction | construction | 3/4 | 8 |
-| #2 | Jayakumar Murugesan | 74.2 | construction | construction | 3/4 | 0 |
-| #3 | SURESH KUMAR MAHENDRAN | 72.9 | construction | construction | 2/4 | 0 |
+| #2 | Jayakumar Murugesan | 74.3 | construction | construction | 3/4 | 0 |
+| #3 | SURESH KUMAR MAHENDRAN | 73.0 | construction | construction | 2/4 | 0 |
 | #4 | Naman Gala | 70.8 | sales | sales | 1/4 | 4 |
 | #5 | Ramkumar Kasilingam | 69.7 | engineering | civil | 3/4 | 0 |
 | #6 | SURESH KUMAR MAHENDRAN | 69.1 | construction | construction | 2/4 | 0 |
-| #7 | Deepak Nair | 66.7 | construction | construction | 2/4 | 2 |
+| #7 | Deepak Nair | 66.8 | construction | construction | 2/4 | 2 |
 | #8 | AQEEL AHMED | 64.4 | engineering | civil | 4/4 | 1 |
-| #9 | SHAIK SAHUL HAMEED AZEEM.A | 63.4 | sales | sales | 2/4 | 5 |
+| #9 | SHAIK SAHUL HAMEED AZEEM.A | 63.5 | sales | sales | 2/4 | 5 |
 | #10 | RAJA PAULRAJ | 61.9 | construction | construction | 2/4 | 8 |
-| #11 | WANGILA Abraham Masinde | 61.5 | marketing | marketing | 2/4 | 0 |
+| #11 | WANGILA Abraham Masinde | 61.4 | marketing | marketing | 2/4 | 0 |
 | #12 | B.Mohamed Hamdhan | 60.6 | engineering | civil | 2/4 | 0 |
 | #13 | SUKHVINDER SINGH | 60.3 | engineering | civil | 2/4 | 0 |
 | #14 | Vilathikulam Taluk | 60.2 | engineering | civil | 3/4 | 0 |
@@ -594,8 +594,8 @@ Total candidates: 500
 | #16 | SANTANUCHATTOPADHYAY | 59.8 | marketing | marketing | 3/4 | 0 |
 | #17 | SADATH BASHA.A.M | 59.6 | engineering | civil | 3/4 | 11 |
 | #18 | Khalid Othman | 59.6 | engineering | civil | 3/4 | 12 |
-| #19 | Sadulpur Churu | 59.2 | engineering | mechanical | 2/4 | 11 |
-| #20 | AIRCRAFT SALES | 59.2 | sales | sales | 2/4 | 13 |
+| #19 | AIRCRAFT SALES | 59.3 | sales | sales | 2/4 | 13 |
+| #20 | Sadulpur Churu | 59.2 | engineering | mechanical | 2/4 | 11 |
 
 ### Office Admin
 Total candidates: 500
@@ -662,13 +662,13 @@ Total candidates: 500
 | Backend Engineer | John Smith | engineering | data | 13 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | Aditya Joshi | engineering | data | 19 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | Amit Sharma | engineering | software | 26 | 4 | Domain match + 4/10 skill overlap but not in  |
-| Backend Engineer | Ananya Desai | engineering | data | 20 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | Neha Singh | engineering | software | 23 | 4 | Domain match + 4/10 skill overlap but not in  |
+| Backend Engineer | Ananya Desai | engineering | data | 20 | 4 | Domain match + 4/10 skill overlap but not in  |
+| Backend Engineer | Rahul Gupta | engineering | software | 21 | 5 | Domain match + 5/10 skill overlap but not in  |
 | Backend Engineer | Kiran Malhotra | engineering | data | 19 | 5 | Domain match + 5/10 skill overlap but not in  |
 | Backend Engineer | Priya Pa | engineering | data | 20 | 4 | Domain match + 4/10 skill overlap but not in  |
-| Backend Engineer | Rahul Gupta | engineering | software | 21 | 5 | Domain match + 5/10 skill overlap but not in  |
-| Backend Engineer | Rohan Mehra | engineering | data | 20 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | Shalini Nair | engineering | data | 18 | 5 | Domain match + 5/10 skill overlap but not in  |
+| Backend Engineer | Rohan Mehra | engineering | data | 20 | 4 | Domain match + 4/10 skill overlap but not in  |
 | Backend Engineer | Vikram Rao | engineering | data | 15 | 5 | Domain match + 5/10 skill overlap but not in  |
 | Backend Engineer | ZOE THOMPSON | engineering | software | 14 | 5 | Domain match + 5/10 skill overlap but not in  |
 | Backend Engineer | Shanbagam Thanikachalam | engineering | software | 39 | 3 | Domain match + 3/10 skill overlap but not in  |
@@ -717,11 +717,11 @@ Total candidates: 500
 ## Phase 7 — Performance
 | PDFs | Extract | Rank | Per-PDF | Memory | Failures |
 |------|---------|------|---------|--------|----------|
-| 1 | 0.17s | 0.001s | 169.4ms | 413.6MB | 0 |
-| 10 | 1.49s | 0.04s | 149.2ms | 435.3MB | 0 |
-| 100 | 10.01s | 0.252s | 100.1ms | 493.9MB | 16 |
-| 1000 | 134.48s | 2.085s | 134.5ms | 499.0MB | 372 |
-| 3856 | 443.02s | N/A | 114.9ms | 499.0MB | 0 | (Phase 1 batch extraction data)
+| 1 | 0.15s | 0.001s | 154.6ms | 433.0MB | 0 |
+| 10 | 1.33s | 0.035s | 133.1ms | 433.0MB | 0 |
+| 100 | 9.97s | 0.261s | 99.7ms | 477.5MB | 16 |
+| 1000 | 136.35s | 2.161s | 136.4ms | 483.9MB | 372 |
+| 3856 | 484.04s | N/A | 125.5ms | 483.9MB | 0 | (Phase 1 batch extraction data)
 
 ---
 ## Phase 8 — Frontend Consistency

@@ -66,7 +66,6 @@ def _parse_degree_level(degree_str: str) -> int:
 
 from src.registries.skill_registry import (
     SKILL_ALIASES as _SKILL_ALIASES,
-    SINGLE_CHAR_SKILLS as _SINGLE_CHAR_SKILLS,
     normalize as _normalize_skill,
     match as _skill_match,
     find_matches as _find_matching_skills,
@@ -78,18 +77,12 @@ from src.registries.skill_registry import (
 # Ranking Algorithms (delegated to src/ranking/)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from src.ranking.tfidf_scorer import (
-    tokenize as _tokenize,
-    tf as _tf,
-    cosine_sim as _cosine_sim,
-    text_cosine_sim as _text_cosine_sim,
-)
+
 
 from src.ranking.bm25_scorer import bm25_skill_score as _bm25_skill_score, precompute_bm25_idf as _precompute_bm25_idf
 from src.ranking.similarity import (
     parse_date as _parse_date,
     compute_total_experience_years as _compute_total_experience_years,
-    most_recent_end_date as _most_recent_end_date,
     experience_score as _experience_score,
     keyword_score as _keyword_score,
     education_score as _education_score,

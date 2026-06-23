@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-24T00:10:23.993885",
+  "timestamp": "2026-06-24T01:39:40.031743",
   "version": "7.0.0",
   "total_pdfs": 3856,
   "phases": {
@@ -114,11 +114,11 @@
             "quality": 0
           },
           {
-            "file": "cv (1006).pdf",
+            "file": "cv (1005).pdf",
             "quality": 0
           },
           {
-            "file": "cv (1005).pdf",
+            "file": "cv (1006).pdf",
             "quality": 0
           },
           {
@@ -130,15 +130,15 @@
             "quality": 0
           },
           {
-            "file": "cv (1012).pdf",
-            "quality": 0
-          },
-          {
-            "file": "cv (1011).pdf",
+            "file": "cv (1010).pdf",
             "quality": 0
           },
           {
             "file": "cv (1013).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1012).pdf",
             "quality": 0
           },
           {
@@ -150,15 +150,15 @@
             "quality": 0
           },
           {
-            "file": "cv (1010).pdf",
-            "quality": 0
-          },
-          {
-            "file": "cv (1019).pdf",
+            "file": "cv (1011).pdf",
             "quality": 0
           },
           {
             "file": "cv (1018).pdf",
+            "quality": 0
+          },
+          {
+            "file": "cv (1019).pdf",
             "quality": 0
           },
           {
@@ -605,7 +605,7 @@
               "sub_domain": "data",
               "skill_overlap": "7/10",
               "exp_count": 12,
-              "skill_score": 40.1,
+              "skill_score": 40.2,
               "experience_score": 90.0,
               "keyword_score": 42.9,
               "education_score": 96.4,
@@ -810,7 +810,7 @@
               "sub_domain": "data",
               "skill_overlap": "7/10",
               "exp_count": 11,
-              "skill_score": 40.1,
+              "skill_score": 40.2,
               "experience_score": 90.0,
               "keyword_score": 28.6,
               "education_score": 96.4,
@@ -957,7 +957,7 @@
               "sub_domain": "devops",
               "skill_overlap": "4/10",
               "exp_count": 6,
-              "skill_score": 36.2,
+              "skill_score": 36.1,
               "experience_score": 90.0,
               "keyword_score": 14.3,
               "education_score": 83.3,
@@ -982,7 +982,7 @@
               "sub_domain": "software",
               "skill_overlap": "5/10",
               "exp_count": 11,
-              "skill_score": 20.2,
+              "skill_score": 20.3,
               "experience_score": 81.2,
               "keyword_score": 42.9,
               "education_score": 96.4,
@@ -1005,7 +1005,7 @@
               "rank": 17,
               "file": "Wms Consultant",
               "name": "Wms Consultant",
-              "score": 51.0,
+              "score": 51.1,
               "domain": "engineering",
               "sub_domain": "backend",
               "skill_overlap": "4/10",
@@ -1062,7 +1062,7 @@
               "rank": 19,
               "file": "Database Programmer/Analyst (.Net Developer)",
               "name": "Database Programmer/Analyst (.Net Developer)",
-              "score": 49.5,
+              "score": 49.6,
               "domain": "engineering",
               "sub_domain": "software",
               "skill_overlap": "6/10",
@@ -3393,27 +3393,27 @@
             },
             {
               "rank": 20,
-              "file": "MARCUS HALL",
-              "name": "MARCUS HALL",
-              "score": 41.4,
+              "file": "Mashad Abbas",
+              "name": "Mashad Abbas",
+              "score": 42.0,
               "domain": "engineering",
-              "sub_domain": "software",
-              "skill_overlap": "5/9",
-              "exp_count": 10,
-              "skill_score": 29.9,
-              "experience_score": 57.0,
-              "keyword_score": 0.0,
-              "education_score": 96.4,
-              "domain_penalty": -30.0,
+              "sub_domain": "data",
+              "skill_overlap": "2/9",
+              "exp_count": 0,
+              "skill_score": 15.2,
+              "experience_score": 65.0,
+              "keyword_score": 33.3,
+              "education_score": 60.0,
+              "domain_penalty": 0.0,
               "knocked_out": false,
               "matched_nice": [
                 "SQL",
-                "Python",
-                "Spark",
-                "MongoDB",
-                "Hadoop"
+                "ETL"
               ],
-              "matched_keywords": []
+              "matched_keywords": [
+                "data",
+                "etl"
+              ]
             }
           ],
           "total": 448,
@@ -3887,7 +3887,7 @@
               "sub_domain": "ml",
               "skill_overlap": "8/8",
               "exp_count": 7,
-              "skill_score": 77.8,
+              "skill_score": 77.7,
               "experience_score": 60.0,
               "keyword_score": 33.3,
               "education_score": 60.0,
@@ -5215,7 +5215,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 0,
-              "skill_score": 84.5,
+              "skill_score": 84.6,
               "experience_score": 67.3,
               "keyword_score": 66.7,
               "education_score": 96.4,
@@ -5271,7 +5271,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 9,
-              "skill_score": 76.1,
+              "skill_score": 76.0,
               "experience_score": 76.0,
               "keyword_score": 50.0,
               "education_score": 96.4,
@@ -5292,6 +5292,32 @@
             },
             {
               "rank": 5,
+              "file": "SEBASTIAN MARTIN",
+              "name": "SEBASTIAN MARTIN",
+              "score": 73.1,
+              "domain": "sales",
+              "sub_domain": "sales",
+              "skill_overlap": "5/5",
+              "exp_count": 12,
+              "skill_score": 79.6,
+              "experience_score": 84.5,
+              "keyword_score": 16.7,
+              "education_score": 96.4,
+              "domain_penalty": 0.0,
+              "knocked_out": false,
+              "matched_nice": [
+                "Sales",
+                "CRM",
+                "Lead Generation",
+                "Negotiation",
+                "Salesforce"
+              ],
+              "matched_keywords": [
+                "revenue"
+              ]
+            },
+            {
+              "rank": 6,
               "file": "Dheeraj S. Sharma",
               "name": "Dheeraj S. Sharma",
               "score": 73.0,
@@ -5319,36 +5345,10 @@
               ]
             },
             {
-              "rank": 6,
-              "file": "SEBASTIAN MARTIN",
-              "name": "SEBASTIAN MARTIN",
-              "score": 73.0,
-              "domain": "sales",
-              "sub_domain": "sales",
-              "skill_overlap": "5/5",
-              "exp_count": 12,
-              "skill_score": 79.6,
-              "experience_score": 84.5,
-              "keyword_score": 16.7,
-              "education_score": 96.4,
-              "domain_penalty": 0.0,
-              "knocked_out": false,
-              "matched_nice": [
-                "Sales",
-                "CRM",
-                "Lead Generation",
-                "Negotiation",
-                "Salesforce"
-              ],
-              "matched_keywords": [
-                "revenue"
-              ]
-            },
-            {
               "rank": 7,
               "file": "MS Office",
               "name": "MS Office",
-              "score": 72.6,
+              "score": 72.5,
               "domain": "sales",
               "sub_domain": "sales",
               "skill_overlap": "5/5",
@@ -5375,7 +5375,7 @@
               "rank": 8,
               "file": "Shahadat Hussain",
               "name": "Shahadat Hussain",
-              "score": 72.3,
+              "score": 72.4,
               "domain": "sales",
               "sub_domain": "sales",
               "skill_overlap": "5/5",
@@ -5463,7 +5463,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 0,
-              "skill_score": 90.7,
+              "skill_score": 90.6,
               "experience_score": 74.5,
               "keyword_score": 16.7,
               "education_score": 96.4,
@@ -5484,7 +5484,7 @@
               "rank": 12,
               "file": "Shahriar Saaed Niazi",
               "name": "Shahriar Saaed Niazi",
-              "score": 70.9,
+              "score": 70.8,
               "domain": "sales",
               "sub_domain": "sales",
               "skill_overlap": "5/5",
@@ -5513,7 +5513,7 @@
               "sub_domain": "hospitality",
               "skill_overlap": "5/5",
               "exp_count": 14,
-              "skill_score": 69.2,
+              "skill_score": 69.1,
               "experience_score": 60.0,
               "keyword_score": 66.7,
               "education_score": 96.4,
@@ -5537,7 +5537,7 @@
               "rank": 14,
               "file": "Mohammed Imran Khan",
               "name": "Mohammed Imran Khan",
-              "score": 68.1,
+              "score": 68.2,
               "domain": "marketing",
               "sub_domain": "marketing",
               "skill_overlap": "5/5",
@@ -5597,7 +5597,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 0,
-              "skill_score": 80.7,
+              "skill_score": 80.6,
               "experience_score": 80.0,
               "keyword_score": 0.0,
               "education_score": 96.4,
@@ -5647,7 +5647,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 5,
-              "skill_score": 81.5,
+              "skill_score": 81.6,
               "experience_score": 46.0,
               "keyword_score": 50.0,
               "education_score": 96.4,
@@ -5702,7 +5702,7 @@
               "sub_domain": "sales",
               "skill_overlap": "5/5",
               "exp_count": 15,
-              "skill_score": 68.3,
+              "skill_score": 68.2,
               "experience_score": 77.3,
               "keyword_score": 16.7,
               "education_score": 96.4,
@@ -10527,12 +10527,12 @@
               "rank": 2,
               "file": "Jayakumar Murugesan",
               "name": "Jayakumar Murugesan",
-              "score": 74.2,
+              "score": 74.3,
               "domain": "construction",
               "sub_domain": "construction",
               "skill_overlap": "3/4",
               "exp_count": 0,
-              "skill_score": 69.8,
+              "skill_score": 70.0,
               "experience_score": 60.0,
               "keyword_score": 83.3,
               "education_score": 96.4,
@@ -10555,12 +10555,12 @@
               "rank": 3,
               "file": "SURESH KUMAR MAHENDRAN",
               "name": "SURESH KUMAR MAHENDRAN",
-              "score": 72.9,
+              "score": 73.0,
               "domain": "construction",
               "sub_domain": "construction",
               "skill_overlap": "2/4",
               "exp_count": 0,
-              "skill_score": 56.5,
+              "skill_score": 56.7,
               "experience_score": 50.0,
               "keyword_score": 100.0,
               "education_score": 96.4,
@@ -10644,7 +10644,7 @@
               "sub_domain": "construction",
               "skill_overlap": "2/4",
               "exp_count": 0,
-              "skill_score": 48.7,
+              "skill_score": 48.8,
               "experience_score": 50.0,
               "keyword_score": 100.0,
               "education_score": 96.4,
@@ -10667,12 +10667,12 @@
               "rank": 7,
               "file": "Deepak Nair",
               "name": "Deepak Nair",
-              "score": 66.7,
+              "score": 66.8,
               "domain": "construction",
               "sub_domain": "construction",
               "skill_overlap": "2/4",
               "exp_count": 2,
-              "skill_score": 56.5,
+              "skill_score": 56.7,
               "experience_score": 62.0,
               "keyword_score": 66.7,
               "education_score": 96.4,
@@ -10721,12 +10721,12 @@
               "rank": 9,
               "file": "SHAIK SAHUL HAMEED AZEEM.A",
               "name": "SHAIK SAHUL HAMEED AZEEM.A",
-              "score": 63.4,
+              "score": 63.5,
               "domain": "sales",
               "sub_domain": "sales",
               "skill_overlap": "2/4",
               "exp_count": 5,
-              "skill_score": 47.8,
+              "skill_score": 47.9,
               "experience_score": 46.0,
               "keyword_score": 83.3,
               "education_score": 96.4,
@@ -10753,7 +10753,7 @@
               "sub_domain": "construction",
               "skill_overlap": "2/4",
               "exp_count": 8,
-              "skill_score": 56.5,
+              "skill_score": 56.7,
               "experience_score": 46.0,
               "keyword_score": 66.7,
               "education_score": 96.4,
@@ -10774,12 +10774,12 @@
               "rank": 11,
               "file": "WANGILA Abraham Masinde",
               "name": "WANGILA Abraham Masinde",
-              "score": 61.5,
+              "score": 61.4,
               "domain": "marketing",
               "sub_domain": "marketing",
               "skill_overlap": "2/4",
               "exp_count": 0,
-              "skill_score": 64.8,
+              "skill_score": 64.6,
               "experience_score": 50.0,
               "keyword_score": 50.0,
               "education_score": 96.4,
@@ -10832,7 +10832,7 @@
               "sub_domain": "civil",
               "skill_overlap": "2/4",
               "exp_count": 0,
-              "skill_score": 28.3,
+              "skill_score": 28.4,
               "experience_score": 50.0,
               "keyword_score": 83.3,
               "education_score": 96.4,
@@ -10859,7 +10859,7 @@
               "sub_domain": "civil",
               "skill_overlap": "3/4",
               "exp_count": 0,
-              "skill_score": 39.0,
+              "skill_score": 38.9,
               "experience_score": 44.0,
               "keyword_score": 83.3,
               "education_score": 96.4,
@@ -10941,7 +10941,7 @@
               "sub_domain": "civil",
               "skill_overlap": "3/4",
               "exp_count": 11,
-              "skill_score": 34.9,
+              "skill_score": 35.0,
               "experience_score": 46.0,
               "keyword_score": 83.3,
               "education_score": 96.4,
@@ -10969,7 +10969,7 @@
               "sub_domain": "civil",
               "skill_overlap": "3/4",
               "exp_count": 12,
-              "skill_score": 34.9,
+              "skill_score": 35.0,
               "experience_score": 60.0,
               "keyword_score": 66.7,
               "education_score": 96.4,
@@ -10989,14 +10989,14 @@
             },
             {
               "rank": 19,
-              "file": "Sadulpur Churu",
-              "name": "Sadulpur Churu",
-              "score": 59.2,
-              "domain": "engineering",
-              "sub_domain": "mechanical",
+              "file": "AIRCRAFT SALES",
+              "name": "AIRCRAFT SALES",
+              "score": 59.3,
+              "domain": "sales",
+              "sub_domain": "sales",
               "skill_overlap": "2/4",
-              "exp_count": 11,
-              "skill_score": 47.3,
+              "exp_count": 13,
+              "skill_score": 47.4,
               "experience_score": 60.0,
               "keyword_score": 50.0,
               "education_score": 96.4,
@@ -11014,14 +11014,14 @@
             },
             {
               "rank": 20,
-              "file": "AIRCRAFT SALES",
-              "name": "AIRCRAFT SALES",
+              "file": "Sadulpur Churu",
+              "name": "Sadulpur Churu",
               "score": 59.2,
-              "domain": "sales",
-              "sub_domain": "sales",
+              "domain": "engineering",
+              "sub_domain": "mechanical",
               "skill_overlap": "2/4",
-              "exp_count": 13,
-              "skill_score": 47.3,
+              "exp_count": 11,
+              "skill_score": 47.5,
               "experience_score": 60.0,
               "keyword_score": 50.0,
               "education_score": 96.4,
@@ -11713,6 +11713,16 @@
         },
         {
           "jd": "Backend Engineer",
+          "file": "CV_Neha_Singh.pdf",
+          "name": "Neha Singh",
+          "domain": "engineering",
+          "sub_domain": "software",
+          "skill_count": 23,
+          "skill_overlap": 4,
+          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Backend Engineer",
           "file": "CV_Ananya_Desai.pdf",
           "name": "Ananya Desai",
           "domain": "engineering",
@@ -11723,13 +11733,13 @@
         },
         {
           "jd": "Backend Engineer",
-          "file": "CV_Neha_Singh.pdf",
-          "name": "Neha Singh",
+          "file": "CV_Rahul_Gupta.pdf",
+          "name": "Rahul Gupta",
           "domain": "engineering",
           "sub_domain": "software",
-          "skill_count": 23,
-          "skill_overlap": 4,
-          "reason": "Domain match + 4/10 skill overlap but not in top 20"
+          "skill_count": 21,
+          "skill_overlap": 5,
+          "reason": "Domain match + 5/10 skill overlap but not in top 20"
         },
         {
           "jd": "Backend Engineer",
@@ -11753,11 +11763,11 @@
         },
         {
           "jd": "Backend Engineer",
-          "file": "CV_Rahul_Gupta.pdf",
-          "name": "Rahul Gupta",
+          "file": "CV_Shalini_Nair.pdf",
+          "name": "Shalini Nair",
           "domain": "engineering",
-          "sub_domain": "software",
-          "skill_count": 21,
+          "sub_domain": "data",
+          "skill_count": 18,
           "skill_overlap": 5,
           "reason": "Domain match + 5/10 skill overlap but not in top 20"
         },
@@ -11770,16 +11780,6 @@
           "skill_count": 20,
           "skill_overlap": 4,
           "reason": "Domain match + 4/10 skill overlap but not in top 20"
-        },
-        {
-          "jd": "Backend Engineer",
-          "file": "CV_Shalini_Nair.pdf",
-          "name": "Shalini Nair",
-          "domain": "engineering",
-          "sub_domain": "data",
-          "skill_count": 18,
-          "skill_overlap": 5,
-          "reason": "Domain match + 5/10 skill overlap but not in top 20"
         },
         {
           "jd": "Backend Engineer",
@@ -12063,21 +12063,21 @@
         },
         {
           "jd": "Frontend Engineer",
-          "file": "cv (4366).pdf",
-          "name": "Database Programmer/Analyst (.Net Developer)",
-          "domain": "engineering",
-          "sub_domain": "software",
-          "skill_count": 73,
-          "skill_overlap": 3,
-          "reason": "Domain match + 3/10 skill overlap but not in top 20"
-        },
-        {
-          "jd": "Frontend Engineer",
           "file": "cv (4354).pdf",
           "name": "Adobe Photoshop",
           "domain": "engineering",
           "sub_domain": "software",
           "skill_count": 101,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/10 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Frontend Engineer",
+          "file": "cv (4366).pdf",
+          "name": "Database Programmer/Analyst (.Net Developer)",
+          "domain": "engineering",
+          "sub_domain": "software",
+          "skill_count": 73,
           "skill_overlap": 3,
           "reason": "Domain match + 3/10 skill overlap but not in top 20"
         },
@@ -12103,6 +12103,16 @@
         },
         {
           "jd": "Fullstack Engineer",
+          "file": "CV_Neha_Singh.pdf",
+          "name": "Neha Singh",
+          "domain": "engineering",
+          "sub_domain": "software",
+          "skill_count": 23,
+          "skill_overlap": 3,
+          "reason": "Domain match + 3/9 skill overlap but not in top 20"
+        },
+        {
+          "jd": "Fullstack Engineer",
           "file": "CV_Ananya_Desai.pdf",
           "name": "Ananya Desai",
           "domain": "engineering",
@@ -12113,11 +12123,11 @@
         },
         {
           "jd": "Fullstack Engineer",
-          "file": "CV_Neha_Singh.pdf",
-          "name": "Neha Singh",
+          "file": "CV_Rahul_Gupta.pdf",
+          "name": "Rahul Gupta",
           "domain": "engineering",
           "sub_domain": "software",
-          "skill_count": 23,
+          "skill_count": 21,
           "skill_overlap": 3,
           "reason": "Domain match + 3/9 skill overlap but not in top 20"
         },
@@ -12143,11 +12153,11 @@
         },
         {
           "jd": "Fullstack Engineer",
-          "file": "CV_Rahul_Gupta.pdf",
-          "name": "Rahul Gupta",
+          "file": "CV_Shalini_Nair.pdf",
+          "name": "Shalini Nair",
           "domain": "engineering",
-          "sub_domain": "software",
-          "skill_count": 21,
+          "sub_domain": "data",
+          "skill_count": 18,
           "skill_overlap": 3,
           "reason": "Domain match + 3/9 skill overlap but not in top 20"
         },
@@ -12158,16 +12168,6 @@
           "domain": "engineering",
           "sub_domain": "data",
           "skill_count": 20,
-          "skill_overlap": 3,
-          "reason": "Domain match + 3/9 skill overlap but not in top 20"
-        },
-        {
-          "jd": "Fullstack Engineer",
-          "file": "CV_Shalini_Nair.pdf",
-          "name": "Shalini Nair",
-          "domain": "engineering",
-          "sub_domain": "data",
-          "skill_count": 18,
           "skill_overlap": 3,
           "reason": "Domain match + 3/9 skill overlap but not in top 20"
         },
@@ -12187,43 +12187,43 @@
       "tiers": [
         {
           "n_pdfs": 1,
-          "extract_s": 0.17,
+          "extract_s": 0.15,
           "rank_s": 0.001,
-          "memory_mb": 413.6,
+          "memory_mb": 433.0,
           "failures": 0,
-          "per_pdf_ms": 169.4
+          "per_pdf_ms": 154.6
         },
         {
           "n_pdfs": 10,
-          "extract_s": 1.49,
-          "rank_s": 0.04,
-          "memory_mb": 435.3,
+          "extract_s": 1.33,
+          "rank_s": 0.035,
+          "memory_mb": 433.0,
           "failures": 0,
-          "per_pdf_ms": 149.2
+          "per_pdf_ms": 133.1
         },
         {
           "n_pdfs": 100,
-          "extract_s": 10.01,
-          "rank_s": 0.252,
-          "memory_mb": 493.9,
+          "extract_s": 9.97,
+          "rank_s": 0.261,
+          "memory_mb": 477.5,
           "failures": 16,
-          "per_pdf_ms": 100.1
+          "per_pdf_ms": 99.7
         },
         {
           "n_pdfs": 1000,
-          "extract_s": 134.48,
-          "rank_s": 2.085,
-          "memory_mb": 499.0,
+          "extract_s": 136.35,
+          "rank_s": 2.161,
+          "memory_mb": 483.9,
           "failures": 372,
-          "per_pdf_ms": 134.5
+          "per_pdf_ms": 136.4
         },
         {
           "n_pdfs": 3856,
-          "extract_s": 443.02,
+          "extract_s": 484.04,
           "rank_s": -1,
-          "memory_mb": 499.0,
+          "memory_mb": 483.9,
           "failures": 0,
-          "per_pdf_ms": 114.9,
+          "per_pdf_ms": 125.5,
           "note": "Phase 1 batch extraction data"
         }
       ]
