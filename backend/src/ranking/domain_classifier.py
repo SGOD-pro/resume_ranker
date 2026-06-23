@@ -209,9 +209,9 @@ class DomainClassifier:
 
 _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
     "engineering": [
-        # Job titles
+        # ── Software engineering ──────────────────────────────────────
         ("software engineer", 3.0), ("developer", 2.5), ("programmer", 2.5),
-        ("devops", 2.5), ("architect", 2.0), ("data engineer", 2.5),
+        ("devops", 2.5), ("data engineer", 2.5),
         ("machine learning", 2.5), ("frontend", 2.0), ("backend", 2.0),
         ("full stack", 2.0), ("fullstack", 2.0), ("sre", 2.0),
         ("system administrator", 2.0), ("sysadmin", 2.0), ("dba", 2.0),
@@ -223,14 +223,46 @@ _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
         ("deployment", 1.5), ("cloud", 1.5), ("server", 1.0),
         ("github", 1.5), ("repository", 1.0), ("codebase", 1.5),
         ("agile", 1.0), ("sprint", 1.0), ("scrum", 1.0),
-        ("ci/cd", 1.5), ("pipeline", 1.0), ("container", 1.5),
+        ("ci/cd", 1.5), ("container", 1.5),
         ("algorithm", 1.5), ("framework", 1.0),
+        # ── Civil engineering ─────────────────────────────────────────
+        ("civil engineer", 3.5), ("structural engineer", 3.5),
+        ("quantity surveyor", 3.0), ("site engineer", 3.0),
+        ("autocad", 2.5), ("staad", 3.0), ("revit", 2.5),
+        ("surveying", 2.5), ("structural analysis", 3.0),
+        ("infrastructure", 2.0), ("geotechnical", 3.0),
+        ("quantity surveying", 3.0), ("civil engineering", 3.5),
+        # ── Mechanical engineering ────────────────────────────────────
+        ("mechanical engineer", 3.5), ("design engineer", 3.0),
+        ("production engineer", 3.0), ("manufacturing engineer", 3.0),
+        ("solidworks", 3.0), ("catia", 3.0), ("ansys", 3.0),
+        ("cnc", 2.5), ("hvac", 2.5), ("cad/cam", 2.5),
+        ("mechanical engineering", 3.5), ("thermodynamics", 2.5),
+        ("gd&t", 3.0), ("machining", 2.5), ("lathe", 2.5),
+        ("turbine", 2.5), ("pro/e", 2.5), ("creo", 2.5),
+        ("unigraphics", 2.5),
+        # ── Electrical engineering ────────────────────────────────────
+        ("electrical engineer", 3.5), ("electrical engineering", 3.5),
+        ("power systems", 3.0), ("electrical design", 3.0),
+        ("circuit design", 3.0), ("pcb", 2.5), ("plc", 2.5),
+        ("scada", 2.5), ("embedded", 2.0), ("matlab", 2.0),
+        ("cable installation", 2.5), ("substation", 3.0),
+        ("switchgear", 3.0), ("transformer", 2.5),
+        ("voltage", 2.5), ("relay", 2.0),
+        # ── General engineering titles & degrees ──────────────────────
+        ("b.tech", 3.0), ("b.e.", 2.5), ("m.tech", 3.0),
+        ("diploma in engineering", 3.0), ("diploma in mechanical", 3.5),
+        ("diploma in electrical", 3.5), ("diploma in civil", 3.5),
+        ("bachelor of technology", 3.0), ("bachelor of engineering", 3.0),
+        ("engineer", 1.5),
     ],
     "legal": [
         ("attorney", 3.0), ("lawyer", 3.0), ("counsel", 3.0),
         ("paralegal", 2.5), ("legal", 2.5), ("law firm", 2.5),
-        ("court", 2.0), ("litigation", 2.5), ("compliance", 2.0),
-        ("contract", 2.0), ("statute", 2.0), ("regulation", 1.5),
+        ("court", 2.0), ("litigation", 2.5),
+        ("compliance", 1.0),  # reduced: appears on many resumes
+        ("contract", 1.0),    # reduced: common in engineering/procurement
+        ("statute", 2.0), ("regulation", 1.5),
         ("intellectual property", 2.0), ("patent", 2.0), ("trademark", 2.0),
         ("deposition", 2.0), ("arbitration", 2.0), ("mediation", 1.5),
         ("jurisdiction", 2.0), ("plaintiff", 2.0), ("defendant", 2.0),
@@ -250,21 +282,36 @@ _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
         ("cfa", 2.5), ("frm", 2.5),
     ],
     "healthcare": [
-        ("nurse", 3.0), ("nursing", 3.0), ("physician", 3.0), ("doctor", 2.5),
+        # ── Core clinical ─────────────────────────────────────────────
+        ("nurse", 3.0), ("nursing", 3.0), ("physician", 3.0),
+        ("surgeon", 3.0), ("dentist", 3.0), ("pharmacist", 3.0),
         ("patient", 2.5), ("clinical", 2.5), ("hospital", 2.5),
         ("medical", 2.5), ("healthcare", 2.5), ("health care", 2.5),
-        ("pharmacy", 2.5), ("pharmacist", 2.5), ("pharmaceutical", 2.0),
-        ("diagnosis", 2.0), ("treatment", 2.0), ("surgery", 2.0),
+        ("clinic", 2.0), ("diagnosis", 2.5), ("therapy", 2.0),
+        ("treatment", 2.0), ("surgery", 2.0),
+        ("pharmacy", 2.5), ("pharmaceutical", 2.5),
+        ("drug", 1.5), ("prescription", 2.0), ("medication", 2.0),
         ("therapist", 2.5), ("physical therapy", 2.5),
-        ("emr", 2.0), ("ehr", 2.0), ("hipaa", 2.0),
-        ("vital signs", 2.0), ("medication", 2.0), ("prescription", 2.0),
-        ("icu", 2.0), ("er ", 1.5), ("emergency room", 2.0),
-        ("mental health", 2.0), ("psychiatr", 2.0), ("counselor", 2.0),
+        # ── Systems / compliance ──────────────────────────────────────
+        ("emr", 2.0), ("ehr", 2.0), ("hipaa", 2.5),
+        ("vital signs", 2.5), ("icu", 2.5), ("emergency room", 2.5),
+        ("mental health", 2.0), ("psychiatr", 2.0),
+        # ── Diagnostic & lab ──────────────────────────────────────────
+        ("radiology", 3.0), ("pathology", 3.0), ("laboratory", 2.0),
+        # ── Indian healthcare qualifications ──────────────────────────
+        ("mbbs", 3.5), ("bams", 3.0), ("bhms", 3.0),
+        ("gnm", 3.0), ("anm", 3.0),
+        ("pharmacovigilance", 3.0), ("medical representative", 3.0),
+        ("staff nurse", 3.0), ("ward", 1.5),
+        # NOTE: Removed generic terms that cause false positives:
+        # monitoring, compliance, organization, assessment, research,
+        # distribution, quality, r, doctor (too ambiguous)
     ],
     "hr": [
         ("human resources", 3.0), ("hr manager", 3.0), ("hr director", 3.0),
         ("recruiter", 3.0), ("recruiting", 2.5), ("recruitment", 2.5),
-        ("talent acquisition", 3.0), ("headhunter", 2.5), ("sourcing", 2.0),
+        ("talent acquisition", 3.0), ("headhunter", 2.5),
+        ("sourcing", 1.0),  # reduced: common in procurement/manufacturing
         ("onboarding", 2.0), ("employee relations", 2.5),
         ("compensation", 2.0), ("benefits", 1.5), ("payroll", 2.0),
         ("hris", 2.5), ("workday", 2.0), ("successfactors", 2.0),
@@ -308,10 +355,10 @@ _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
         ("university", 1.5), ("academic", 2.0), ("faculty", 2.5),
         ("tutor", 2.5), ("tutoring", 2.0), ("scholarship", 1.5),
         ("e-learning", 2.0), ("lms", 2.0), ("moodle", 2.0),
-        ("course design", 2.5), ("assessment", 1.5),
+        ("course design", 2.5),
         ("special education", 2.5), ("k-12", 2.5), ("kindergarten", 2.5),
         ("principal", 2.0), ("superintendent", 2.5),
-        ("research paper", 2.0), ("phd", 1.5), ("dissertation", 2.0),
+        ("research paper", 2.0), ("dissertation", 2.0),
         ("dean", 2.0), ("provost", 2.5),
     ],
     "hospitality": [
@@ -327,16 +374,17 @@ _DOMAIN_KEYWORDS: Dict[str, List[Tuple[str, float]]] = {
     ],
     "construction": [
         ("construction", 3.0), ("contractor", 2.5), ("builder", 2.5),
-        ("foreman", 2.5), ("site manager", 3.0), ("site engineer", 2.5),
-        ("quantity surveyor", 3.0), ("civil engineer", 3.0),
-        ("structural engineer", 3.0), ("architect", 2.5),
+        ("foreman", 2.5), ("site manager", 3.0),
         ("blueprint", 2.0), ("scaffolding", 2.0), ("concrete", 2.0),
         ("masonry", 2.0), ("welding", 2.0), ("plumbing", 2.0),
         ("electrician", 2.0), ("carpentry", 2.0), ("roofing", 2.0),
         ("excavation", 2.0), ("demolition", 2.0), ("safety officer", 2.5),
         ("osha", 2.5), ("building code", 2.0), ("permit", 1.5),
-        ("project management", 1.5), ("autocad", 1.5), ("revit", 1.5),
+        ("project management", 1.5),
         ("primavera", 2.0), ("ms project", 1.5),
+        # NOTE: Removed autocad/revit/site engineer/civil engineer/structural
+        # engineer/quantity surveyor/architect — these now live in engineering
+        # to avoid civil engineers being classified as construction workers
     ],
     "admin": [
         ("administrative", 2.5), ("admin assistant", 3.0),

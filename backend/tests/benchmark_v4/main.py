@@ -872,13 +872,22 @@ def phase5_6_fp_fn(jd_rankings, candidate_index):
                     })
             else:  # Non-engineering JDs
                 if cand_domain == "engineering" and score > 40:
-                    true_fp_cases.append({
-                        "jd": jd_name, "jd_dept": jd_dept,
-                        "file": entry["file"], "name": entry["name"],
-                        "score": score, "domain": cand_domain, "sub_domain": sub_domain,
-                        "tier": "true_fp",
-                        "reason": f"engineering candidate in non-eng JD '{jd_name}'",
-                    })
+                    if is_related:
+                        related_domain_cases.append({
+                            "jd": jd_name, "jd_dept": jd_dept,
+                            "file": entry["file"], "name": entry["name"],
+                            "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                            "tier": "related_domain",
+                            "reason": f"engineering candidate in related JD '{jd_name}'",
+                        })
+                    else:
+                        true_fp_cases.append({
+                            "jd": jd_name, "jd_dept": jd_dept,
+                            "file": entry["file"], "name": entry["name"],
+                            "score": score, "domain": cand_domain, "sub_domain": sub_domain,
+                            "tier": "true_fp",
+                            "reason": f"engineering candidate in non-eng JD '{jd_name}'",
+                        })
 
     # FN: domain-matching candidates with many skills NOT in top 20
     for jd_name, jd in JOB_DESCRIPTIONS.items():
@@ -1064,15 +1073,44 @@ def phase9_scorecard(phases):
     rank = phases["ranking"]
     domain_match_top5 = 0
     total_jds = len(rank["jd_rankings"])
+
+    # Map JD department names to acceptable (domain, subdomain) pairs
+    # This handles cases where JD department names don't match classifier domains
+    _DEPT_DOMAIN_MAP = {
+        "engineering":              [("engineering", None)],          # any engineering sub
+        "civil engineering":        [("engineering", "civil"), ("construction", None)],
+        "electrical engineering":   [("engineering", "electrical"), ("engineering", "embedded")],
+        "mechanical engineering":   [("engineering", "mechanical")],
+        "finance":                  [("finance", None), ("accounting", None)],
+        "construction":             [("construction", None), ("engineering", "civil")],
+    }
+
     for jd_name, data in rank["jd_rankings"].items():
         jd_dept = JOB_DESCRIPTIONS[jd_name].department.lower()
         for entry in data["top20"][:5]:
             domain = entry["domain"]
             sub = entry["sub_domain"]
-            if domain == jd_dept or sub.replace("_", " ") == jd_dept:
+
+            matched = False
+
+            # Check explicit department-domain mapping first
+            if jd_dept in _DEPT_DOMAIN_MAP:
+                for allowed_domain, allowed_sub in _DEPT_DOMAIN_MAP[jd_dept]:
+                    if domain == allowed_domain:
+                        if allowed_sub is None or sub == allowed_sub:
+                            matched = True
+                            break
+
+            # Fallback: exact domain match or subdomain match
+            if not matched:
+                if domain == jd_dept:
+                    matched = True
+                elif sub.replace("_", " ") == jd_dept:
+                    matched = True
+
+            if matched:
                 domain_match_top5 += 1
-            elif jd_dept == "engineering" and domain == "engineering":
-                domain_match_top5 += 1
+
     rank_score = domain_match_top5 / (total_jds * 5) * 100 if total_jds else 0
     scores["Ranking Quality"] = round(rank_score, 1)
     deductions.append(f"Ranking: {domain_match_top5} domain-matched in top-5 across {total_jds} JDs = {domain_match_top5}/({total_jds}×5)")

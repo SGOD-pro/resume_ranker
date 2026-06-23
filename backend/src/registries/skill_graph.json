@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "Universal Skill Intelligence Graph — maps skills to domains, aliases, implications, and relationships",
+  "description": "Universal Skill Intelligence Graph \u2014 maps skills to domains, aliases, implications, and relationships",
   "domains": {
     "engineering": {
       "display": "Engineering",
@@ -80,7 +80,7 @@
     }
   },
   "skills": {
-    "___ENGINEERING_LANGUAGES___": "────────────────────────────────────────",
+    "___ENGINEERING_LANGUAGES___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "python": {
       "display": "Python",
       "domain": "engineering",
@@ -353,7 +353,7 @@
         "database"
       ]
     },
-    "___ENGINEERING_FRAMEWORKS___": "────────────────────────────────────────",
+    "___ENGINEERING_FRAMEWORKS___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "reactjs": {
       "display": "React",
       "domain": "engineering",
@@ -743,7 +743,7 @@
         "state_management"
       ]
     },
-    "___ENGINEERING_DEVOPS___": "────────────────────────────────────────",
+    "___ENGINEERING_DEVOPS___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "docker": {
       "display": "Docker",
       "domain": "engineering",
@@ -1035,7 +1035,7 @@
         "chef"
       ]
     },
-    "___ENGINEERING_DATABASES___": "────────────────────────────────────────",
+    "___ENGINEERING_DATABASES___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "postgresql": {
       "display": "PostgreSQL",
       "domain": "engineering",
@@ -1175,7 +1175,7 @@
         "redis"
       ]
     },
-    "___ENGINEERING_DATA_ML___": "────────────────────────────────────────",
+    "___ENGINEERING_DATA_ML___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "machine_learning": {
       "display": "Machine Learning",
       "domain": "engineering",
@@ -1415,7 +1415,7 @@
         "data_analysis"
       ]
     },
-    "___ENGINEERING_API_ARCH___": "────────────────────────────────────────",
+    "___ENGINEERING_API_ARCH___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "restapi": {
       "display": "REST API",
       "domain": "engineering",
@@ -1582,7 +1582,7 @@
         "prototyping"
       ]
     },
-    "___LEGAL___": "────────────────────────────────────────",
+    "___LEGAL___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "employment_law": {
       "display": "Employment Law",
       "domain": "legal",
@@ -1924,7 +1924,7 @@
         "discrimination_law"
       ]
     },
-    "___FINANCE___": "────────────────────────────────────────",
+    "___FINANCE___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "financial_modeling": {
       "display": "Financial Modeling",
       "domain": "finance",
@@ -2199,7 +2199,7 @@
         "capital_markets"
       ]
     },
-    "___HEALTHCARE___": "────────────────────────────────────────",
+    "___HEALTHCARE___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "patient_care": {
       "display": "Patient Care",
       "domain": "healthcare",
@@ -2484,7 +2484,7 @@
         "medical_coding"
       ]
     },
-    "___HR___": "────────────────────────────────────────",
+    "___HR___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "talent_acquisition": {
       "display": "Talent Acquisition",
       "domain": "hr",
@@ -2750,7 +2750,7 @@
         "leadership"
       ]
     },
-    "___MARKETING___": "────────────────────────────────────────",
+    "___MARKETING___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "seo": {
       "display": "SEO",
       "domain": "marketing",
@@ -3101,7 +3101,7 @@
         "campaign_management"
       ]
     },
-    "___ACCOUNTING___": "────────────────────────────────────────",
+    "___ACCOUNTING___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "gaap": {
       "display": "GAAP",
       "domain": "accounting",
@@ -3400,7 +3400,7 @@
         "transfer_pricing"
       ]
     },
-    "___CROSS_DOMAIN___": "────────────────────────────────────────",
+    "___CROSS_DOMAIN___": "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     "project_management": {
       "display": "Project Management",
       "domain": "engineering",
@@ -3579,6 +3579,219 @@
         "hipaa",
         "gdpr",
         "privacy_law"
+      ]
+    },
+    "autocad": {
+      "display": "AutoCAD",
+      "domain": "engineering",
+      "aliases": [
+        "autocad",
+        "auto cad",
+        "auto-cad"
+      ]
+    },
+    "solidworks": {
+      "display": "SolidWorks",
+      "domain": "engineering",
+      "aliases": [
+        "solidworks",
+        "solid works"
+      ]
+    },
+    "catia": {
+      "display": "CATIA",
+      "domain": "engineering",
+      "aliases": [
+        "catia",
+        "catia v5"
+      ]
+    },
+    "ansys": {
+      "display": "ANSYS",
+      "domain": "engineering",
+      "aliases": [
+        "ansys"
+      ]
+    },
+    "staad": {
+      "display": "STAAD",
+      "domain": "engineering",
+      "aliases": [
+        "staad",
+        "staad pro",
+        "staad.pro"
+      ]
+    },
+    "revit": {
+      "display": "Revit",
+      "domain": "engineering",
+      "aliases": [
+        "revit",
+        "autodesk revit"
+      ]
+    },
+    "matlab": {
+      "display": "MATLAB",
+      "domain": "engineering",
+      "aliases": [
+        "matlab",
+        "simulink"
+      ]
+    },
+    "hvac_systems": {
+      "display": "HVAC",
+      "domain": "engineering",
+      "aliases": [
+        "hvac",
+        "heating ventilation"
+      ]
+    },
+    "cnc_programming": {
+      "display": "CNC Programming",
+      "domain": "engineering",
+      "aliases": [
+        "cnc",
+        "cnc programming",
+        "cnc machining"
+      ]
+    },
+    "plc_programming": {
+      "display": "PLC Programming",
+      "domain": "engineering",
+      "aliases": [
+        "plc",
+        "plc programming",
+        "programmable logic controller"
+      ]
+    },
+    "scada_systems": {
+      "display": "SCADA",
+      "domain": "engineering",
+      "aliases": [
+        "scada"
+      ]
+    },
+    "civil_engineering": {
+      "display": "Civil Engineering",
+      "domain": "engineering",
+      "aliases": [
+        "civil engineering",
+        "civil eng"
+      ]
+    },
+    "mechanical_engineering": {
+      "display": "Mechanical Engineering",
+      "domain": "engineering",
+      "aliases": [
+        "mechanical engineering",
+        "mechanical eng"
+      ]
+    },
+    "electrical_engineering": {
+      "display": "Electrical Engineering",
+      "domain": "engineering",
+      "aliases": [
+        "electrical engineering",
+        "electrical eng"
+      ]
+    },
+    "cad": {
+      "display": "CAD",
+      "domain": "engineering",
+      "aliases": [
+        "cad",
+        "computer aided design"
+      ]
+    },
+    "manufacturing": {
+      "display": "Manufacturing",
+      "domain": "engineering",
+      "aliases": [
+        "manufacturing"
+      ]
+    },
+    "surveying": {
+      "display": "Surveying",
+      "domain": "engineering",
+      "aliases": [
+        "surveying",
+        "land surveying",
+        "quantity surveying"
+      ]
+    },
+    "structural_analysis": {
+      "display": "Structural Analysis",
+      "domain": "engineering",
+      "aliases": [
+        "structural analysis",
+        "structural design"
+      ]
+    },
+    "pcb_design": {
+      "display": "PCB Design",
+      "domain": "engineering",
+      "aliases": [
+        "pcb",
+        "pcb design",
+        "printed circuit board"
+      ]
+    },
+    "power_systems": {
+      "display": "Power Systems",
+      "domain": "engineering",
+      "aliases": [
+        "power systems",
+        "power distribution"
+      ]
+    },
+    "quality_control": {
+      "display": "Quality Control",
+      "domain": "engineering",
+      "aliases": [
+        "quality control",
+        "qc"
+      ]
+    },
+    "quality_assurance": {
+      "display": "Quality Assurance",
+      "domain": "engineering",
+      "aliases": [
+        "quality assurance",
+        "qa"
+      ]
+    },
+    "assembly": {
+      "display": "Assembly",
+      "domain": "engineering",
+      "aliases": [
+        "assembly",
+        "assembly line"
+      ]
+    },
+    "robotics": {
+      "display": "Robotics",
+      "domain": "engineering",
+      "aliases": [
+        "robotics",
+        "robotic systems"
+      ]
+    },
+    "primavera": {
+      "display": "Primavera",
+      "domain": "engineering",
+      "aliases": [
+        "primavera",
+        "primavera p6"
+      ]
+    },
+    "creo": {
+      "display": "Creo",
+      "domain": "engineering",
+      "aliases": [
+        "creo",
+        "creo parametric",
+        "pro/e",
+        "pro engineer"
       ]
     }
   }
