@@ -14,7 +14,7 @@ export function EducationSection({ education }: EducationSectionProps) {
         {education.map((entry) => (
           <div key={entry.id} className="border-l-heavy border-foreground pl-sp-3">
             <p className="text-sm font-semibold text-foreground">
-              {entry.degree} · {entry.field}
+              {entry.degree} - {entry.field}
             </p>
             <p className="text-tiny font-mono text-muted-foreground mt-sp-1">
               {entry.institution} · {entry.yearRange}

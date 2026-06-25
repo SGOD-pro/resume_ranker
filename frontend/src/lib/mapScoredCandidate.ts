@@ -135,14 +135,20 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
   // Title — use best_title_match or fallback
   const title = raw.best_title_match || '';
 
+  // ── Contact info from backend extraction ──────────────────────────────
+  const pdfUrlPath = raw.pdf_url || '';
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  const pdfUrl = pdfUrlPath ? `${apiBase}${pdfUrlPath}` : '';
+
   const mapped: Candidate = {
     id,
     rank: typeof raw.rank === 'number' ? raw.rank : index + 1,
     name,
     title,
-    location: '',
-    email: '',
-    phone: '',
+    location: raw.location || '',
+    email: raw.email || '',
+    phone: raw.phone || '',
+    pdfUrl,
     overallScore: finalScore,
     signal: deriveSignal(finalScore, knockedOut),
     scoreBreakdown,

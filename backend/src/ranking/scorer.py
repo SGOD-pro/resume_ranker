@@ -596,6 +596,9 @@ class CandidateScorer:
             rank=0,
             knocked_out=False,
             knockout_reasons=[],
+            email=pi.get('email') or '',
+            phone=pi.get('phone') or '',
+            location=pi.get('location') or pi.get('address') or '',
             total_exp_years=total_years,
             extraction_quality=candidate.get('extraction_quality', 0.0),
         )

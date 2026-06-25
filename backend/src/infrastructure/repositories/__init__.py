@@ -1,0 +1,4 @@
+# src/infrastructure/repositories
+from src.infrastructure.repositories.jobs_repository import JobsRepository
+from src.infrastructure.repositories.documents_repository import DocumentsRepository
+from src.infrastructure.repositories.scoring_repository import ScoringRepository

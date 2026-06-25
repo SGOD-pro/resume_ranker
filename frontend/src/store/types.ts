@@ -53,6 +53,7 @@ export interface Candidate {
   location: string;
   email: string;
   phone: string;
+  pdfUrl: string;
   overallScore: number;
   signal: Signal;
   scoreBreakdown: ScoreBreakdown;

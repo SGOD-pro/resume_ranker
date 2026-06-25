@@ -16,3 +16,7 @@ tmp/
 mcp_config.json
 
 node_modules
+
+.env
+.env.development
+.env.production

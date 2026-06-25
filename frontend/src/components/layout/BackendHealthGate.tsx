@@ -27,6 +27,23 @@ export function BackendHealthGate({ children }: BackendHealthGateProps) {
   const setBlockingError = useAppStore((s) => s.setBlockingError);
   const retryCountRef = useRef(0);
 
+  const handleRetryAction = useCallback(async () => {
+    setBackendStatus('checking');
+    try {
+      await checkHealth();
+      setBackendStatus('ready');
+      setBlockingError(null);
+    } catch {
+      setBackendStatus('unreachable');
+      setBlockingError({
+        title: 'Backend Unreachable',
+        message:
+          'Unable to connect to the server after multiple attempts. Please check that the backend is running and try again.',
+        onRetry: handleRetryAction,
+      });
+    }
+  }, [setBackendStatus, setBlockingError]);
+
   const performHealthCheck = useCallback(async () => {
     retryCountRef.current = 0;
     setBackendStatus('checking');
@@ -57,9 +74,9 @@ export function BackendHealthGate({ children }: BackendHealthGateProps) {
       title: 'Backend Unreachable',
       message:
         'Unable to connect to the server after multiple attempts. Please check that the backend is running and try again.',
-      onRetry: () => performHealthCheck(),
+      onRetry: handleRetryAction,
     });
-  }, [setBackendStatus, setBlockingError]);
+  }, [setBackendStatus, setBlockingError, handleRetryAction]);
 
   useEffect(() => {
     performHealthCheck();

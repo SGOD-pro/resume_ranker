@@ -39,7 +39,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
       <div className="flex-1 h-3 bg-surface-sunken border-2 border-border">
         <div className={cn('h-full bg-foreground transition-all', getWidthClass(value))} />
       </div>
-      <span className="w-12 text-right font-mono text-tiny font-bold text-foreground">{value}%</span>
+      <span className="w-12 text-right font-mono text-tiny font-bold text-foreground">{(value).toFixed(3)}%</span>
     </div>
   );
 }

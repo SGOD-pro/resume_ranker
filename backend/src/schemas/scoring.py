@@ -40,6 +40,11 @@ class ScoredCandidate:
     knocked_out: bool
     knockout_reasons: List[str]
 
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    pdf_url: str = ""
+
     # Phase 2 sub-scores (each 0.0–100.0 before weight)
     skill_score: float = 0.0
     experience_score: float = 0.0

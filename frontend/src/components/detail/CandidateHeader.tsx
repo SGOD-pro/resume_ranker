@@ -1,10 +1,13 @@
 import type { Candidate } from '@/store/types';
+import { MapPin,MailIcon,PhoneIcon } from 'lucide-react';
 
 interface CandidateHeaderProps {
   candidate: Candidate;
 }
 
 export function CandidateHeader({ candidate }: CandidateHeaderProps) {
+  const hasContactInfo = candidate.location || candidate.email || candidate.phone;
+
   return (
     <div>
       <div className="flex items-start justify-between">
@@ -16,18 +19,42 @@ export function CandidateHeader({ candidate }: CandidateHeaderProps) {
             {candidate.title}
           </p>
         </div>
-        <a
-          href="#"
-          className="text-info underline text-small font-mono hover:text-foreground transition-colors"
-        >
-          ↗ PDF
-        </a>
+        {candidate.pdfUrl ? (
+          <a
+            href={candidate.pdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-info underline text-small font-mono hover:text-foreground transition-colors"
+          >
+            ↗ PDF
+          </a>
+        ) : (
+          <span className="text-muted-foreground/50 text-small font-mono">
+            No PDF
+          </span>
+        )}
       </div>
-      <div className="flex flex-wrap gap-sp-3 mt-sp-2 text-tiny font-mono text-muted-foreground">
-        <span>📍 {candidate.location}</span>
-        <span>📧 {candidate.email}</span>
-        <span>📞 {candidate.phone}</span>
-      </div>
+      {hasContactInfo && (
+        <div className="flex flex-wrap gap-sp-3 mt-sp-2 text-tiny font-mono text-muted-foreground">
+          {candidate.location && <span className='flex items-center gap-2'><MapPin size={15}/> {candidate.location}</span>}
+          {candidate.email && (
+            <a
+              href={`mailto:${candidate.email}`}
+              className="hover:text-foreground transition-colors flex items-center gap-2"
+            >
+              <MailIcon size={15}/> <span className='underline'>{candidate.email}</span>
+            </a>
+          )}
+          {candidate.phone && (
+            <a
+              href={`tel:${candidate.phone}`}
+              className="hover:text-foreground transition-colors flex items-center gap-2"
+            >
+              <PhoneIcon size={15}/> {candidate.phone}
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

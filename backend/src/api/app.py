@@ -1,23 +1,61 @@
 """
 app.py — FastAPI application factory
 =======================================
-Creates and configures the FastAPI application with CORS and route registration.
-Does NOT modify any pipeline or core logic.
+Creates and configures the FastAPI application with CORS, route registration,
+and AWS connectivity checks on startup.
 """
+
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.health import router as health_router
 from src.api.routes.jobs import router as jobs_router
+from src.infrastructure.health import check_all
+
+logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle.
+
+    On startup: verify DynamoDB and S3 are reachable.
+    Logs ✅ or ❌ for each service — does NOT block startup
+    so the health endpoint remains available for debugging.
+    """
+    # ── Startup ───────────────────────────────────────────────────────────
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger.info("━" * 60)
+    logger.info("Resume Intelligence Platform — Starting up")
+    logger.info("━" * 60)
+
+    health = check_all()
+    if all(health.values()):
+        logger.info("All AWS services connected ✅")
+    else:
+        failed = [k for k, v in health.items() if not v]
+        logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
+
+    yield
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
+    logger.info("Shutting down...")
+
+# uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Resume Intelligence Platform",
         version="0.1.0",
         description="API for resume extraction, scoring, and ranking.",
+        lifespan=lifespan,
     )
 
     # CORS — allow the Vite dev server
