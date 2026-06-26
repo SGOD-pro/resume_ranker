@@ -1,0 +1,300 @@
+name: CI/CD Pipeline
+
+# ──────────────────────────────────────────────────────────────
+# Manual trigger only — go to Actions tab → "CI/CD Pipeline" → Run workflow
+# Use the force_ inputs to deploy even when no file changes are detected.
+# ──────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      force_backend:
+        description: "Force deploy backend (even if no changes detected)"
+        type: boolean
+        default: false
+      force_frontend:
+        description: "Force deploy frontend (even if no changes detected)"
+        type: boolean
+        default: false
+
+# Cancel any in-progress run for the same workflow to avoid duplicate deploys
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ──────────────────────────────────────────────────────────────
+# JOB 1 — Detect which parts of the repo changed
+# ──────────────────────────────────────────────────────────────
+jobs:
+  detect-changes:
+    name: "🔍 Detect Changes"
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2          # need HEAD~1 for diff
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          # Compare HEAD with previous commit; fall back to full tree on first commit
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD 2>/dev/null || echo "")
+
+          echo "📝 Changed files in this commit:"
+          if [ -z "$CHANGED" ]; then
+            echo "  (none — possibly first commit or force override)"
+          else
+            echo "$CHANGED" | sed 's/^/  /'
+          fi
+          echo ""
+
+          BACKEND=false
+          FRONTEND=false
+
+          echo "$CHANGED" | grep -qE "^backend/" && BACKEND=true
+          echo "$CHANGED" | grep -qE "^frontend/" && FRONTEND=true
+
+          # Honour manual force-override inputs
+          [ "${{ inputs.force_backend }}" = "true" ]  && BACKEND=true
+          [ "${{ inputs.force_frontend }}" = "true" ] && FRONTEND=true
+
+          echo "backend=$BACKEND"   >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  🔧 Backend changed  : $BACKEND"
+          echo "  🎨 Frontend changed : $FRONTEND"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ──────────────────────────────────────────────────────────────
+# JOB 2 — Backend tests (only when backend changed)
+# ──────────────────────────────────────────────────────────────
+  test-backend:
+    name: "🧪 Test Backend"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: ap-south-1
+          AWS_ENDPOINT_URL: ""
+          S3_BUCKET_NAME: resume-ranker-test
+          DYNAMODB_TABLE_NAME: ResumePlatformTest
+          ENVIRONMENT: development
+          LOG_LEVEL: DEBUG
+
+# ──────────────────────────────────────────────────────────────
+# JOB 3 — Frontend tests (only when frontend changed)
+# ──────────────────────────────────────────────────────────────
+  test-frontend:
+    name: "🧪 Test Frontend"
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check & Build
+        run: npm run build
+        env:
+          # Use a placeholder during CI — the real URL comes from secrets at deploy time
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://placeholder.execute-api.ap-south-1.amazonaws.com' }}
+
+# ──────────────────────────────────────────────────────────────
+# JOB 4 — Deploy backend to AWS Lambda via SAM CLI
+# ──────────────────────────────────────────────────────────────
+  deploy-backend:
+    name: "🚀 Deploy Backend → AWS Lambda"
+    needs: test-backend
+    if: needs.test-backend.result == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    outputs:
+      api_url: ${{ steps.get-url.outputs.api_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # SAM uses pip/requirements.txt — export from uv.lock
+      - name: Export requirements.txt for SAM
+        run: |
+          uv export \
+            --no-dev \
+            --format requirements-txt \
+            --no-hashes \
+            -o requirements.txt
+          echo "📦 Generated requirements.txt:"
+          cat requirements.txt
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: SAM Build
+        run: |
+          sam build \
+            --use-container \
+            --template-file template.yaml
+
+      - name: SAM Deploy
+        run: |
+          sam deploy \
+            --stack-name resume-ranking \
+            --s3-bucket ${{ secrets.SAM_DEPLOY_S3_BUCKET }} \
+            --region ap-south-1 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              S3BucketName=${{ secrets.S3_BUCKET_NAME }} \
+              DynamoDBTableName=ResumePlatform
+
+      - name: Get & print API Gateway URL
+        id: get-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name resume-ranking \
+            --region ap-south-1 \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+            --output text)
+
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✅  Backend deployed successfully!"
+          echo ""
+          echo "  🌐  API Gateway URL:"
+          echo "      $API_URL"
+          echo ""
+          echo "  📋  Health check:"
+          echo "      $API_URL/health"
+          echo ""
+          echo "  💡  Next step: set this URL as the"
+          echo "      VITE_API_BASE_URL secret in GitHub."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# ──────────────────────────────────────────────────────────────
+# JOB 5 — Deploy frontend to Vercel via Vercel CLI
+# ──────────────────────────────────────────────────────────────
+  deploy-frontend:
+    name: "🚀 Deploy Frontend → Vercel"
+    needs: test-frontend
+    if: needs.test-frontend.result == 'success'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy to Vercel (production)
+        id: vercel-deploy
+        run: |
+          DEPLOY_OUTPUT=$(npx vercel \
+            --token "${{ secrets.VERCEL_TOKEN }}" \
+            --prod \
+            --yes \
+            --build-env VITE_API_BASE_URL="${{ secrets.VITE_API_BASE_URL }}" \
+            2>&1)
+
+          echo "$DEPLOY_OUTPUT"
+
+          # Extract the production URL from Vercel CLI output
+          VERCEL_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo "https://[a-zA-Z0-9._-]+\.vercel\.app" | tail -1)
+          echo "vercel_url=$VERCEL_URL" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✅  Frontend deployed successfully!"
+          echo ""
+          echo "  🌐  Vercel URL:"
+          echo "      $VERCEL_URL"
+          echo ""
+          echo "  📊  Dashboard: https://vercel.com/dashboard"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Resume Intelligence Platform
+  FastAPI backend running on AWS Lambda + API Gateway HTTP API (v2)
+
+# ── Global defaults for all Lambda functions ───────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 30          # seconds — PDF processing can be slow
+    MemorySize: 512      # MB
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        ENVIRONMENT: production
+        LOG_LEVEL: INFO
+        # No AWS_ENDPOINT_URL → boto3 uses real AWS endpoints
+        AWS_ENDPOINT_URL: ""
+
+# ── Parameters (overridden at deploy time via --parameter-overrides) ────────
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: resume-ranker-prod-storage
+    Description: S3 bucket for resume file storage
+
+  DynamoDBTableName:
+    Type: String
+    Default: ResumePlatform
+    Description: DynamoDB table name for job/resume data
+
+# ── Resources ────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── Lambda function wrapping the FastAPI app via Mangum ──────────────────
+  ResumeRankingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: resume-ranking-api
+      Description: Resume Intelligence Platform — FastAPI via Mangum
+      CodeUri: .                        # backend/ directory (SAM builds from here)
+      Handler: lambda_handler.handler   # lambda_handler.py → handler object
+      Environment:
+        Variables:
+          AWS_DEFAULT_REGION: ap-south-1
+          S3_BUCKET_NAME: !Ref S3BucketName
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+      # Fine-grained IAM policies — least privilege
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+      Events:
+        # Catch-all proxy — forwards every path/method to FastAPI router
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+        # Root path (/) must be declared separately for HttpApi
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+
+  # ── API Gateway HTTP API (v2) — cheaper & faster than REST API ───────────
+  ResumeRankingHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default     # no path prefix — URL is https://<id>.execute-api.<region>.amazonaws.com
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"               # restrict to your Vercel domain in production if desired
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+
+# ── Outputs — printed by SAM after deploy and queryable via CloudFormation ──
+Outputs:
+  ApiUrl:
+    Description: "API Gateway HTTP API URL (use as VITE_API_BASE_URL)"
+    Value: !Sub "https://${ResumeRankingHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  FunctionArn:
+    Description: "Lambda function ARN"
+    Value: !GetAtt ResumeRankingFunction.Arn
+
+  FunctionName:
+    Description: "Lambda function name"
+    Value: !Ref ResumeRankingFunction

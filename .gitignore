@@ -7,3 +7,10 @@ uploads
 frontend/test/resumes
 
 resumes
+
+# SAM / AWS build artifacts
+backend/.aws-sam/
+backend/requirements.txt
+
+# Vercel
+.vercel/
