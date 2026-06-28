@@ -17,7 +17,6 @@ import { useAppStore } from '@/store/app-store';
 import { useCandidateStore } from '@/store/candidate-store';
 import { startExtraction, scoreJob, updateJob } from '@/lib/api';
 import { mapScoredCandidates } from '@/lib/mapScoredCandidate';
-import type { ExtractionEvent } from '@/lib/api';
 
 const MAX_SSE_RETRIES = 3;
 const SSE_RETRY_DELAY_MS = 2000;
@@ -62,8 +61,8 @@ export function AnalyzeButton() {
 
           const cleanup = startExtraction(
             currentJobId,
-            // onEvent
-            (_event: ExtractionEvent) => {
+            // onEvent — no-op; progress UI can be added here in the future
+            () => {
               // Could update progress UI here in the future
             },
             // onError

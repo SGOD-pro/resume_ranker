@@ -351,7 +351,7 @@ jobs:
 # ──────────────────────────────────────────────────────────────
   deploy-frontend:
     name: "🚀 Deploy Frontend → Vercel"
-    needs: [test-frontend, deploy-backend]
+    needs: [test-frontend]
     # Run if test-frontend passed.
     # deploy-backend is listed in needs so we can access its output
     # but we don't require it to have run — it may be skipped when

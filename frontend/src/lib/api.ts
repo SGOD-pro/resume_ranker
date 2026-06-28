@@ -196,7 +196,7 @@ export function startExtraction(
     try {
       const data = JSON.parse(e.data) as ExtractionEvent;
       onEvent(data);
-    } catch (err) {
+    } catch {
       onError(new Error('Failed to parse SSE event'));
     }
   });

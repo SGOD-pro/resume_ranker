@@ -27,6 +27,10 @@ export function BackendHealthGate({ children }: BackendHealthGateProps) {
   const setBlockingError = useAppStore((s) => s.setBlockingError);
   const retryCountRef = useRef(0);
 
+  // Store handleRetryAction in a ref so onRetry never closes over a stale
+  // function reference, and we avoid the circular self-reference lint error.
+  const handleRetryActionRef = useRef<() => Promise<void>>(async () => {});
+
   const handleRetryAction = useCallback(async () => {
     setBackendStatus('checking');
     try {
@@ -39,10 +43,16 @@ export function BackendHealthGate({ children }: BackendHealthGateProps) {
         title: 'Backend Unreachable',
         message:
           'Unable to connect to the server after multiple attempts. Please check that the backend is running and try again.',
-        onRetry: handleRetryAction,
+        // Invoke via ref so onRetry always calls the latest version
+        onRetry: () => handleRetryActionRef.current(),
       });
     }
   }, [setBackendStatus, setBlockingError]);
+
+  // Keep ref in sync with the latest callback (must be in an effect, not render)
+  useEffect(() => {
+    handleRetryActionRef.current = handleRetryAction;
+  });
 
   const performHealthCheck = useCallback(async () => {
     retryCountRef.current = 0;
@@ -74,9 +84,9 @@ export function BackendHealthGate({ children }: BackendHealthGateProps) {
       title: 'Backend Unreachable',
       message:
         'Unable to connect to the server after multiple attempts. Please check that the backend is running and try again.',
-      onRetry: handleRetryAction,
+      onRetry: () => handleRetryActionRef.current(),
     });
-  }, [setBackendStatus, setBlockingError, handleRetryAction]);
+  }, [setBackendStatus, setBlockingError]);
 
   useEffect(() => {
     performHealthCheck();

@@ -126,7 +126,7 @@ export function ResumeUploadZone() {
         resetUploadProgress();
       }
     },
-    [jobId, setJobId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload],
+    [jobId, setJobId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job.title],
   );
 
   // ── Drag-drop handlers ──────────────────────────────────────────────────
