@@ -99,7 +99,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-          enable-cache: true
+          enable-cache: false
           cache-dependency-glob: "backend/uv.lock"
 
       - name: Set up Python 3.13
@@ -406,14 +406,13 @@ jobs:
       - name: Deploy to Vercel (production)
         id: vercel-deploy
         run: |
-          DEPLOY_OUTPUT=$(npx vercel \
+          set -e
+
+          npx vercel \
             --token "${{ secrets.VERCEL_TOKEN }}" \
             --prod \
             --yes \
-            --build-env VITE_API_BASE_URL="${{ steps.resolve-url.outputs.api_url }}" \
-            2>&1)
-
-          echo "$DEPLOY_OUTPUT"
+            --build-env VITE_API_BASE_URL="${{ steps.resolve-url.outputs.api_url }}"
 
           # Extract the production URL from Vercel CLI output
           VERCEL_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo "https://[a-zA-Z0-9._-]+\.vercel\.app" | tail -1)
