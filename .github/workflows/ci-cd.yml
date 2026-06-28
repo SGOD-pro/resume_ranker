@@ -154,10 +154,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -353,13 +353,7 @@ jobs:
     name: "🚀 Deploy Frontend → Vercel"
     needs: [test-frontend]
     # Run if test-frontend passed.
-    # deploy-backend is listed in needs so we can access its output
-    # but we don't require it to have run — it may be skipped when
-    # only the frontend changed.
-    if: |
-      always() &&
-      needs.test-frontend.result == 'success' &&
-      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
+    if: needs.test-frontend.result == 'success'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -369,10 +363,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
