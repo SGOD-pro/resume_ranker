@@ -8,8 +8,8 @@ Description: >
 Globals:
   Function:
     Runtime: python3.13
-    Timeout: 30          # seconds — PDF processing can be slow
-    MemorySize: 512      # MB
+    Timeout: 120          # seconds — PDF processing can be slow
+    MemorySize: 1024      # MB
     Architectures:
       - x86_64
     Environment:
@@ -41,10 +41,9 @@ Resources:
       FunctionName: resume-ranking-api
       Description: Resume Intelligence Platform — FastAPI via Mangum
       CodeUri: .                        # backend/ directory (SAM builds from here)
-      Handler: lambda_handler.handler   # lambda_handler.py → handler object
+      Handler: src.lambda_handler.handler   # lambda_handler.py → handler object
       Environment:
         Variables:
-          AWS_DEFAULT_REGION: ap-south-1
           S3_BUCKET_NAME: !Ref S3BucketName
           DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
       # Fine-grained IAM policies — least privilege

@@ -10,7 +10,6 @@ resumes
 
 # SAM / AWS build artifacts
 backend/.aws-sam/
-backend/requirements.txt
 
 # Vercel
 .vercel/

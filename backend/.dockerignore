@@ -1,0 +1,28 @@
+# Git and local files
+.git
+.github
+.gitignore
+.vscode
+
+# Python / uv environment
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local configuration and data files
+.env
+data/
+*.db
+
+/scripts/
+/tests/
+/docs/
+extraction_audit.py
+main.py

@@ -1,0 +1,15 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "resume-ranker"
+resolve_s3 = true
+s3_prefix = "resume-ranker"
+region = "ap-south-1"
+profile = "resume-ranker"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "S3BucketName=\"resume-ranker-prod-storage\" DynamoDBTableName=\"ResumePlatform\""
+image_repositories = []
+
+[default.global.parameters]
+region = "ap-south-1"
