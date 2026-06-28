@@ -1,7 +1,7 @@
 name: CI/CD Pipeline
 
 # ──────────────────────────────────────────────────────────────
-# Manual trigger only — go to Actions tab → "CI/CD Pipeline" → Run workflow
+# Manual trigger only — go to Actions tab → "CI/CD Pipeline" → Run workflow.
 # Use the force_ inputs to deploy even when no file changes are detected.
 # ──────────────────────────────────────────────────────────────
 on:
@@ -23,6 +23,10 @@ concurrency:
 
 # ──────────────────────────────────────────────────────────────
 # JOB 1 — Detect which parts of the repo changed
+#
+# Compares HEAD to HEAD~1 to determine whether the backend or
+# frontend directories contain any changes. Force inputs can
+# bypass the detection and always trigger a deployment.
 # ──────────────────────────────────────────────────────────────
 jobs:
   detect-changes:
@@ -59,7 +63,7 @@ jobs:
           echo "$CHANGED" | grep -qE "^frontend/" && FRONTEND=true
 
           # Honour manual force-override inputs
-          [ "${{ inputs.force_backend }}" = "true" ]  && BACKEND=true
+          [ "${{ inputs.force_backend }}"  = "true" ] && BACKEND=true
           [ "${{ inputs.force_frontend }}" = "true" ] && FRONTEND=true
 
           echo "backend=$BACKEND"   >> "$GITHUB_OUTPUT"
@@ -71,7 +75,12 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ──────────────────────────────────────────────────────────────
-# JOB 2 — Backend tests (only when backend changed)
+# JOB 2 — Backend tests
+#
+# Runs when backend files have changed. Uses uv to install
+# dependencies and pytest to run the full test suite.
+# AWS env vars are set to dummy values so the settings module
+# loads without real credentials.
 # ──────────────────────────────────────────────────────────────
   test-backend:
     name: "🧪 Test Backend"
@@ -114,7 +123,12 @@ jobs:
           LOG_LEVEL: DEBUG
 
 # ──────────────────────────────────────────────────────────────
-# JOB 3 — Frontend tests (only when frontend changed)
+# JOB 3 — Frontend tests
+#
+# Runs when frontend files have changed. Performs a full lint,
+# type-check and Vite production build to catch issues early.
+# VITE_API_BASE_URL is set to a placeholder value during CI
+# so the build doesn't fail before the real URL is known.
 # ──────────────────────────────────────────────────────────────
   test-frontend:
     name: "🧪 Test Frontend"
@@ -149,10 +163,28 @@ jobs:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://placeholder.execute-api.ap-south-1.amazonaws.com' }}
 
 # ──────────────────────────────────────────────────────────────
-# JOB 4 — Deploy backend to AWS Lambda via SAM CLI
+# JOB 4 — Deploy backend → AWS Lambda via SAM (ZIP package type)
+#
+# Deployment flow:
+#   1. Checkout repo
+#   2. Configure AWS credentials
+#   3. Install uv + Python 3.13
+#   4. Prepare the deploy/ folder:
+#        - Delete deploy/src/ (gitignored — must always be rebuilt)
+#        - Copy backend/src/ → backend/deploy/src/
+#   5. Export uv.lock → requirements.txt (no hashes, no dev deps)
+#   6. Copy requirements.txt → deploy/requirements.txt
+#      (SAM reads it from the same directory as template.yaml)
+#   7. Install AWS SAM CLI
+#   8. `sam build` (runs from backend/deploy/, uses --use-container
+#      to get a Lambda-compatible build environment)
+#   9. `sam deploy` (uses samconfig.toml defaults but overrides
+#      stack name, region, bucket and table via CLI flags)
+#   10. Read the ApiUrl CloudFormation output and expose it as a
+#       job output so the frontend deploy can consume it.
 # ──────────────────────────────────────────────────────────────
   deploy-backend:
-    name: "🚀 Deploy Backend → AWS Lambda"
+    name: "🚀 Deploy Backend → AWS Lambda (SAM / ZIP)"
     needs: test-backend
     if: needs.test-backend.result == 'success'
     runs-on: ubuntu-latest
@@ -163,16 +195,19 @@ jobs:
       api_url: ${{ steps.get-url.outputs.api_url }}
 
     steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ── 2. AWS credentials ───────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+      # ── 3. Toolchain ─────────────────────────────────────────────────────
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -185,45 +220,91 @@ jobs:
         with:
           python-version: "3.13"
 
-      # SAM uses pip/requirements.txt — export from uv.lock
-      - name: Export requirements.txt for SAM
+      # ── 4. Prepare deploy/src/ ───────────────────────────────────────────
+      # deploy/src is gitignored so it is never committed.
+      # We always delete and recreate it to guarantee the Lambda
+      # package contains exactly the current HEAD revision of src/.
+      - name: Prepare deployment source folder
+        run: |
+          echo "🧹 Removing stale deploy/src/ (gitignored — always recreated)"
+          rm -rf deploy/src
+
+          echo "📂 Copying backend/src/ → backend/deploy/src/"
+          cp -r src deploy/src
+
+          echo "✅ deploy/src/ contents:"
+          ls -la deploy/src/
+
+      # ── 5. Export requirements ───────────────────────────────────────────
+      # SAM needs a plain requirements.txt to pip-install into the Lambda
+      # package. We generate it from the locked uv.lock so the Lambda
+      # gets identical versions to what tests ran against.
+      - name: Generate requirements.txt from uv.lock
         run: |
           uv export \
             --no-dev \
             --format requirements-txt \
             --no-hashes \
             -o requirements.txt
-          echo "📦 Generated requirements.txt:"
-          cat requirements.txt
 
-      - name: Set up SAM CLI
+          echo "📦 Generated requirements.txt (first 20 lines):"
+          head -20 requirements.txt
+
+      # ── 6. Copy requirements into deploy/ ────────────────────────────────
+      # sam build reads requirements.txt relative to template.yaml,
+      # which lives in backend/deploy/. We copy it there so SAM can find it.
+      - name: Copy requirements.txt → deploy/requirements.txt
+        run: |
+          cp requirements.txt deploy/requirements.txt
+          echo "✅ deploy/requirements.txt is ready ($(wc -l < deploy/requirements.txt) packages)"
+
+      # ── 7. Install AWS SAM CLI ───────────────────────────────────────────
+      - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
 
+      # ── 8. SAM Build ─────────────────────────────────────────────────────
+      # --use-container: builds inside a Lambda-compatible Docker image so
+      #   native extensions (e.g. PyMuPDF) are compiled for the right arch.
+      # --template-file: explicit path because we run from backend/deploy/.
       - name: SAM Build
+        working-directory: backend/deploy
         run: |
+          echo "🏗️  Running sam build..."
           sam build \
             --use-container \
             --template-file template.yaml
 
+      # ── 9. SAM Deploy ────────────────────────────────────────────────────
+      # --stack-name:              CloudFormation stack to create or update
+      # --region:                  ap-south-1 (Mumbai)
+      # --no-confirm-changeset:    deploy without interactive prompt (CI)
+      # --no-fail-on-empty-changeset: don't error when nothing changed
+      # --capabilities CAPABILITY_IAM: allow SAM to create IAM roles
+      # --parameter-overrides:     pass runtime bucket/table names from secrets
       - name: SAM Deploy
+        working-directory: backend/deploy
         run: |
+          echo "🚀 Deploying stack resume-ranker to ap-south-1..."
           sam deploy \
-            --stack-name resume-ranking \
-            --s3-bucket ${{ secrets.SAM_DEPLOY_S3_BUCKET }} \
+            --stack-name resume-ranker \
             --region ap-south-1 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM \
             --parameter-overrides \
               S3BucketName=${{ secrets.S3_BUCKET_NAME }} \
               DynamoDBTableName=ResumePlatform
 
-      - name: Get & print API Gateway URL
+      # ── 10. Extract API Gateway URL ───────────────────────────────────────
+      # Read the ApiUrl CloudFormation output so the frontend deploy job
+      # can inject it as VITE_API_BASE_URL without hardcoding the URL.
+      - name: Get & expose API Gateway URL
         id: get-url
         run: |
           API_URL=$(aws cloudformation describe-stacks \
-            --stack-name resume-ranking \
+            --stack-name resume-ranker \
             --region ap-south-1 \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
             --output text)
@@ -240,17 +321,34 @@ jobs:
           echo "  📋  Health check:"
           echo "      $API_URL/health"
           echo ""
-          echo "  💡  Next step: set this URL as the"
-          echo "      VITE_API_BASE_URL secret in GitHub."
+          echo "  💡  This URL will be injected as VITE_API_BASE_URL"
+          echo "      into the Vercel frontend build automatically."
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # ──────────────────────────────────────────────────────────────
-# JOB 5 — Deploy frontend to Vercel via Vercel CLI
+# JOB 5 — Deploy frontend → Vercel
+#
+# Depends on test-frontend (must pass) and optionally on
+# deploy-backend to get the freshest API Gateway URL.
+#
+# If deploy-backend did NOT run this cycle (backend unchanged),
+# the VITE_API_BASE_URL secret is used as the fallback URL
+# so the frontend always has a valid backend endpoint.
+#
+# The Vercel CLI is invoked with --prod so it publishes to the
+# project's production alias, not a preview deployment.
 # ──────────────────────────────────────────────────────────────
   deploy-frontend:
     name: "🚀 Deploy Frontend → Vercel"
-    needs: test-frontend
-    if: needs.test-frontend.result == 'success'
+    needs: [test-frontend, deploy-backend]
+    # Run if test-frontend passed.
+    # deploy-backend is listed in needs so we can access its output
+    # but we don't require it to have run — it may be skipped when
+    # only the frontend changed.
+    if: |
+      always() &&
+      needs.test-frontend.result == 'success' &&
+      (needs.deploy-backend.result == 'success' || needs.deploy-backend.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -270,6 +368,36 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ── Resolve the backend URL ───────────────────────────────────────────
+      # Prefer the freshly-deployed API URL from deploy-backend.
+      # Fall back to the VITE_API_BASE_URL secret when the backend
+      # was not redeployed this cycle (e.g. frontend-only change).
+      - name: Resolve backend API URL
+        id: resolve-url
+        run: |
+          LIVE_URL="${{ needs.deploy-backend.outputs.api_url }}"
+          SECRET_URL="${{ secrets.VITE_API_BASE_URL }}"
+
+          if [ -n "$LIVE_URL" ]; then
+            echo "Using freshly-deployed backend URL: $LIVE_URL"
+            echo "api_url=$LIVE_URL" >> "$GITHUB_OUTPUT"
+          elif [ -n "$SECRET_URL" ]; then
+            echo "Backend not redeployed — using VITE_API_BASE_URL secret: $SECRET_URL"
+            echo "api_url=$SECRET_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ ERROR: No backend URL available. Set the VITE_API_BASE_URL secret."
+            exit 1
+          fi
+
+      # ── Deploy to Vercel (production) ─────────────────────────────────────
+      # --token:       Vercel personal access token (from secrets)
+      # --prod:        publish to the production alias
+      # --yes:         skip interactive confirmation
+      # --build-env:   inject VITE_API_BASE_URL at Vercel build time
+      #
+      # VERCEL_ORG_ID and VERCEL_PROJECT_ID are passed as env vars
+      # so the CLI knows which project to deploy without a local .vercel/
+      # directory in the repo.
       - name: Deploy to Vercel (production)
         id: vercel-deploy
         run: |
@@ -277,7 +405,7 @@ jobs:
             --token "${{ secrets.VERCEL_TOKEN }}" \
             --prod \
             --yes \
-            --build-env VITE_API_BASE_URL="${{ secrets.VITE_API_BASE_URL }}" \
+            --build-env VITE_API_BASE_URL="${{ steps.resolve-url.outputs.api_url }}" \
             2>&1)
 
           echo "$DEPLOY_OUTPUT"
@@ -296,5 +424,5 @@ jobs:
           echo "  📊  Dashboard: https://vercel.com/dashboard"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

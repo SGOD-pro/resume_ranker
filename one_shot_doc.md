@@ -51,7 +51,7 @@ Infrastructure:
 * DynamoDB
 * ECR
 * CloudWatch
-* Valkey/Redis Cache
+
 
 Benchmark Dataset:
 
@@ -107,7 +107,6 @@ Lambda
 API Gateway
 S3
 DynamoDB
-Valkey
 CloudWatch
 
 Provide ASCII architecture diagrams.
@@ -328,7 +327,6 @@ S3
 
 DynamoDB
 
-Valkey Cache
 
 CloudWatch Monitoring
 

@@ -40,6 +40,8 @@ class AWSSettings(BaseSettings):
     # ── App ───────────────────────────────────────────────────────────────
     environment: str = "development"
     log_level: str = "DEBUG"
+    frontend_url: str = ""
+
 
     def is_local(self) -> bool:
         """True when running against floci / LocalStack."""
