@@ -13,7 +13,7 @@
  */
 
 import { AlertCircle } from 'lucide-react';
-import { Alert, AlertTitle, AlertDescription, AlertAction } from '@/components/ui/alert';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app-store';
 
