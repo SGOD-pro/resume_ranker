@@ -41,18 +41,18 @@ export function BlockingErrorAlert() {
           <AlertTitle className="font-heading text-base uppercase tracking-brutal">
             {blockingError.title}
           </AlertTitle>
-          <AlertDescription className="font-mono text-tiny mt-sp-2">
+          <AlertDescription className="font-mono text-xs leading-tight">
             {blockingError.message}
           </AlertDescription>
           {blockingError.onRetry && (
-            <AlertAction className="static mt-sp-3">
+            <div className="mt-sp-2 col-2 justify-end flex">
               <Button
                 onClick={handleRetry}
-                className="w-full h-10 bg-foreground text-background border-thick border-foreground uppercase tracking-brutal text-sm font-bold hover:bg-background hover:text-foreground transition-colors"
+                className="h-10 bg-foreground text-background border-thick border-foreground uppercase tracking-brutal text-sm font-bold hover:bg-background hover:text-foreground transition-colors"
               >
                 Retry
               </Button>
-            </AlertAction>
+            </div>
           )}
         </Alert>
       </div>

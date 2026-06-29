@@ -61,11 +61,14 @@ def get_boto3_kwargs() -> dict:
     When empty/None (production), it's omitted → boto3 uses real AWS.
     """
     settings = get_settings()
-    kwargs: dict = {
+    kwargs = {
         "region_name": settings.aws_default_region,
-        "aws_access_key_id": settings.aws_access_key_id,
-        "aws_secret_access_key": settings.aws_secret_access_key,
     }
+
+    # LocalStack / Floci only
     if settings.aws_endpoint_url:
         kwargs["endpoint_url"] = settings.aws_endpoint_url
+        kwargs["aws_access_key_id"] = settings.aws_access_key_id
+        kwargs["aws_secret_access_key"] = settings.aws_secret_access_key
+
     return kwargs

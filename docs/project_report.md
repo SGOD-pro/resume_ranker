@@ -4,7 +4,6 @@
 **Author:** Candidate for Technical Review  
 **Subject:** Resume Intelligence Platform — End-to-End Design, Implementation, and Benchmarking  
 **Status:** **🔵 Production Ready (v9 Baseline)**
-
 ---
 
 ## Executive Summary
@@ -322,25 +321,35 @@ We established domain classification guardrails in `tests/test_domain_guardrails
 
 ## 7. Deployment
 
-The system uses a decoupled, serverless deployment pattern that is cost-effective and scalable:
+The system is deployed using a production-grade, fully decoupled serverless architecture that separates the compute layers for frontend and backend to achieve cost-efficiency, high availability, and rapid iterations.
+
+### 7.1 Live Deployments
+*   **Production Frontend URL:** [https://resume-ranker-virid.vercel.app](https://resume-ranker-virid.vercel.app)
+*   **Production Backend URL:** Deployed on AWS Lambda (ZIP package type) with API Gateway HTTP API.
 
 ```
-[Client App] ──► [AWS API Gateway] ──► [FastAPI Lambda (ECR Container)]
-                                               │
-                                       ┌───────┴───────┐
-                                       ▼               ▼
-                                  [AWS S3]      [AWS DynamoDB]
-                               (Resume PDFs)    (Jobs & Scores)
+                  [ Vercel CDN ] ◄─── (Frontend Assets)
+                        │
+                        ▼
+  [Client Browser] ──────────► [AWS API Gateway HTTP API]
+                                         │
+                                         ▼
+                             [FastAPI Lambda (ZIP App)]
+                                         │
+                                 ┌───────┴───────┐
+                                 ▼               ▼
+                            [AWS S3]      [AWS DynamoDB]
+                         (Resume PDFs)    (Jobs & Scores)
 ```
 
-### 7.1 Serverless Cloud Infrastructure
-*   **AWS Lambda**: Runs the FastAPI backend server as a containerised function. The container image is stored in **AWS ECR**. This provides automatic scaling and zero-idle cost.
-*   **AWS API Gateway**: Exposes API endpoints and handles CORS, rate limiting, and SSE connections.
-*   **Amazon S3**: Stores uploaded resume PDFs.
-*   **Amazon DynamoDB**: Stores job requirements, candidate profiles, and scoring metrics. This database is key-value based and scales to handle high traffic.
+### 7.2 Serverless Cloud Infrastructure
+*   **Backend (AWS SAM ZIP Deployment)**: The FastAPI server is packaged as a standard Python 3.13 ZIP deployment archive and managed using the **AWS Serverless Application Model (SAM)**. It runs within a serverless **AWS Lambda** function, integrated with **API Gateway HTTP API (v2)** to minimize latency and execution cost.
+*   **Frontend (Vercel)**: The React + TypeScript SPA is optimized and built via a CI/CD pipeline, and deployed directly to Vercel's Edge CDN for high-speed content delivery.
+*   **Storage (Amazon S3)**: Uploaded candidate PDF resumes are saved in a private S3 bucket.
+*   **Database (Amazon DynamoDB)**: Job requirements, applicant records, scores, and anomaly data are persisted in a single DynamoDB table utilizing single-table design principles.
 
-### 7.2 Docker Compose local deployment
-The local container setup in `docker-compose.yml` runs the complete stack on a local machine:
+### 7.3 Local Container Setup (Docker Compose)
+For local development, the stack runs inside containerized services to mimic cloud dependencies:
 
 ```yaml
 version: '3.8'
@@ -368,14 +377,35 @@ services:
 
 ---
 
-## 8. Final Insights & Future Work
+## 8. Market Comparison & Uniqueness
 
-### 8.1 Key Engineering Insights
+To evaluate the business value and efficacy of this platform, we compare it against current industry standards and alternative software architectures:
+
+| Criteria | Traditional ATS Keyword Matchers | Large Language Model (LLM) Screeners | Our Resume Intelligence Platform |
+| :--- | :--- | :--- | :--- |
+| **Technology** | Literal substring/regex searches. | GPT-4 Prompting / Vector Embeddings. | **Inference Graph + BM25 + Proximity Filter.** |
+| **Accuracy** | Low (susceptible to keyword stuffing; misses synonyms). | High (semantic understanding of text). | **High (97.8% classification; 1.5% False Positive Rate).** |
+| **Explainability** | High (shows simple matched words). | Extremely Low (black-box; API gives scores without proof). | **Extremely High (Complete mathematical breakdown of signals).** |
+| **Operational Cost** | Low. | Extremely High ($0.05 to $0.15 per resume in token costs). | **Near Zero (Serverless execution under free tier limits).** |
+| **Execution Latency** | < 100ms. | 2,000ms - 10,000ms per request. | **< 200ms per candidate score.** |
+| **Compliance Risk** | Medium (poor matching hurts qualified candidates). | High (LLM biases are hard to auditable or correct). | **Low (Deterministic rules are auditable and easily tuned).** |
+
+### Why this Platform is Unique:
+1.  **Semantic Graph Resolution without LLM Overhead**: Resolves synonyms (e.g., "ReactJS" and "React") and technological hierarchy (e.g., "Next.js" implies "React") using an explicit skill graph (`skill_graph.json`). It provides deep semantic capability without API fees or latency.
+2.  **Cross-Domain Pollution Control**: A custom proximity matrix (`domain_proximity.json`) penalizes applicants from mismatched sectors. This keeps the false-positive rate under **1.5%**, preventing unrelated profiles from flooding the top rank list.
+3.  **Audit-Ready Explainability**: Because we do not rely on stochastic AI models, recruiters get an exact mathematical explanation for every candidate's ranking (detailing matched/missing must-have skills, years of experience, and any flagged profile anomalies).
+4.  **Zero-Idle Serverless Economics**: Transitioning to a SAM-managed ZIP deployment on AWS Lambda means the backend scales to zero. Computing scores costs nothing when the system is inactive, dramatically outperforming container-host options.
+
+---
+
+## 9. Final Insights & Future Work
+
+### 9.1 Key Engineering Insights
 1.  **Rules vs. ML Trade-offs**: While transformer-based models are effective for parsing unstructured text, they require expensive hardware (GPUs) and can introduce hallucinations. This deterministic layout and graph approach parses resumes at a fraction of the cost, runs on standard CPU servers, and is fully explainable.
 2.  **Clean Data is Key**: Preprocessing (including dual-path arbitration, layout-aware reading order, and tag stripping) proved more critical to accuracy than the scoring formulas themselves. Accurate scoring depends on clean extraction.
 3.  **Explainability Builds Trust**: Recruiter testing showed that providing detailed explanations for candidate rankings (e.g., showing which skills matched or explaining a knockout decision) is key to user adoption.
 
-### 8.2 Future Roadmap
+### 9.2 Future Roadmap
 *   **Hybrid Vector Search**: Integrate local vector embeddings (using a lightweight model like `all-MiniLM-L6-v2` running on CPU) to handle semantic queries alongside the BM25 scorer.
 *   **Retrieval-Augmented Generation (RAG)**: Use an LLM to generate interview questions and recruiter summary notes based on a candidate's scored profile.
 *   **ATS Integrations**: Create plugins to sync candidate profiles with platforms like Workday, Greenhouse, or Lever.
