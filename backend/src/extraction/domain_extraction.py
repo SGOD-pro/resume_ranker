@@ -88,6 +88,26 @@ class LayoutMetadata:
     reading_order_gaps: list[float] = field(default_factory=list)
     bounding_boxes: list[dict[str, Any]] = field(default_factory=list)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "has_overlaps": self.has_overlaps,
+            "column_boundaries": self.column_boundaries,
+            "font_stats": self.font_stats,
+            "reading_order_gaps": self.reading_order_gaps,
+            "bounding_boxes": self.bounding_boxes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> LayoutMetadata | None:
+        if data is None:
+            return None
+        return cls(
+            has_overlaps=data.get("has_overlaps", False),
+            column_boundaries=data.get("column_boundaries", []),
+            font_stats=data.get("font_stats", {}),
+            reading_order_gaps=data.get("reading_order_gaps", []),
+            bounding_boxes=data.get("bounding_boxes", []),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +150,79 @@ class ExtractionResult:
     unresolved: list[UnresolvedChunk] = field(default_factory=list)
     parser_version: str = "v2"
     layout_metadata: LayoutMetadata | None = None
+
+    def model_dump_json(self) -> str:
+        import json
+        from dataclasses import asdict
+        
+        data = {
+            "document_id": self.document_id,
+            "content_hash": self.content_hash,
+            "name": asdict(self.name) if self.name else None,
+            "email": asdict(self.email) if self.email else None,
+            "phone": asdict(self.phone) if self.phone else None,
+            "linkedin": asdict(self.linkedin) if self.linkedin else None,
+            "github": asdict(self.github) if self.github else None,
+            "location": asdict(self.location) if self.location else None,
+            "experience": asdict(self.experience) if self.experience else None,
+            "education": asdict(self.education) if self.education else None,
+            "skills": asdict(self.skills) if self.skills else None,
+            "summary": asdict(self.summary) if self.summary else None,
+            "unresolved": [asdict(u) for u in self.unresolved],
+            "parser_version": self.parser_version,
+            "layout_metadata": self.layout_metadata.to_dict() if self.layout_metadata else None,
+            "overall_confidence": getattr(self, "overall_confidence", 1.0)
+        }
+        return json.dumps(data)
+
+    @classmethod
+    def model_validate_json(cls, json_str: str | dict[str, Any]) -> ExtractionResult:
+        import json
+        if isinstance(json_str, str):
+            data = json.loads(json_str)
+        else:
+            data = json_str
+
+        def parse_field(field_data: dict[str, Any] | None) -> ExtractedField | None:
+            if not field_data:
+                return None
+            return ExtractedField(
+                value=field_data.get("value"),
+                confidence=field_data.get("confidence", 1.0),
+                provenance=field_data.get("provenance", "deterministic"),
+                source_elements=tuple(field_data.get("source_elements", ()))
+            )
+
+        def parse_chunk(chunk_data: dict[str, Any]) -> UnresolvedChunk:
+            return UnresolvedChunk(
+                field_name=chunk_data.get("field_name", ""),
+                text=chunk_data.get("text", chunk_data.get("raw_text_chunk", "")),
+                document_id=chunk_data.get("document_id", data.get("document_id", "")),
+                section=chunk_data.get("section", ""),
+                confidence_so_far=chunk_data.get("confidence_so_far", 0.0)
+            )
+
+        return cls(
+            document_id=data.get("document_id", "unknown"),
+            content_hash=data.get("content_hash", ""),
+            name=parse_field(data.get("name")),
+            email=parse_field(data.get("email")),
+            phone=parse_field(data.get("phone")),
+            linkedin=parse_field(data.get("linkedin")),
+            github=parse_field(data.get("github")),
+            location=parse_field(data.get("location")),
+            experience=parse_field(data.get("experience")),
+            education=parse_field(data.get("education")),
+            skills=parse_field(data.get("skills")),
+            summary=parse_field(data.get("summary")),
+            unresolved=[parse_chunk(u) for u in data.get("unresolved", [])],
+            parser_version=data.get("parser_version", "v2"),
+            layout_metadata=LayoutMetadata.from_dict(data.get("layout_metadata"))
+        )
+
+    @property
+    def overall_confidence(self) -> float:
+        return self.deterministic_ratio
 
     # ── Computed metrics ─────────────────────────────────────────────────
     @property
