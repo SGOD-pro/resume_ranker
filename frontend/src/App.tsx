@@ -5,6 +5,8 @@ import { BackendHealthGate } from '@/components/layout/BackendHealthGate';
 import { Toaster } from '@/components/ui/toaster';
 import { BlockingErrorAlert } from '@/components/layout/BlockingErrorAlert';
 import { UploadProgressBar } from '@/components/layout/UploadProgressBar';
+import { Routes, Route } from 'react-router-dom';
+import { AtsCheckerPage } from '@/pages/AtsCheckerPage';
 
 function App() {
   return (
@@ -13,7 +15,10 @@ function App() {
         <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
           <AppHeader />
           <UploadProgressBar />
-          <ThreePanelLayout />
+          <Routes>
+            <Route path="/" element={<ThreePanelLayout />} />
+            <Route path="/ats-checker" element={<AtsCheckerPage />} />
+          </Routes>
         </div>
         <Toaster />
         <BlockingErrorAlert />

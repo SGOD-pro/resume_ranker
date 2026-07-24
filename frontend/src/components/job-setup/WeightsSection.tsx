@@ -1,17 +1,18 @@
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
-import { useJobStore } from '@/store/job-store';
-import type { Job } from '@/store/types';
+import { useWeightsStore } from '@/store/weights-store';
 
-const weightLabels: { key: keyof Job['weights']; label: string }[] = [
+type WeightKey = 'skills' | 'experience' | 'education' | 'semantic';
+
+const weightLabels: { key: WeightKey; label: string }[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'experience', label: 'Experience' },
-  { key: 'keywords', label: 'Keywords' },
   { key: 'education', label: 'Education' },
+  { key: 'semantic', label: 'Semantic' },
 ];
 
 export function WeightsSection() {
-  const { job, setWeight } = useJobStore();
+  const { weights, setWeight } = useWeightsStore();
 
   const getBarWidth = (value: number): string => {
     if (value >= 80) return 'w-full';
@@ -22,11 +23,20 @@ export function WeightsSection() {
     return 'w-[5%]';
   };
 
+  const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+
   return (
     <div>
-      <Label className="font-heading text-sm uppercase tracking-chip mb-sp-3 block text-foreground">
-        Weights
-      </Label>
+      <div className="flex justify-between items-center mb-sp-3">
+        <Label className="font-heading text-sm uppercase tracking-chip block text-foreground">
+          Weights
+        </Label>
+        {totalWeight !== 100 && (
+          <span className="text-[10px] uppercase font-bold text-red-500">
+            Total: {totalWeight}% (Should be 100%)
+          </span>
+        )}
+      </div>
       <div className="space-y-sp-3">
         {weightLabels.map(({ key, label }) => (
           <div key={key}>
@@ -35,18 +45,18 @@ export function WeightsSection() {
                 {label}
               </span>
               <span className="font-mono text-tiny font-bold text-foreground">
-                {job.weights[key]}%
+                {weights[key]}%
               </span>
             </div>
             <div className="relative mb-sp-1">
               <div className="h-3 w-full bg-surface-sunken border-2 border-border">
                 <div
-                  className={`h-full bg-foreground transition-all ${getBarWidth(job.weights[key])}`}
+                  className={`h-full bg-foreground transition-all ${getBarWidth(weights[key])}`}
                 />
               </div>
             </div>
             <Slider
-              value={[job.weights[key]]}
+              value={[weights[key]]}
               onValueChange={([val]) => setWeight(key, val)}
               min={0}
               max={100}

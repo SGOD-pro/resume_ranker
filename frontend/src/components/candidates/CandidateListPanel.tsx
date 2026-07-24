@@ -8,17 +8,55 @@ import { CandidateListFooter } from './CandidateListFooter';
 import { CenterPanelLoader } from './CenterPanelLoader';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
+import { useWeightsStore } from '@/store/weights-store';
+import { useJobCandidates } from '@/hooks/useV2Queries';
+import { useJobUpdates } from '@/hooks/useJobUpdates';
+import type { Candidate } from '@/store/types';
+
+interface RawCandidate {
+  id?: string;
+  name?: string;
+  candidate_id?: string;
+  extraction?: {
+    explicit_skills?: { name: string }[];
+  };
+  skillMatch?: { matched: string[]; missing: string[]; extra: string[] };
+  signal?: string;
+  skill_score?: number;
+  experience_score?: number;
+  education_score?: number;
+  semantic_score?: number;
+}
 
 export function CandidateListPanel() {
-  const allCandidates = useCandidateStore((s) => s.candidates);
   const filterSignal = useCandidateStore((s) => s.filterSignal);
   const sortField = useCandidateStore((s) => s.sortField);
   const searchQuery = useCandidateStore((s) => s.searchQuery);
   const showKnockouts = useCandidateStore((s) => s.showKnockouts);
   const appPhase = useAppStore((s) => s.appPhase);
+  const jobId = useAppStore((s) => s.jobId);
+  const computeComposite = useWeightsStore((s) => s.computeComposite);
+  
+  // Connect to WebSocket updates
+  useJobUpdates(jobId);
+
+  // Fetch candidates from V2 API
+  const { data: queryData, isLoading } = useJobCandidates(jobId);
 
   const candidates = useMemo(() => {
-    let filtered = [...allCandidates];
+    const rawCandidates = queryData?.candidates || [];
+    let filtered = rawCandidates.map((c: unknown) => {
+      const rc = c as RawCandidate;
+      return {
+        ...rc,
+        overallScore: computeComposite(rc),
+        // mapping backend data to frontend expected properties if needed
+        name: rc.name || rc.candidate_id || 'Unknown',
+        topSkills: rc.extraction?.explicit_skills?.map((s: { name: string }) => s.name) || [],
+        skillMatch: rc.skillMatch || { matched: [], missing: [], extra: [] },
+        signal: rc.signal || 'processing'
+      } as unknown as Candidate;
+    });
 
     if (filterSignal !== 'all') {
       filtered = filtered.filter((c) => c.signal === filterSignal);
@@ -33,8 +71,7 @@ export function CandidateListPanel() {
       filtered = filtered.filter(
         (c) =>
           c.name.toLowerCase().includes(q) ||
-          c.topSkills.some((s) => s.toLowerCase().includes(q)) ||
-          c.skillMatch.matched.some((s) => s.toLowerCase().includes(q))
+          (c.topSkills && c.topSkills.some((s: string) => s.toLowerCase().includes(q)))
       );
     }
 
@@ -45,9 +82,9 @@ export function CandidateListPanel() {
     }
 
     return filtered;
-  }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts]);
+  }, [queryData?.candidates, filterSignal, sortField, searchQuery, showKnockouts, computeComposite]);
 
-  const showLoader = appPhase === 'extracting' || appPhase === 'scoring';
+  const showLoader = appPhase === 'extracting' || appPhase === 'scoring' || isLoading;
 
   return (
     <div className="flex h-full flex-col">
@@ -59,11 +96,9 @@ export function CandidateListPanel() {
 
       <Separator className="bg-border h-[3px]" />
 
-      {showLoader ? (
-        /* Center panel loader replaces list content area only */
+      {showLoader && candidates.length === 0 ? (
         <CenterPanelLoader phase={appPhase} />
-      ) : allCandidates.length === 0 ? (
-        /* No analysis has been run yet — genuine empty state */
+      ) : candidates.length === 0 && !jobId ? (
         <div className="flex-1 flex flex-col items-center justify-center p-sp-5 gap-sp-3">
           <p className="font-heading text-2xl uppercase tracking-brutal text-foreground text-center">
             No Results Yet
@@ -74,7 +109,6 @@ export function CandidateListPanel() {
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          {/* Table header */}
           <div className="flex items-center gap-sp-2 px-sp-4 py-sp-2 bg-secondary text-foreground shrink-0">
             <span className="w-8 text-tiny uppercase tracking-chip font-bold">#</span>
             <span className="flex-1 text-tiny uppercase tracking-chip font-bold">Name</span>
@@ -84,8 +118,8 @@ export function CandidateListPanel() {
 
           <ScrollArea className="flex-1 scrollbar-brutal pb-10 h-full">
             <div>
-              {candidates.map((candidate) => (
-                <CandidateRow key={candidate.id} candidate={candidate} />
+              {candidates.map((candidate, idx) => (
+                <CandidateRow key={candidate.id || idx} candidate={candidate} />
               ))}
               {candidates.length === 0 && (
                 <div className="p-sp-5 text-center text-muted-foreground text-small">
