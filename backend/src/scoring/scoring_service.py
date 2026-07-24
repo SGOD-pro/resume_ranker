@@ -100,6 +100,9 @@ class ScoringService:
         Returns ScoringResult with per-signal scores and breakdown detail.
         final_score is NOT computed here — call compute_composite().
         """
+        if not isinstance(extraction, ExtractionResult):
+            raise TypeError("Raw PDF parsing is prohibited in the evaluation hot path. Pass an ExtractionResult.")
+            
         doc_id = document_id or extraction.document_id
 
         # Bridge Phase 2/3 output to legacy dict format

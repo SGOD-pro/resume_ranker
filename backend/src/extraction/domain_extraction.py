@@ -73,6 +73,24 @@ class UnresolvedChunk:
 
 
 # ---------------------------------------------------------------------------
+# LayoutMetadata
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LayoutMetadata:
+    """
+    Pre-computed geometric primitives from the ODL parser.
+    Decouples evaluation (JD Scoring + ATS) from raw PDF rendering/JVM.
+    """
+    has_overlaps: bool = False
+    column_boundaries: list[float] = field(default_factory=list)
+    font_stats: dict[str, float] = field(default_factory=dict)
+    reading_order_gaps: list[float] = field(default_factory=list)
+    bounding_boxes: list[dict[str, Any]] = field(default_factory=list)
+
+
+
+# ---------------------------------------------------------------------------
 # ExtractionResult
 # ---------------------------------------------------------------------------
 
@@ -111,6 +129,7 @@ class ExtractionResult:
     # ── Metadata ─────────────────────────────────────────────────────────
     unresolved: list[UnresolvedChunk] = field(default_factory=list)
     parser_version: str = "v2"
+    layout_metadata: LayoutMetadata | None = None
 
     # ── Computed metrics ─────────────────────────────────────────────────
     @property

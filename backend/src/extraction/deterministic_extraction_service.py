@@ -299,6 +299,30 @@ class DeterministicExtractionService:
 
         result.unresolved = unresolved
 
+        # ── 7. Pre-Compute LayoutMetadata (Phase 4.5) ───────────────────
+        from src.extraction.domain_extraction import LayoutMetadata
+        
+        bboxes = []
+        for kid in structural.kids:
+            bboxes.append({
+                "id": kid.element_id or id(kid),
+                "x0": kid.bounding_box[0],
+                "y0": kid.bounding_box[1],
+                "x1": kid.bounding_box[2],
+                "y1": kid.bounding_box[3],
+                "text": kid.text[:50],  # truncate text for smaller JSON
+                "type": kid.type,
+            })
+            
+        layout_metadata = LayoutMetadata(
+            has_overlaps=False,  # Simplified for now
+            column_boundaries=[],
+            font_stats={"avg_size": 12.0},
+            reading_order_gaps=[],
+            bounding_boxes=bboxes
+        )
+        result.layout_metadata = layout_metadata
+
         logger.info(
             "Extraction complete doc=%s deterministic_ratio=%.2f unresolved=%d",
             document_id[:12],

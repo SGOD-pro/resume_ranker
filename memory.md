@@ -16,7 +16,10 @@
     * Phase 1 (Structural Parsing Layer): COMPLETE
     * Phase 2 (Deterministic Extraction Engine): COMPLETE
     * Phase 3 (Extraction Fallback): COMPLETE
-- **Status:** Phase 4 Complete, ready for Phase 5.
+    * Phase 4 (Scoring Engine): COMPLETE
+    * Phase 4.5 (Architecture Refactor & Latency Optimization): COMPLETE
+- **Status:** Phase 4.5 Complete, ready for Phase 5.
+  - **Note on Latency Optimization:** In Phase 4.5, we strictly decoupled ingestion from evaluation by introducing `LayoutMetadata` into the `ExtractionResult` DTO. This removed the `opendataloader-pdf` JVM initialization from the synchronous scoring hot paths. The evaluation latency (JD Scoring + ATS) is now successfully benchmarked at `< 50ms` p95 (measured at ~3.18ms, down from 949.5ms).
   - **Note on V2 Extraction:** A diagnostic run showed a dip in extraction quality due to V2's strict ODL heading-based section router. We fixed this by porting V1's hybrid fallback strategies (SectionDetector, flat_text full-text parsing for Experience/Education, and enhanced name heuristics). This brought the V2 pure-deterministic extraction quality back up to **85.8%** on the sample dataset, restoring performance parity before LLM fallback is introduced in Phase 5.
 - **Architecture Version:** Rev 3 (AWS Lambda via ECR Container Image + SQS)
   - **Note on Deployment:** We deploy to AWS Lambda using an ECR container image. This allows us to bundle the JRE (Java Runtime Environment) directly into the image to support `opendataloader-pdf`.

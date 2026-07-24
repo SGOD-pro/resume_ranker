@@ -135,8 +135,8 @@
   - `LayoutStabilityEvaluator`: Checks for overlapping text bounding boxes and visual noise.
   - `SectionHierarchyEvaluator`: Verifies heading font sizes/weights differ from body text.
   - `ReadingOrderEvaluator`: Checks for contiguous reading orders within visual blocks.
-  - `MetricCoverageEvaluator`: Regex for quantifiable metrics (`[$%\d]+`) bounded by sentence structure within Experience blocks.
-  - `ChronologyConsistencyEvaluator`: Parses dates via `dateutil`, checks for backwards or overlapping timelines.
+  - `MetricCoverageEvaluator`: Regex for quantifiable metrics (`[$%\d]+`) bounded by sentence structure within Experience blocks (must verify it receives the correct text chunks from `ExtractionResult`).
+  - `ChronologyConsistencyEvaluator`: Parses dates via `dateutil`, checks for backwards or overlapping timelines (must verify it receives parsed date objects from `ExtractionResult`).
   - `ContactPresenceEvaluator`: (Retained) Knockout check for critical contact info.
 - `AtsResult` Model: Outputs include category scores, knockout flags, and `bounding_boxes` for frontend PDF highlighting.
 - Standalone API: `/api/v2/ats-check` endpoint (unauthenticated, IP-rate-limited, zero DB persistence if run standalone; DB-backed if run in recruiter pipeline).
@@ -200,9 +200,10 @@
 
 ---
 
-## Phase 8: Production Hardening (Days 45–49)
+## Phase 8: Production Hardening & Ingestion Optimization (Days 45–49)
 
 ### Deliverables
+- **Ingestion Latency Optimization:** Batch `opendataloader-pdf` `convert()` calls (e.g., 10 PDFs per JVM invocation) to reduce 926.5ms cold ingestion overhead. Optimize `LayoutMetadata` BBOX intersection math using spatial indexing (e.g., `rtree`).
 - CloudWatch metric alarms: Nova fallback rate `> 20%`, ATS latency P95 `> 500ms` (lowered from 5s), queue depth `> 50`
 - PII redaction verification across all structured application logs
 - Upload file validation using magic-byte headers
@@ -215,6 +216,7 @@
 - Zero PII found in CloudWatch logs.
 - Load test completes under target thresholds.
 - Nova fallback rate remains $< 15\%$ on production benchmark sample.
+- Ingestion pipeline latency reduced by at least 40% from pre-Phase 8 baseline.
 
 > [!IMPORTANT]
 > **Final Sign-off:** Cannot proceed to production launch until all NFRs are verified and load testing passes cleanly.

@@ -72,7 +72,8 @@
 - **`NFR-02`**: Deterministic-only extraction path: `< 3 seconds` P95.
 - **`NFR-03`**: Frontend weight recomputation: `< 200ms` for 100 candidates.
 - **`NFR-04`**: Batch processing of 20 resumes **MUST** complete the full pipeline in `< 5 minutes`.
-- **`NFR-05`**: Standalone ATS check **MUST** return in `< 5 seconds` (no LLM, no DB write).
+- **`NFR-05`**: Standalone ATS check **MUST** return in `< 1 second` (no LLM, no DB write, down from previous 5s target).
+- **`NFR-05b`**: Evaluation hot path (JD Scoring + ATS) **MUST** execute in `< 50ms` p95 and **MUST NOT** instantiate any JVM or parse raw PDFs.
 
 ### 2.2 Reliability
 
