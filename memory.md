@@ -19,7 +19,12 @@
     * Phase 4 (Scoring Engine): COMPLETE
     * Phase 4.5 (Architecture Refactor & Latency Optimization): COMPLETE
     * Phase 5 (ATS Engine): COMPLETE
-- **Status:** Phase 5 Complete, ready for Phase 6.
+    * Phase 6 (API & WebSocket Layer): COMPLETE
+- **Status:** Phase 6 Complete.
+  - **Repository Pattern:** Wrapped DynamoDB access in `DynamoJobRepository` and `DynamoCandidateRepository` with in-memory fallback for seamless local execution.
+  - **REST API Endpoints:** Implemented `/api/v2/jobs` CRUD, `/api/v2/jobs/{id}/resumes` presigned URL generator, `/api/v2/jobs/{id}/candidates` list with filtering/pagination, `/api/v2/jobs/{id}/candidates/{cid}` detail embedding `ats_result` & `bounding_boxes` array for PDF highlighting, and `/api/v2/jobs/{id}/candidates/export` CSV export.
+  - **WebSocket Layer:** Implemented `WS /ws/jobs/{job_id}` supporting real-time event broadcasting (`candidate_partial`, `candidate_ready`, `candidate_failed`, `processing_complete`).
+  - **RFC 7807 Error Handling:** Configured global exception handlers in FastAPI for RFC 7807 `application/problem+json` error responses.
   - **Note on ATS Engine (Phase 5):** The standalone ATS engine was built in the `src/ats` bounded context, enforcing architectural boundaries against the `scoring` and `extraction` contexts. We implemented 6 deterministic evaluators (`LayoutStability`, `SectionHierarchy`, `ReadingOrder`, `MetricCoverage`, `ChronologyConsistency`, and `ContactPresence`). The ATS evaluation executes in ~0.07ms (P95), operating perfectly within the `<100ms` requirement.
   - **Note on Latency Optimization:** In Phase 4.5, we strictly decoupled ingestion from evaluation by introducing `LayoutMetadata` into the `ExtractionResult` DTO. This removed the `opendataloader-pdf` JVM initialization from the synchronous scoring hot paths. The evaluation latency (JD Scoring + ATS) is now successfully benchmarked at `< 50ms` p95 (measured at ~3.18ms, down from 949.5ms).
   - **Note on V2 Extraction:** A diagnostic run showed a dip in extraction quality due to V2's strict ODL heading-based section router. We fixed this by porting V1's hybrid fallback strategies (SectionDetector, flat_text full-text parsing for Experience/Education, and enhanced name heuristics). This brought the V2 pure-deterministic extraction quality back up to **85.8%** on the sample dataset, restoring performance parity before LLM fallback is introduced in Phase 5.

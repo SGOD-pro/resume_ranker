@@ -94,6 +94,17 @@ def create_app() -> FastAPI:
 
     # All V2 routes under /api/v2/ per R-13
     app.include_router(health_router, prefix="/api/v2", tags=["health"])
+    
+    from src.api.routes.jobs_v2 import router as jobs_v2_router
+    from src.api.routes.ats import router as ats_router
+    from src.api.routes.ws import router as ws_router
+    from src.api.errors import register_exception_handlers
+
+    app.include_router(jobs_v2_router)
+    app.include_router(ats_router)
+    app.include_router(ws_router)
+
+    register_exception_handlers(app)
 
     return app
 
