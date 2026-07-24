@@ -5,20 +5,22 @@
 ## 1. Project State
 
 ### Completed Phases
-* Phase 0: Infrastructure Skeleton — Complete. (Postgres + Redis + pgvector up, DynamoDB dead, V2 FastAPI app wired, Alembic migrations initialized).
+* Phase 0: Infrastructure Skeleton — Complete. (AWS Lambda + SQS wired, DynamoDB initialized, V2 App configured).
 * Phase 1: Structural Parsing Layer — **Complete**. `StructuralParsingService` (ACL), `OdlElement`/`StructuralParse` dataclasses, S3+InMemory cache, golden fixtures (single_column, two_column, hidden_text), 41/41 tests passing.
 * Phase 2: Deterministic Extraction Engine — **Complete**. `DeterministicExtractionService`, V2 Parser Adapters. F1 evaluation script scores 100% deterministic extraction. 83/83 unit tests passing. `ruff` and `mypy` strict type checking verified with zero errors.
 
 ### Current Focus
-* **Active Phase:** Phase 3: Extraction Fallback (Amazon Nova)
+* **Active Phase:** Phase 4: Scoring Engine
 * **Status:**
     * Phase 0 (Infrastructure Skeleton): COMPLETE
     * Phase 1 (Structural Parsing Layer): COMPLETE
     * Phase 2 (Deterministic Extraction Engine): COMPLETE
-    * Phase 3 (Extraction Fallback): PENDING
-    * Phase 4 (Scoring Engine): PENDING
-
-- **Architecture Version:** Rev 3 (Lambda + SQS)
+    * Phase 3 (Extraction Fallback): COMPLETE
+- **Status:** Phase 4 Complete, ready for Phase 5.
+  - **Note on V2 Extraction:** A diagnostic run showed a dip in extraction quality due to V2's strict ODL heading-based section router. We fixed this by porting V1's hybrid fallback strategies (SectionDetector, flat_text full-text parsing for Experience/Education, and enhanced name heuristics). This brought the V2 pure-deterministic extraction quality back up to **85.8%** on the sample dataset, restoring performance parity before LLM fallback is introduced in Phase 5.
+- **Architecture Version:** Rev 3 (AWS Lambda via ECR Container Image + SQS)
+  - **Note on Deployment:** We deploy to AWS Lambda using an ECR container image. This allows us to bundle the JRE (Java Runtime Environment) directly into the image to support `opendataloader-pdf`.
+  - **Local Environment:** JRE is installed locally at `C:\Program Files\Java\jdk-25.0.4\bin\` for local testing and benchmark execution.
 - **Last Updated:** 2026-07-24
 
 ## 2. Key Decisions Made
@@ -96,12 +98,16 @@ resume_ranker/
 │   │   ├── ranking/
 │   │   │   ├── bm25_scorer.py                   # [Current] (V2: fixed IDF adaptation)
 │   │   │   ├── tfidf_scorer.py                  # [Current]
-│   │   │   ├── scorer.py                        # [Current] (V2: split orchestrator)
-│   │   │   ├── experience_scorer.py             # [V2] Split from scorer.py
-│   │   │   ├── education_scorer.py              # [V2] Split from scorer.py
+│   │   ├── scoring/                             # [V2] Extracted from scorer.py
+│   │   │   ├── domain.py                        # [V2] Immutable scoring types
+│   │   │   ├── scoring_service.py               # [V2] Orchestrator
+│   │   │   ├── extraction_adapter.py            # [V2] Phase 2 -> Phase 4 bridge
+│   │   │   ├── skill_scorer.py                  # [V2] BM25SkillScorer
+│   │   │   ├── experience_scorer.py             # [V2] ExperienceScorer
+│   │   │   ├── education_scorer.py              # [V2] EducationScorer
 │   │   │   ├── embedding_tiebreaker.py          # [V2] Conditional embeddings
-│   │   │   ├── knockout_evaluator.py            # [V2]
-│   │   │   └── flag_detector.py                 # [V2]
+│   │   │   ├── knockout_evaluator.py            # [V2] KnockoutEvaluator
+│   │   │   └── flag_detector.py                 # [V2] FlagDetector
 │   │   ├── ats/                                 # [V2 New] Standalone ATS logic
 │   │   │   ├── ats_scoring_service.py           # [V2] No LLM
 │   │   │   └── evaluators/

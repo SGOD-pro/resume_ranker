@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # ── S3 ────────────────────────────────────────────────────────────────
     s3_bucket_name: str = "resume-ranker-dev-storage"
 
+    # ── DynamoDB ──────────────────────────────────────────────────────────
+    dynamodb_table_name: str = "ResumePlatform"
+
     # ── App ───────────────────────────────────────────────────────────────
     environment: str = "development"
     log_level: str = "DEBUG"

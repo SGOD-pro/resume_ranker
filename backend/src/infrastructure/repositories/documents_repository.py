@@ -6,10 +6,9 @@ Uses optimistic locking via version + ConditionExpression.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
 
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key, Attr  # type: ignore
 
 from src.infrastructure.models.document import DocumentItem, DocumentStatus
 from src.infrastructure.repositories.base import _get_table
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class DocumentsRepository:
@@ -40,7 +39,7 @@ class DocumentsRepository:
         logger.info("Created document: %s for job: %s", doc.document_id, doc.job_id)
         return doc
 
-    def get(self, job_id: str, document_id: str) -> Optional[DocumentItem]:
+    def get(self, job_id: str, document_id: str) -> DocumentItem | None:
         """Get a Document by job_id + document_id. Returns None if not found."""
         response = self._table.get_item(
             Key={"PK": f"JOB#{job_id}", "SK": f"DOC#{document_id}"},
@@ -50,7 +49,7 @@ class DocumentsRepository:
             return None
         return DocumentItem.from_dynamodb_item(item)
 
-    def list_for_job(self, job_id: str) -> List[DocumentItem]:
+    def list_for_job(self, job_id: str) -> list[DocumentItem]:
         """List all Documents for a job.
 
         Uses Query with SK begins_with "DOC#" to get only document entities.
@@ -128,7 +127,31 @@ class DocumentsRepository:
         )
         return DocumentItem.from_dynamodb_item(response["Attributes"])
 
-    def find_by_hash(self, job_id: str, content_hash: str) -> Optional[DocumentItem]:
+    def update_nova_fields_used(
+        self,
+        job_id: str,
+        document_id: str,
+        nova_fields_used: int,
+        expected_version: int,
+    ) -> DocumentItem:
+        """Update the nova_fields_used metric after Phase 3 fallback."""
+        response = self._table.update_item(
+            Key={"PK": f"JOB#{job_id}", "SK": f"DOC#{document_id}"},
+            UpdateExpression="SET nova_fields_used = :fields, #v = #v + :one, updated_at = :now",
+            ConditionExpression="#v = :expected_version",
+            ExpressionAttributeNames={"#v": "version"},
+            ExpressionAttributeValues={
+                ":fields": nova_fields_used,
+                ":one": 1,
+                ":now": _utcnow_iso(),
+                ":expected_version": expected_version,
+            },
+            ReturnValues="ALL_NEW",
+        )
+        logger.info("Updated doc %s nova_fields_used → %d", document_id, nova_fields_used)
+        return DocumentItem.from_dynamodb_item(response["Attributes"])
+
+    def find_by_hash(self, job_id: str, content_hash: str) -> DocumentItem | None:
         """Find a document by SHA-256 content hash within a job.
 
         Used for deduplication — prevents uploading the same PDF twice.

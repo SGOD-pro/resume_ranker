@@ -8,8 +8,8 @@ Usage:
     python -m src.infrastructure.scripts.create_tables
 """
 
-import sys
 import logging
+import sys
 from pathlib import Path
 
 # Ensure project root is on sys.path

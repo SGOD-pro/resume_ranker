@@ -8,8 +8,8 @@ Called on FastAPI startup and exposed via /health endpoint.
 import logging
 
 import boto3
-import redis
 import psycopg
+import redis
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
 from src.config.aws import get_boto3_kwargs, get_settings

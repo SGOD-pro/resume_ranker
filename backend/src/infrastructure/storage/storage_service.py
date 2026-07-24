@@ -9,9 +9,9 @@ Bucket name and endpoint are read from AWSSettings.
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any
 
-import boto3
+import boto3  # type: ignore
 
 from src.config.aws import get_boto3_kwargs, get_settings
 
@@ -66,7 +66,7 @@ class StorageService:
         response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
         data = response["Body"].read()
         logger.info("Downloaded resume: s3://%s/%s (%d bytes)", self._bucket, s3_key, len(data))
-        return data
+        return bytes(data)
 
     # ── Extraction JSON ───────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ class StorageService:
         self,
         job_id: str,
         document_id: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> str:
         """Upload extraction result JSON to S3.
 
@@ -97,7 +97,7 @@ class StorageService:
         logger.info("Uploaded extraction: s3://%s/%s", self._bucket, s3_key)
         return s3_key
 
-    def get_extracted_json(self, job_id: str, document_id: str) -> Dict[str, Any]:
+    def get_extracted_json(self, job_id: str, document_id: str) -> dict[str, Any]:
         """Download and parse extraction result JSON from S3.
 
         Returns:
@@ -107,7 +107,7 @@ class StorageService:
         response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
         body = response["Body"].read().decode("utf-8")
         logger.info("Downloaded extraction: s3://%s/%s", self._bucket, s3_key)
-        return json.loads(body)
+        return dict(json.loads(body))
 
     # ── Ranking JSON ──────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ class StorageService:
         logger.info("Uploaded ranking: s3://%s/%s", self._bucket, s3_key)
         return s3_key
 
-    def get_ranking(self, job_id: str, scoring_id: str) -> Dict[str, Any]:
+    def get_ranking(self, job_id: str, scoring_id: str) -> dict[str, Any]:
         """Download and parse ranking results JSON from S3.
 
         Returns:
@@ -148,4 +148,4 @@ class StorageService:
         response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
         body = response["Body"].read().decode("utf-8")
         logger.info("Downloaded ranking: s3://%s/%s", self._bucket, s3_key)
-        return json.loads(body)
+        return dict(json.loads(body))

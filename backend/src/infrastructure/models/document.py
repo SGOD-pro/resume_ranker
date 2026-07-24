@@ -7,9 +7,9 @@ Stores uploaded resume metadata, S3 keys, and extraction state.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,7 @@ class DocumentStatus(str, Enum):
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _new_uuid() -> str:
@@ -45,13 +45,14 @@ class DocumentItem(BaseModel):
 
     # ── S3 Keys ───────────────────────────────────────────────────────────
     s3_pdf_key: str = ""                            # jobs/{job_id}/resumes/{doc_id}.pdf
-    s3_extracted_key: Optional[str] = None          # jobs/{job_id}/extracted/{doc_id}.json
+    s3_extracted_key: str | None = None          # jobs/{job_id}/extracted/{doc_id}.json
 
     # ── Extraction Results ────────────────────────────────────────────────
-    extraction_quality: Optional[float] = None      # 0.0–1.0
-    page_count: Optional[int] = None
-    candidate_name: Optional[str] = None            # Extracted name
-    parser_version: Optional[str] = None            # Extraction pipeline version
+    extraction_quality: float | None = None      # 0.0–1.0
+    page_count: int | None = None
+    candidate_name: str | None = None            # Extracted name
+    parser_version: str | None = None            # Extraction pipeline version
+    nova_fields_used: int = 0                       # Metric for Phase 3
     pipeline_version: str = "v3"
 
     # ── State ─────────────────────────────────────────────────────────────
@@ -72,9 +73,9 @@ class DocumentItem(BaseModel):
     def sk(self) -> str:
         return f"DOC#{self.document_id}"
 
-    def to_dynamodb_item(self) -> Dict[str, Any]:
+    def to_dynamodb_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB-compatible dict."""
-        item: Dict[str, Any] = {
+        item: dict[str, Any] = {
             "PK": self.pk,
             "SK": self.sk,
             "entity_type": self.entity_type,
@@ -101,10 +102,11 @@ class DocumentItem(BaseModel):
             item["candidate_name"] = self.candidate_name
         if self.parser_version is not None:
             item["parser_version"] = self.parser_version
+        item["nova_fields_used"] = self.nova_fields_used
         return item
 
     @classmethod
-    def from_dynamodb_item(cls, item: Dict[str, Any]) -> "DocumentItem":
+    def from_dynamodb_item(cls, item: dict[str, Any]) -> "DocumentItem":
         """Deserialize from a DynamoDB item dict."""
         eq = item.get("extraction_quality")
         return cls(
@@ -120,6 +122,7 @@ class DocumentItem(BaseModel):
             page_count=int(item["page_count"]) if item.get("page_count") is not None else None,
             candidate_name=item.get("candidate_name"),
             parser_version=item.get("parser_version"),
+            nova_fields_used=int(item.get("nova_fields_used", 0)),
             pipeline_version=item.get("pipeline_version", "v3"),
             status=DocumentStatus(item.get("status", "uploaded")),
             version=int(item.get("version", 1)),

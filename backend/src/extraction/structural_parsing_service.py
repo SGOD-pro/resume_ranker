@@ -153,7 +153,7 @@ class StructuralParsingService:
         # Late import — keeps the import strictly inside this class
         # so the CI import-restriction check (rules.md §8) passes.
         try:
-            from opendataloader_pdf import convert as odl_convert  # type: ignore  # noqa: PLC0415
+            from opendataloader_pdf import convert as odl_convert  # type: ignore[import-not-found]  # noqa: PLC0415
         except ImportError as exc:
             raise StructuralParseError(
                 document_id=content_hash[:12],

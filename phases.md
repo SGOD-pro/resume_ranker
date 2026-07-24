@@ -105,33 +105,63 @@
 
 ---
 
-## Phase 5: ATS Engine (Days 25–28)
+## Phase 4.5: Architecture Refactor & Latency Optimization (Days 24.5–26)
+
+*Added to resolve V2 latency regression (949.5ms) and decouple heavy parsing from evaluation.*
 
 ### Deliverables
-- `AtsScoringService` (standalone, zero Job/Scoring context dependencies)
-- 5 Signal Evaluators: `TwoColumnLayoutEvaluator`, `HiddenTextEvaluator`, `TableAsLayoutEvaluator`, `ParseabilityEvaluator`, `ContactPresenceEvaluator`
-- `AtsResult` model with detailed warning flags and actionable fix suggestions
-- Standalone `/api/v2/ats-check` endpoint (unauthenticated, IP-rate-limited, zero DB persistence)
-- 50 hand-labeled resumes with human ATS baseline scores
+- **Strict Decoupling of Ingestion vs. Evaluation:** Remove any raw PDF parsing, JVM instantiation, or OpenDataLoader calls from the synchronous evaluation paths (JD Scoring and ATS).
+- **Layout Pre-Computation:** During Phase 1/2 ingestion, calculate all geometric primitives (bounding box overlaps, column boundaries, font stats, reading order gaps) and persist them as a `LayoutMetadata` JSONB object inside the `ExtractionResult`.
+- **Evaluation DTO Enforcement:** Update the `ScoringService` and `AtsScoringService` interfaces to strictly accept `resume_id` or `ExtractionResult`. Passing a raw PDF file path to an evaluator becomes a `ValueError`.
+- **Mock Evaluation Benchmark:** Create a test script that loads 100 `ExtractionResult` objects from the database and runs them through a dummy scoring loop.
 
 ### Verification Gate
-- ATS scores within $\pm 10$ points of human labels on 50-resume sample.
-- Identical input yields identical output across 100 iterations (100% determinism).
-- `/api/v2/ats-check` endpoint returns in $< 5\text{ seconds}$.
-- ATS score is visible in recruiter workspace alongside JD score.
+- **Latency Target Met:** Fetching an `ExtractionResult` from the DB and running the extraction evaluation loop executes in $< 50\text{ms}$ p95 (down from 949.5ms).
+- **Zero JVM in Hot Path:** Application logs confirm zero `opendataloader-pdf` JVM initializations during synchronous candidate scoring or ATS checks.
+- **Data Completeness:** 100% of resumes ingested after the refactor contain populated `LayoutMetadata`.
 
 > [!CAUTION]
-> **Prerequisite:** Cannot proceed to Phase 6 until ATS engine is deterministic and accurate.
+> **Prerequisite:** Cannot proceed to Phase 5 until the evaluation hot path is strictly bound to pre-computed DTOs and latency is $< 50\text{ms}$.
 
 ---
 
-## Phase 6: API & WebSocket Layer (Days 29–33)
+## Phase 5: ATS Engine (Days 27–32)
+
+*Redesigned to implement the advanced deterministic pipeline based on pre-computed `ExtractionResult` and `LayoutMetadata`.*
+
+### Deliverables
+- `AtsScoringService` Orchestrator: Standalone service, zero Job/Scoring context dependencies. Consumes `ExtractionResult` + `LayoutMetadata`.
+- Advanced Evaluators (Deterministic):
+  - `LayoutStabilityEvaluator`: Checks for overlapping text bounding boxes and visual noise.
+  - `SectionHierarchyEvaluator`: Verifies heading font sizes/weights differ from body text.
+  - `ReadingOrderEvaluator`: Checks for contiguous reading orders within visual blocks.
+  - `MetricCoverageEvaluator`: Regex for quantifiable metrics (`[$%\d]+`) bounded by sentence structure within Experience blocks.
+  - `ChronologyConsistencyEvaluator`: Parses dates via `dateutil`, checks for backwards or overlapping timelines.
+  - `ContactPresenceEvaluator`: (Retained) Knockout check for critical contact info.
+- `AtsResult` Model: Outputs include category scores, knockout flags, and `bounding_boxes` for frontend PDF highlighting.
+- Standalone API: `/api/v2/ats-check` endpoint (unauthenticated, IP-rate-limited, zero DB persistence if run standalone; DB-backed if run in recruiter pipeline).
+
+### Verification Gate
+- ATS evaluation execution time is $< 100\text{ms}$ per resume (excluding network I/O).
+- ATS scores within $\pm 10$ points of human labels on the 50-resume sample.
+- Identical input yields identical output across 100 iterations (100% determinism).
+- Zero False Positives created by layout overlaps (verified by `LayoutStabilityEvaluator` intersection logic).
+- `/api/v2/ats-check` endpoint returns in $< 1\text{ second}$ (down from previous 5s target, due to Phase 4.5 refactor).
+
+> [!CAUTION]
+> **Prerequisite:** Cannot proceed to Phase 6 until ATS engine is deterministic, highlights issues via bounding boxes, and operates at peak latency.
+
+---
+
+## Phase 6: API & WebSocket Layer (Days 33–37)
+
+*Unchanged, except API responses must now include `bounding_boxes` array for ATS issues to support frontend highlighting.*
 
 ### Deliverables
 - `/api/v2/jobs` CRUD REST endpoints
 - `/api/v2/jobs/{id}/resumes` upload endpoint (presigned S3 URLs)
 - `/api/v2/jobs/{id}/candidates` list endpoint with filtering and cursor pagination
-- `/api/v2/jobs/{id}/candidates/{id}` candidate detail endpoint
+- `/api/v2/jobs/{id}/candidates/{id}` candidate detail endpoint (includes `bounding_boxes` array for ATS issues)
 - `/api/v2/jobs/{id}/candidates/export` CSV export endpoint
 - WebSocket endpoint `/ws/jobs/{job_id}` supporting `candidate_ready`, `candidate_partial`, `candidate_failed`, and `processing_complete`
 - JWT authentication middleware
@@ -147,10 +177,11 @@
 
 ---
 
-## Phase 7: Frontend (Days 34–40)
+## Phase 7: Frontend (Days 38–44)
 
 ### Deliverables
 - Three-panel recruiter dashboard (Job Setup | Candidate List | Candidate Detail)
+- PDF Viewer Integration: Render resume PDFs and overlay Red (critical), Yellow (warning), and Blue (structural) bounding boxes based on `AtsResult` issues
 - Scoring weight sliders with Zustand derived selector for instant client-side recomputation
 - Inline ATS score display alongside composite JD score
 - Standalone ATS checker view (`/ats-checker`)
@@ -159,6 +190,7 @@
 
 ### Verification Gate
 - Weight recomputation executes in $< 200\text{ms}$ for 100 candidates.
+- PDF highlighting renders accurately over the correct text elements on 20 test resumes.
 - Real-time candidate list updates stream seamlessly via WebSockets.
 - ATS checker page works unauthenticated for public users.
 - All API error states are handled gracefully in UI notifications.
@@ -168,10 +200,10 @@
 
 ---
 
-## Phase 8: Production Hardening (Days 41–45)
+## Phase 8: Production Hardening (Days 45–49)
 
 ### Deliverables
-- CloudWatch metric alarms: Nova fallback rate `> 20%`, ATS latency P95 `> 5s`, queue depth `> 50`
+- CloudWatch metric alarms: Nova fallback rate `> 20%`, ATS latency P95 `> 500ms` (lowered from 5s), queue depth `> 50`
 - PII redaction verification across all structured application logs
 - Upload file validation using magic-byte headers
 - Redis token-bucket rate limiting on `/api/v2/ats-check`

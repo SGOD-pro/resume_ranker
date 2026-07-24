@@ -17,7 +17,7 @@ import json
 import math
 import os
 import re
-import resource
+# import resource
 import sys
 import time
 from collections import Counter, defaultdict
@@ -466,7 +466,7 @@ def extract_all_batches(pipe, classifier, pdfs):
 
         done = end_i
         pct = done / total * 100
-        mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        mem_mb = 0
         print(f"    Batch {batch_idx+1}/{n_batches}: {done}/{total} ({pct:.0f}%) | mem={mem_mb:.0f}MB")
         sys.stdout.flush()
         gc.collect()
@@ -970,7 +970,7 @@ def phase7_performance(pipe, scorer, pdfs, phase1_time, phase1_count):
             scorer.rank(jd, extracted)
         rank_time = time.time() - t0
 
-        mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        mem = 0
         results.append({
             "n_pdfs": n, "extract_s": round(ext_time, 2), "rank_s": round(rank_time, 3),
             "memory_mb": round(mem, 1), "failures": fails,
@@ -983,7 +983,7 @@ def phase7_performance(pipe, scorer, pdfs, phase1_time, phase1_count):
     if phase1_time > 0 and phase1_count >= 1000:
         results.append({
             "n_pdfs": phase1_count, "extract_s": round(phase1_time, 2), "rank_s": -1,
-            "memory_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+            "memory_mb": round(0, 1),
             "failures": 0, "per_pdf_ms": round(phase1_time / phase1_count * 1000, 1),
             "note": "Phase 1 batch extraction data",
         })

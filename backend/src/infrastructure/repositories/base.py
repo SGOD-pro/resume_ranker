@@ -5,17 +5,17 @@ All repositories call _get_table() to access the single ResumePlatform table.
 Endpoint URL is read from AWSSettings for floci/production switching.
 """
 
-from functools import lru_cache
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any
 
-import boto3
+import boto3  # type: ignore
 
 from src.config.aws import get_boto3_kwargs, get_settings
 
 
 @lru_cache(maxsize=1)
-def _get_dynamodb_resource():
+def _get_dynamodb_resource() -> Any:
     """Cached boto3 DynamoDB resource.
 
     For Lambda: cached across warm invocations (lru_cache lives in module scope).
@@ -24,7 +24,7 @@ def _get_dynamodb_resource():
     return boto3.resource("dynamodb", **get_boto3_kwargs())
 
 
-def _get_table():
+def _get_table() -> Any:
     """Get the single ResumePlatform DynamoDB Table resource."""
     settings = get_settings()
     return _get_dynamodb_resource().Table(settings.dynamodb_table_name)

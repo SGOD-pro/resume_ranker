@@ -9,11 +9,9 @@ top candidate for fast display.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
-from boto3.dynamodb.conditions import Key
-
+from boto3.dynamodb.conditions import Key, Attr  # type: ignore
 from src.infrastructure.models.scoring import ScoringItem, ScoringStatus
 from src.infrastructure.repositories.base import _get_table
 
@@ -21,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class ScoringRepository:
@@ -43,7 +41,7 @@ class ScoringRepository:
         logger.info("Created scoring: %s for job: %s", scoring.scoring_id, scoring.job_id)
         return scoring
 
-    def get(self, job_id: str, scoring_id: str) -> Optional[ScoringItem]:
+    def get(self, job_id: str, scoring_id: str) -> ScoringItem | None:
         """Get a Scoring Result by job_id + scoring_id. Returns None if not found."""
         response = self._table.get_item(
             Key={"PK": f"JOB#{job_id}", "SK": f"SCORING#{scoring_id}"},
@@ -53,7 +51,7 @@ class ScoringRepository:
             return None
         return ScoringItem.from_dynamodb_item(item)
 
-    def get_latest(self, job_id: str) -> Optional[ScoringItem]:
+    def get_latest(self, job_id: str) -> ScoringItem | None:
         """Get the most recent Scoring Result for a job.
 
         Queries SCORING# items in reverse SK order and takes the first.
@@ -75,7 +73,7 @@ class ScoringRepository:
         items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return ScoringItem.from_dynamodb_item(items[0])
 
-    def list_for_job(self, job_id: str) -> List[ScoringItem]:
+    def list_for_job(self, job_id: str) -> list[ScoringItem]:
         """List all Scoring Results for a job, sorted by created_at descending."""
         response = self._table.query(
             KeyConditionExpression=(

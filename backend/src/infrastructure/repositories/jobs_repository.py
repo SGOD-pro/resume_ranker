@@ -6,10 +6,10 @@ Uses optimistic locking via version + ConditionExpression.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr  # type: ignore
 
 from src.infrastructure.models.job import JobItem, JobStatus
 from src.infrastructure.repositories.base import _get_table, to_decimal
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class JobsRepository:
@@ -40,7 +40,7 @@ class JobsRepository:
         logger.info("Created job: %s", job.job_id)
         return job
 
-    def get(self, job_id: str) -> Optional[JobItem]:
+    def get(self, job_id: str) -> JobItem | None:
         """Get a Job by ID. Returns None if not found."""
         # Use to_decimal when querying if needed (not needed for simple string keys)
         response = self._table.get_item(
@@ -54,7 +54,7 @@ class JobsRepository:
     def update(
         self,
         job_id: str,
-        updates: Dict[str, Any],
+        updates: dict[str, Any],
         expected_version: int,
     ) -> JobItem:
         """Update Job attributes with optimistic locking.
@@ -72,8 +72,8 @@ class JobsRepository:
         """
         # Build SET expression dynamically from updates dict
         set_parts = ["#v = #v + :one", "updated_at = :now"]
-        expr_names: Dict[str, str] = {"#v": "version"}
-        expr_values: Dict[str, Any] = {
+        expr_names: dict[str, str] = {"#v": "version"}
+        expr_values: dict[str, Any] = {
             ":one": 1,
             ":now": _utcnow_iso(),
             ":expected_version": expected_version,

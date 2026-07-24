@@ -8,9 +8,9 @@ lives ONLY in S3. DynamoDB stores only metadata + denormalized top candidate.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,7 @@ class ScoringStatus(str, Enum):
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _new_uuid() -> str:
@@ -45,11 +45,11 @@ class ScoringItem(BaseModel):
     ranking_version: int = 1                        # Incremented per re-score
     scoring_algorithm_version: str = "bm25_v1"
     candidate_count: int = 0
-    weights_used: Dict[str, float] = Field(default_factory=dict)
+    weights_used: dict[str, float] = Field(default_factory=dict)
 
     # ── Denormalized Top Candidate (for fast display) ─────────────────────
-    top_candidate_name: Optional[str] = None
-    top_candidate_score: Optional[float] = None
+    top_candidate_name: str | None = None
+    top_candidate_score: float | None = None
 
     # ── State ─────────────────────────────────────────────────────────────
     status: ScoringStatus = ScoringStatus.SCORING
@@ -57,7 +57,7 @@ class ScoringItem(BaseModel):
     # ── Versioning ────────────────────────────────────────────────────────
     version: int = 1
     created_at: str = Field(default_factory=_utcnow_iso)
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
 
     # ── DynamoDB Keys ─────────────────────────────────────────────────────
 
@@ -69,11 +69,11 @@ class ScoringItem(BaseModel):
     def sk(self) -> str:
         return f"SCORING#{self.scoring_id}"
 
-    def to_dynamodb_item(self) -> Dict[str, Any]:
+    def to_dynamodb_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB-compatible dict."""
         from decimal import Decimal
         serialized_weights = {k: Decimal(str(v)) for k, v in self.weights_used.items()}
-        item: Dict[str, Any] = {
+        item: dict[str, Any] = {
             "PK": self.pk,
             "SK": self.sk,
             "entity_type": self.entity_type,
@@ -97,7 +97,7 @@ class ScoringItem(BaseModel):
         return item
 
     @classmethod
-    def from_dynamodb_item(cls, item: Dict[str, Any]) -> "ScoringItem":
+    def from_dynamodb_item(cls, item: dict[str, Any]) -> "ScoringItem":
         """Deserialize from a DynamoDB item dict."""
         tcs = item.get("top_candidate_score")
         raw_weights = item.get("weights_used", {})

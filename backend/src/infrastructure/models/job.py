@@ -7,9 +7,9 @@ Stores job description config, status lifecycle, and document count.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ class JobStatus(str, Enum):
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _new_uuid() -> str:
@@ -44,14 +44,14 @@ class JobItem(BaseModel):
     title: str = ""
     department: str = ""
     description: str = ""
-    must_have_skills: List[str] = Field(default_factory=list)
-    nice_to_have_skills: List[str] = Field(default_factory=list)
+    must_have_skills: list[str] = Field(default_factory=list)
+    nice_to_have_skills: list[str] = Field(default_factory=list)
     min_years: int = 0
     max_years: int = 99
     education_level: str = "any"
     education_field: str = ""
-    keywords: List[str] = Field(default_factory=list)
-    weights: Dict[str, float] = Field(default_factory=lambda: {
+    keywords: list[str] = Field(default_factory=list)
+    weights: dict[str, float] = Field(default_factory=lambda: {
         "skills": 0.40,
         "experience": 0.25,
         "keywords": 0.20,
@@ -77,7 +77,7 @@ class JobItem(BaseModel):
     def sk(self) -> str:
         return "METADATA"
 
-    def to_dynamodb_item(self) -> Dict[str, Any]:
+    def to_dynamodb_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB-compatible dict."""
         from decimal import Decimal
         # Convert float weights to Decimal
@@ -107,7 +107,7 @@ class JobItem(BaseModel):
         return item
 
     @classmethod
-    def from_dynamodb_item(cls, item: Dict[str, Any]) -> "JobItem":
+    def from_dynamodb_item(cls, item: dict[str, Any]) -> "JobItem":
         """Deserialize from a DynamoDB item dict."""
         raw_weights = item.get("weights", {})
         # Convert Decimal values back to float
