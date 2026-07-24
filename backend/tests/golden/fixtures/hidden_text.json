@@ -1,0 +1,114 @@
+{
+  "file name": "hidden_text.pdf",
+  "number of pages": 1,
+  "author": null,
+  "title": null,
+  "creation date": null,
+  "modification date": null,
+  "kids": [
+    {
+      "id": 1,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 1,
+      "content": "Alex Rivera",
+      "bounding box": [72.0, 750.0, 350.0, 770.0],
+      "font": "Helvetica-Bold",
+      "font size": 18.0,
+      "hidden text": false
+    },
+    {
+      "id": 2,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "alex.rivera@email.com | +1-555-987-6543",
+      "bounding box": [72.0, 730.0, 450.0, 748.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 3,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "python java javascript aws kubernetes docker devops microservices agile",
+      "bounding box": [0.0, 0.0, 1.0, 1.0],
+      "font": "Helvetica",
+      "font size": 1.0,
+      "hidden text": true
+    },
+    {
+      "id": 4,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Experience",
+      "bounding box": [72.0, 705.0, 200.0, 720.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 5,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "DevOps Engineer — CloudCo (Sep 2020 – Present)",
+      "bounding box": [72.0, 686.0, 480.0, 701.0],
+      "font": "Helvetica-Bold",
+      "font size": 10.5,
+      "hidden text": false
+    },
+    {
+      "id": 6,
+      "type": "list",
+      "page number": 1,
+      "content": "Managed Kubernetes clusters serving 200+ microservices\nAutomated CI/CD pipelines with GitHub Actions and ArgoCD",
+      "bounding box": [90.0, 655.0, 540.0, 684.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 7,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Skills",
+      "bounding box": [72.0, 630.0, 200.0, 645.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 8,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "Kubernetes, Docker, Terraform, AWS, GitHub Actions, ArgoCD, Prometheus, Grafana",
+      "bounding box": [72.0, 605.0, 540.0, 628.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 9,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Education",
+      "bounding box": [72.0, 580.0, 200.0, 595.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 10,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "B.S. Information Systems — Tech University (2016–2020)",
+      "bounding box": [72.0, 560.0, 470.0, 578.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    }
+  ]
+}

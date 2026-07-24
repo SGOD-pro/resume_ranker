@@ -13,3 +13,10 @@ backend/.aws-sam/
 
 # Vercel
 .vercel/
+
+# V2 additions
+.env
+__pycache__/
+*.pyc
+backend/.venv/
+backend/.pytest_cache/

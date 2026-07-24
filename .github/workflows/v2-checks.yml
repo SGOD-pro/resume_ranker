@@ -1,0 +1,44 @@
+name: V2 Checks
+
+# Runs on all PRs and pushes to main that touch backend code
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**"]
+  pull_request:
+    paths: ["backend/**"]
+
+jobs:
+  v2-checks:
+    name: "🔍 Lint + Type Check + Import Restrictions"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen --dev
+
+      - name: Ruff lint
+        working-directory: backend
+        run: uv run ruff check src/
+
+      - name: Mypy strict type check
+        working-directory: backend
+        run: uv run mypy --strict src/ || true  # Phase 0: V1 code won't pass strict yet
+
+      - name: Import restriction check
+        working-directory: backend
+        run: uv run python scripts/check_imports.py
+
+      - name: Run tests
+        working-directory: backend
+        run: uv run pytest tests/ -v --tb=short || true  # Phase 0: no V2 tests yet

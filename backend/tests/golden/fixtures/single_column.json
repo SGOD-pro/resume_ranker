@@ -1,0 +1,166 @@
+{
+  "file name": "single_column.pdf",
+  "number of pages": 2,
+  "author": null,
+  "title": null,
+  "creation date": null,
+  "modification date": null,
+  "kids": [
+    {
+      "id": 1,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 1,
+      "content": "John Smith",
+      "bounding box": [72.0, 720.0, 400.0, 745.0],
+      "font": "Helvetica-Bold",
+      "font size": 18.0,
+      "hidden text": false
+    },
+    {
+      "id": 2,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "john.smith@email.com | +1-555-123-4567 | linkedin.com/in/johnsmith",
+      "bounding box": [72.0, 700.0, 500.0, 718.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 3,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Summary",
+      "bounding box": [72.0, 675.0, 200.0, 690.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 4,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "Senior Software Engineer with 8 years of experience in backend systems and distributed computing.",
+      "bounding box": [72.0, 640.0, 540.0, 672.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 5,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Experience",
+      "bounding box": [72.0, 618.0, 200.0, 633.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 6,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "Senior Backend Engineer — Acme Corp (Jan 2020 – Present)",
+      "bounding box": [72.0, 600.0, 500.0, 615.0],
+      "font": "Helvetica-Bold",
+      "font size": 10.5,
+      "hidden text": false
+    },
+    {
+      "id": 7,
+      "type": "list",
+      "page number": 1,
+      "content": "Built microservices with Python and FastAPI handling 50k req/s\nDesigned Kafka event streaming pipeline reducing latency by 40%\nLed migration from monolith to Kubernetes-based architecture",
+      "bounding box": [90.0, 555.0, 540.0, 598.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 8,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "Backend Engineer — StartupXYZ (Jun 2016 – Dec 2019)",
+      "bounding box": [72.0, 535.0, 500.0, 550.0],
+      "font": "Helvetica-Bold",
+      "font size": 10.5,
+      "hidden text": false
+    },
+    {
+      "id": 9,
+      "type": "list",
+      "page number": 1,
+      "content": "Developed RESTful APIs in Django serving 10k daily active users\nOptimized PostgreSQL queries reducing p99 response time from 2s to 200ms",
+      "bounding box": [90.0, 505.0, 540.0, 533.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 10,
+      "type": "heading",
+      "page number": 1,
+      "heading level": 2,
+      "content": "Skills",
+      "bounding box": [72.0, 480.0, 200.0, 495.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 11,
+      "type": "paragraph",
+      "page number": 1,
+      "content": "Python, FastAPI, Django, PostgreSQL, Redis, Kafka, Docker, Kubernetes, AWS, Terraform",
+      "bounding box": [72.0, 455.0, 540.0, 478.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 12,
+      "type": "heading",
+      "page number": 2,
+      "heading level": 2,
+      "content": "Education",
+      "bounding box": [72.0, 720.0, 200.0, 735.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 13,
+      "type": "paragraph",
+      "page number": 2,
+      "content": "B.S. Computer Science — State University (2012–2016)",
+      "bounding box": [72.0, 700.0, 450.0, 718.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    },
+    {
+      "id": 14,
+      "type": "heading",
+      "page number": 2,
+      "heading level": 2,
+      "content": "Certifications",
+      "bounding box": [72.0, 678.0, 230.0, 693.0],
+      "font": "Helvetica-Bold",
+      "font size": 12.0,
+      "hidden text": false
+    },
+    {
+      "id": 15,
+      "type": "list",
+      "page number": 2,
+      "content": "AWS Certified Solutions Architect – Associate (2022)\nCertified Kubernetes Administrator (CKA) (2021)",
+      "bounding box": [90.0, 648.0, 540.0, 676.0],
+      "font": "Helvetica",
+      "font size": 10.0,
+      "hidden text": false
+    }
+  ]
+}

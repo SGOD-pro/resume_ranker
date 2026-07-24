@@ -1,8 +1,8 @@
 """
 app.py — FastAPI application factory
 =======================================
-Creates and configures the FastAPI application with CORS, route registration,
-and AWS connectivity checks on startup.
+Resume Ranker V2. Creates and configures the FastAPI application with CORS,
+route registration, and infrastructure connectivity checks on startup.
 """
 
 import logging
@@ -12,7 +12,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.health import router as health_router
-from src.api.routes.jobs import router as jobs_router
 from src.infrastructure.health import check_all
 from src.config.aws import get_settings
 
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle.
 
-    On startup: verify DynamoDB and S3 are reachable.
+    On startup: verify PostgreSQL, Redis, and S3 are reachable.
     Logs ✅ or ❌ for each service — does NOT block startup
     so the health endpoint remains available for debugging.
     """
@@ -34,36 +33,37 @@ async def lifespan(app: FastAPI):
         datefmt="%H:%M:%S",
     )
     logger.info("━" * 60)
-    logger.info("Resume Intelligence Platform — Starting up")
+    logger.info("Resume Ranker V2 — Starting up")
     logger.info("━" * 60)
 
     health = check_all()
     if all(health.values()):
-        logger.info("All AWS services connected ✅")
+        logger.info("All infrastructure services connected ✅")
     else:
         failed = [k for k, v in health.items() if not v]
-        logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
+        logger.warning("Some services unavailable: %s", ", ".join(failed))
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────
     logger.info("Shutting down...")
 
-# uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Resume Intelligence Platform",
-        version="0.1.0",
-        description="API for resume extraction, scoring, and ranking.",
+        title="Resume Ranker V2",
+        version="2.0.0-alpha",
+        description=(
+            "Hybrid extraction, deterministic ATS scoring, "
+            "explainable candidate ranking."
+        ),
         lifespan=lifespan,
     )
 
     settings = get_settings()
-    origins = []
+    origins: list[str] = []
 
-    # Only allow localhost origins in non-production environments to avoid security 
-    # vulnerabilities in production deployments.
     if settings.environment != "production":
         origins.extend([
             "http://localhost:5173",
@@ -71,15 +71,16 @@ def create_app() -> FastAPI:
         ])
 
     if settings.frontend_url:
-        # Support comma-separated strings of origins
-        frontend_origins = [org.strip() for org in settings.frontend_url.split(",") if org.strip()]
+        frontend_origins = [
+            org.strip() for org in settings.frontend_url.split(",") if org.strip()
+        ]
         for org in frontend_origins:
             if org not in origins:
                 origins.append(org)
 
     if settings.environment == "production" and not origins:
         logger.warning(
-            "CORS: Running in production environment but no frontend_url is configured. "
+            "CORS: Running in production but no frontend_url is configured. "
             "CORS requests will be rejected."
         )
 
@@ -91,9 +92,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register route modules
-    app.include_router(health_router)
-    app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
+    # All V2 routes under /api/v2/ per R-13
+    app.include_router(health_router, prefix="/api/v2", tags=["health"])
 
     return app
 
