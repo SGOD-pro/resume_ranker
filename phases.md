@@ -7,15 +7,17 @@
 ## Phase 0: Infrastructure Skeleton (Days 1–3)
 
 ### Deliverables
-- ECS Fargate task definition (API + Worker, unified container image)
+- AWS Lambda functions (API + Worker, container image via ECR)
+- Amazon SQS queues (`DocumentProcessingQueue`, `UnresolvedChunkQueue`)
 - RDS PostgreSQL database instance with `pgvector` extension enabled
-- ElastiCache Redis cluster
+- ElastiCache Redis cluster (for skill-graph cache and rate limiting)
+- DynamoDB table (`websocket_connections`) for API Gateway WebSocket state
 - S3 storage buckets (PDF uploads, ODL parse cache)
 - ECR container image repository
 - GitHub Actions CI pipeline (`lint`, `type-check`, `test`, `build`, `push`)
 
 ### Verification Gate
-- `docker-compose up` runs API + Worker + Postgres + Redis locally with zero errors.
+- `docker-compose up` runs API + Postgres + Redis + LocalStack (SQS/DynamoDB) locally with zero errors.
 - `curl localhost:8000/health` returns `200 OK` with all components healthy.
 - CI build pipeline completes successfully on a test PR.
 

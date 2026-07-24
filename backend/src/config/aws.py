@@ -52,15 +52,16 @@ def get_settings() -> Settings:
     """Singleton — parsed once, cached forever."""
     return Settings()
 
+from typing import Any
 
-def get_boto3_kwargs() -> dict:
+def get_boto3_kwargs() -> dict[str, Any]:
     """Build kwargs dict for boto3.client() / boto3.resource().
 
     When aws_endpoint_url is set (LocalStack), it's included.
     When empty/None (production), it's omitted → boto3 uses real AWS.
     """
     settings = get_settings()
-    kwargs: dict = {
+    kwargs: dict[str, Any] = {
         "region_name": settings.aws_default_region,
     }
 

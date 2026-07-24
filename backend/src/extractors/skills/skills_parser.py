@@ -30,7 +30,7 @@ def _load_skills_dict() -> List[str]:
 _SKILLS_LIST: List[str]   = _load_skills_dict()
 _SKILLS_SORTED            = sorted(_SKILLS_LIST, key=len, reverse=True)
 _SKILLS_LOWER: Set[str]   = {s.lower() for s in _SKILLS_LIST}
-_SKILLS_CANONICAL: dict   = {s.lower(): s for s in _SKILLS_LIST}
+_SKILLS_CANONICAL: Dict[str, str] = {s.lower(): s for s in _SKILLS_LIST}
 
 # ── Fuzzy matching index: group skills by word count for faster matching ──────
 _SKILLS_BY_WORDCOUNT: Dict[int, List[str]] = {}
@@ -60,7 +60,7 @@ _US_CITY_SET = {
 }
 
 
-def _build_pattern(skill: str) -> re.Pattern:
+def _build_pattern(skill: str) -> re.Pattern[str]:
     escaped = re.escape(skill)
     return re.compile(
         r'(?<![A-Za-z0-9\-_])' + escaped + r'(?![A-Za-z0-9\-_])',
@@ -227,7 +227,7 @@ class SkillsParser:
             threshold = 0.85  # stricter for short strings
 
         if best_ratio >= threshold and best_skill:
-            return _SKILLS_CANONICAL.get(best_skill.lower(), best_skill)
+            return str(_SKILLS_CANONICAL.get(best_skill.lower(), best_skill))
 
         return None
 

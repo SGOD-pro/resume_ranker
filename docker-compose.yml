@@ -1,5 +1,5 @@
 # Resume Ranker V2 — Local Development Stack
-# Matches production topology: API + Worker + Postgres + Redis
+# Matches production topology: API + Postgres + Redis + SQS (LocalStack)
 # Usage: docker-compose up -d
 
 services:
@@ -20,7 +20,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── Redis (Celery broker + batch buffer + skill-graph cache) ────────────
+  # ── Redis (Skill-graph cache + Rate limiting for /ats-check) ────────────
   redis:
     image: redis:7-alpine
     ports:
@@ -50,21 +50,17 @@ services:
       - ./backend/src:/app/src
     command: ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-  # ── Celery Worker (same image, different entrypoint) ────────────────────
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+  # ── LocalStack (AWS SQS + DynamoDB emulator) ────────────────────────────
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs,dynamodb,s3
+      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
-      - ./backend/src:/app/src
-    command: ["celery", "-A", "src.worker.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
 
 volumes:
   pgdata:

@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
-import boto3
+import boto3  # type: ignore
 
 from src.config.aws import get_boto3_kwargs, get_settings
 
@@ -36,14 +37,15 @@ class S3DocumentCache:
         self._client = boto3.client("s3", **get_boto3_kwargs())
         self._bucket = get_settings().s3_bucket_name
 
-    def get(self, content_hash: str) -> dict | None:
+    def get(self, content_hash: str) -> dict[str, Any] | None:
         """Return cached ODL JSON dict or None on cache miss."""
         key = self._json_key(content_hash)
         try:
             response = self._client.get_object(Bucket=self._bucket, Key=key)
             body = response["Body"].read().decode("utf-8")
             logger.debug("ODL cache hit: s3://%s/%s", self._bucket, key)
-            return json.loads(body)
+            data: dict[str, Any] = json.loads(body)
+            return data
         except self._client.exceptions.NoSuchKey:
             logger.debug("ODL cache miss: %s", content_hash[:12])
             return None
@@ -52,7 +54,7 @@ class S3DocumentCache:
             logger.warning("ODL cache get failed for %s: %s", content_hash[:12], exc)
             return None
 
-    def put(self, content_hash: str, odl_json: dict, markdown: str) -> str:
+    def put(self, content_hash: str, odl_json: dict[str, Any], markdown: str) -> str:
         """Persist ODL JSON (and markdown) to S3. Returns the JSON S3 key."""
         json_key = self._json_key(content_hash)
         md_key = self._md_key(content_hash)
@@ -81,7 +83,7 @@ class S3DocumentCache:
         key = self._md_key(content_hash)
         try:
             response = self._client.get_object(Bucket=self._bucket, Key=key)
-            return response["Body"].read().decode("utf-8")
+            return str(response["Body"].read().decode("utf-8"))
         except Exception:  # noqa: BLE001
             return ""
 
@@ -103,13 +105,13 @@ class InMemoryDocumentCache:
     """
 
     def __init__(self) -> None:
-        self._store: dict[str, dict] = {}
+        self._store: dict[str, dict[str, Any]] = {}
         self._md_store: dict[str, str] = {}
 
-    def get(self, content_hash: str) -> dict | None:
+    def get(self, content_hash: str) -> dict[str, Any] | None:
         return self._store.get(content_hash)
 
-    def put(self, content_hash: str, odl_json: dict, markdown: str) -> str:
+    def put(self, content_hash: str, odl_json: dict[str, Any], markdown: str) -> str:
         self._store[content_hash] = odl_json
         self._md_store[content_hash] = markdown
         return f"in-memory://{content_hash}"

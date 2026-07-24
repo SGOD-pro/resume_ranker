@@ -28,7 +28,7 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from src.extraction.domain import (
     StructuralParse,
@@ -54,11 +54,11 @@ class DocumentCache(Protocol):
     Implementations: S3DocumentCache (production), InMemoryDocumentCache (tests).
     """
 
-    def get(self, content_hash: str) -> dict | None:
+    def get(self, content_hash: str) -> dict[str, Any] | None:
         """Return the cached ODL JSON dict or None if not cached."""
         ...
 
-    def put(self, content_hash: str, odl_json: dict, markdown: str) -> str:
+    def put(self, content_hash: str, odl_json: dict[str, Any], markdown: str) -> str:
         """
         Persist the ODL JSON dict and return the storage key.
         markdown is stored alongside for convenience.
@@ -140,7 +140,7 @@ class StructuralParsingService:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _run_odl(self, pdf_bytes: bytes, content_hash: str) -> tuple[dict, str]:
+    def _run_odl(self, pdf_bytes: bytes, content_hash: str) -> tuple[dict[str, Any], str]:
         """
         Write PDF to disk, run ODL, read outputs, clean up.
         Returns (odl_json_dict, markdown_string).
@@ -153,7 +153,7 @@ class StructuralParsingService:
         # Late import — keeps the import strictly inside this class
         # so the CI import-restriction check (rules.md §8) passes.
         try:
-            from opendataloader_pdf import convert as odl_convert  # noqa: PLC0415
+            from opendataloader_pdf import convert as odl_convert  # type: ignore  # noqa: PLC0415
         except ImportError as exc:
             raise StructuralParseError(
                 document_id=content_hash[:12],
@@ -194,7 +194,7 @@ class StructuralParsingService:
         return odl_json, markdown
 
     @staticmethod
-    def _read_json(out_dir: Path, stem: str) -> dict:
+    def _read_json(out_dir: Path, stem: str) -> dict[str, Any]:
         """
         ODL writes {input_stem}.json to output_dir.
         """
@@ -211,7 +211,8 @@ class StructuralParsingService:
             json_path = candidates[0]
 
         try:
-            return json.loads(json_path.read_text(encoding="utf-8"))
+            data: dict[str, Any] = json.loads(json_path.read_text(encoding="utf-8"))
+            return data
         except json.JSONDecodeError as exc:
             raise StructuralParseError(
                 document_id=stem[:12],

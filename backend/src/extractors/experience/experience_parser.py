@@ -315,7 +315,7 @@ class ExperienceParser:
             r'(?P<start>20\d{2}|19\d{2})\s*[-–—]+\s*(?P<end>20\d{2}|19\d{2}|Present|Current)',
             re.I
         )
-        entries = []
+        entries: List[Dict[str, Any]] = []
         for dm in yr.finditer(text):
             before = text[max(0, dm.start()-200):dm.start()].strip()
             lines = [l.strip() for l in before.split('\n') if l.strip()]
@@ -345,7 +345,7 @@ class ExperienceParser:
 
     def _parse_since(self, text: str) -> List[Dict[str, Any]]:
         """Parse 'Since YYYY' / 'From YYYY' patterns as YYYY – Present."""
-        entries = []
+        entries: List[Dict[str, Any]] = []
         for dm in SINCE_RE.finditer(text):
             before = text[max(0, dm.start()-200):dm.start()].strip()
             lines = [l.strip() for l in before.split('\n') if l.strip()]

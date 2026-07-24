@@ -7,11 +7,18 @@
 ### Completed Phases
 * Phase 0: Infrastructure Skeleton — Complete. (Postgres + Redis + pgvector up, DynamoDB dead, V2 FastAPI app wired, Alembic migrations initialized).
 * Phase 1: Structural Parsing Layer — **Complete**. `StructuralParsingService` (ACL), `OdlElement`/`StructuralParse` dataclasses, S3+InMemory cache, golden fixtures (single_column, two_column, hidden_text), 41/41 tests passing.
+* Phase 2: Deterministic Extraction Engine — **Complete**. `DeterministicExtractionService`, V2 Parser Adapters. F1 evaluation script scores 100% deterministic extraction. 83/83 unit tests passing. `ruff` and `mypy` strict type checking verified with zero errors.
 
 ### Current Focus
-* **Phase 2: Deterministic Extraction Engine** — Next. Port V1 regex/dict parsers to consume `StructuralParse.markdown` / `StructuralParse.kids` instead of raw PyMuPDF geometry.
+* **Active Phase:** Phase 3: Extraction Fallback (Amazon Nova)
+* **Status:**
+    * Phase 0 (Infrastructure Skeleton): COMPLETE
+    * Phase 1 (Structural Parsing Layer): COMPLETE
+    * Phase 2 (Deterministic Extraction Engine): COMPLETE
+    * Phase 3 (Extraction Fallback): PENDING
+    * Phase 4 (Scoring Engine): PENDING
 
-- **Architecture Version:** Rev 2 (Hybrid Extraction)
+- **Architecture Version:** Rev 3 (Lambda + SQS)
 - **Last Updated:** 2026-07-24
 
 ## 2. Key Decisions Made
@@ -22,7 +29,7 @@
 | **Amazon Nova Micro/Lite for fallback** | 2025-01 | Cheapest structured extraction; tool-use constrained decoding | ADR-02 |
 | **ATS is 100% deterministic (no LLM)** | 2025-01 | LLMs can't reason about bbox coordinates | ADR-03 |
 | **Fixed reference-corpus BM25 IDF** | 2025-01 | Dynamic per-pool IDF is non-deterministic | ADR-04 |
-| **ECS Fargate (not Lambda)** | 2025-01 | ODL JVM cold start + Celery batching state | ADR-05 |
+| **AWS Lambda with SQS** | 2026-07 | SQS batch windows solve state; Provisioned Concurrency solves JVM cold starts | ADR-05 |
 | **Conditional semantic embeddings** | 2025-01 | 95% of resumes don't need it | ADR-06 |
 | **Composite score computed at read time** | 2025-01 | Weight changes must be instant | ADR-07 |
 
@@ -47,7 +54,7 @@
 | Dynamic IDF makes scores batch-dependent | Fixed reference-corpus IDF table |
 | 864-line `scorer.py` God-class | Split into 6 single-responsibility modules |
 | Dual-path arbitration ("run both, pick best") | Deleted. Single path. Root cause fixed. |
-| Lambda cold start with ML models | ECS Fargate, JVM-warm |
+| Lambda cold start with ML models | Lambda container image with Provisioned Concurrency |
 | Black-box composite scores | Component scores persisted with provenance |
 
 ## 5. Metrics to Watch

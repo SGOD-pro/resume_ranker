@@ -106,24 +106,29 @@ Pre-compute a global IDF lookup table from a 10,000+ resume reference corpus (`r
 
 ---
 
-## ADR-05: ECS Fargate Deployment (Not AWS Lambda)
+## ADR-05: AWS Lambda Deployment with SQS (Replacing ECS Fargate)
 
-* **Status:** `Accepted`
+* **Status:** `Accepted` (Supersedes previous ECS Fargate decision)
 
 ### Context
-`opendataloader-pdf` spawns a JVM process per conversion call. JVM cold starts take 1–3 seconds, and AWS Lambda cold starts add another 1–5 seconds. Combined cold-start latency of 2–8 seconds violates the P95 target (`< 15s`). Additionally, Nova fallback batch state accumulation does not persist across stateless Lambda invocations.
+Rev 2 initially proposed ECS Fargate due to two concerns:
+1. JVM cold starts for `opendataloader-pdf` (1–3s) plus Lambda cold starts (1–5s) violating P95 latency goals.
+2. Celery requiring a persistent worker process to maintain its batching-window state for Nova fallback accumulation.
+However, Rev 3 addresses these efficiently without leaving the Lambda ecosystem: SQS provides a native event-source mapping with `BatchSize` and `MaximumBatchingWindowInSeconds`, removing the need for a Celery-based Redis buffer entirely. Provisioned Concurrency for the Lambda container image keeps the JVM warm on a scheduled basis, matching business hours.
 
 ### Decision
-Deploy backend API and Worker services as **ECS Fargate** tasks. The worker container bundles JRE + `opendataloader-pdf` + Python to maintain a warm JVM. Batching state is persisted in Redis via Celery.
+Deploy the API and Worker as **AWS Lambda** functions using a container image. 
+* Use **Amazon SQS** with native batch windows to trigger the Worker Lambda.
+* Use **Provisioned Concurrency** (managed by Application Auto Scaling schedules) to neutralize JVM cold starts.
+* API runs via API Gateway HTTP API v2 (using Mangum), with WebSockets managed via a separate integration maintaining state in DynamoDB.
 
 ### Consequences
-* Zero cold-start latency for ODL structural parsing or Nova batching.
-* Predictable always-on container cost vs Lambda scale-to-zero model.
-* Container image size includes JRE (~200MB).
+* Batching is handled entirely by AWS infrastructure (SQS event mapping) rather than application code (Celery/Redis).
+* Provisioned concurrency incurs idle costs but is schedulable, offering significant savings during off-hours compared to always-on Fargate tasks.
+* Residual risk: Unscheduled off-hours bursts will experience the JVM cold start penalty.
 
 ### Alternatives Considered
-* **AWS Lambda with Provisioned Concurrency:** Rejected. Expensive for JVM containers and fails to solve Celery batch state persistence.
-* **AWS App Runner:** Rejected. Provides less granular control over JVM tuning and container startup parameters.
+* **ECS Fargate:** Rejected in Rev 3. Unnecessary overhead and always-on cost when SQS + Lambda Provisioned Concurrency handles the requirements natively and matches the existing V1 infrastructure model.
 
 ---
 

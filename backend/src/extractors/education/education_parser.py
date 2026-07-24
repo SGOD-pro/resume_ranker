@@ -370,7 +370,7 @@ class EducationParser:
         m = GRADE_RE.search(ctx)
         return m.group(1).strip() if m else None
 
-    def _dedup(self, entries: List[Dict]) -> List[Dict]:
+    def _dedup(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen = set()
         result = []
         for e in entries:

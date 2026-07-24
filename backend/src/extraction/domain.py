@@ -11,7 +11,7 @@ All mapping from those keys lives here or in structural_parsing_service.py.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 # ---------------------------------------------------------------------------
 # ODL element types recognised in the resume context
@@ -91,7 +91,7 @@ class OdlParseCache:
 # ODL JSON → OdlElement mapping helper
 # ---------------------------------------------------------------------------
 
-def _element_from_odl_dict(raw: dict) -> OdlElement:
+def _element_from_odl_dict(raw: dict[str, Any]) -> OdlElement:
     """
     Map one raw ODL JSON element dict → OdlElement.
 
@@ -118,7 +118,7 @@ def _element_from_odl_dict(raw: dict) -> OdlElement:
 
 
 def structural_parse_from_odl_json(
-    odl_json: dict,
+    odl_json: dict[str, Any],
     content_hash: str,
     parser_version: str,
     markdown: str = "",
@@ -129,7 +129,7 @@ def structural_parse_from_odl_json(
     Public so golden-file tests can call it directly without needing
     a live ODL process.
     """
-    raw_kids: list[dict] = odl_json.get("kids", [])
+    raw_kids: list[dict[str, Any]] = odl_json.get("kids", [])
     elements = tuple(_element_from_odl_dict(k) for k in raw_kids)
     page_count = int(odl_json.get("number of pages", 0))
     return StructuralParse(

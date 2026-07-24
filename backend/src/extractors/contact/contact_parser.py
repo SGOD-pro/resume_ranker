@@ -318,7 +318,7 @@ class ContactParser:
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
               sidebar_text: str = "", main_text: str = "",
-              hyperlinks: list = None) -> Dict[str, Any]:
+              hyperlinks: list[dict[str, Any]] | None = None) -> Dict[str, Any]:
         combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
         # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub
         if hyperlinks:
