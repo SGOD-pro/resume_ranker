@@ -1,4 +1,4 @@
-import type { BoundingBox } from '@/lib/api-v2';
+import type { BoundingBox } from '@/lib/api';
 
 interface AtsOverlayProps {
   boxes: BoundingBox[];

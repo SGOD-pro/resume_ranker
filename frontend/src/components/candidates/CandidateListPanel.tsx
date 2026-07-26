@@ -26,6 +26,7 @@ interface RawCandidate {
   experience_score?: number;
   education_score?: number;
   semantic_score?: number;
+  flags?: any[];
 }
 
 export function CandidateListPanel() {
@@ -49,12 +50,32 @@ export function CandidateListPanel() {
       const rc = c as RawCandidate;
       return {
         ...rc,
+        id: rc.id || rc.candidate_id || Math.random().toString(),
+        rank: 0,
         overallScore: computeComposite(rc),
         // mapping backend data to frontend expected properties if needed
         name: rc.name || rc.candidate_id || 'Unknown',
+        title: '',
+        location: '',
+        email: '',
+        phone: '',
+        pdfUrl: '',
+        totalYears: 0,
+        status: 'under-review',
+        note: '',
+        scoreBreakdown: {
+          skills: rc.skill_score || 0,
+          experience: rc.experience_score || 0,
+          keywords: rc.semantic_score || 0,
+          education: rc.education_score || 0,
+        },
+        experience: [],
+        education: [],
+        knockoutChecks: [],
         topSkills: rc.extraction?.explicit_skills?.map((s: { name: string }) => s.name) || [],
         skillMatch: rc.skillMatch || { matched: [], missing: [], extra: [] },
-        signal: rc.signal || 'processing'
+        signal: rc.signal || 'processing',
+        flags: rc.flags || [],
       } as unknown as Candidate;
     });
 

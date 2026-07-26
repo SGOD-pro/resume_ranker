@@ -45,7 +45,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 }
 
 export function MatchScoreSection({ candidate }: MatchScoreSectionProps) {
-  const signal = signalLabels[candidate.signal];
+  const signal = signalLabels[candidate.signal] || signalLabels.processing;
 
   const getOverallWidthClass = (v: number): string => {
     if (v >= 95) return 'w-[95%]';

@@ -1,7 +1,7 @@
 /**
- * api-v2.test.ts
- * ==============
- * Tests the raw API fetch functions in src/lib/api-v2.ts.
+ * api.test.ts
+ * ===========
+ * Tests the raw API fetch functions in src/lib/api.ts.
  *
  * Strategy:
  *  - MSW intercepts the `fetch()` calls at the network boundary
@@ -13,10 +13,10 @@ import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from './mocks/server';
 import {
-  getCandidatesV2,
-  getCandidateDetailV2,
+  getCandidates,
+  getCandidateDetail,
   runAtsCheck,
-} from '@/lib/api-v2';
+} from '@/lib/api';
 import { ApiError } from '@/lib/api';
 import {
   MOCK_JOB_ID,
@@ -28,11 +28,11 @@ import {
   MOCK_ATS_ISSUE,
 } from './mocks/handlers';
 
-// ── getCandidatesV2 ──────────────────────────────────────────────────────────
+// ── getCandidates ────────────────────────────────────────────────────────────
 
-describe('getCandidatesV2()', () => {
-  it('returns a valid V2CandidateListResponse for a known job ID', async () => {
-    const result = await getCandidatesV2(MOCK_JOB_ID);
+describe('getCandidates()', () => {
+  it('returns a valid CandidateListResponse for a known job ID', async () => {
+    const result = await getCandidates(MOCK_JOB_ID);
 
     // Shape: top-level fields
     expect(result.job_id).toBe(MOCK_JOB_ID);
@@ -49,7 +49,7 @@ describe('getCandidatesV2()', () => {
   });
 
   it('each candidate has the required score fields', async () => {
-    const result = await getCandidatesV2(MOCK_JOB_ID);
+    const result = await getCandidates(MOCK_JOB_ID);
 
     for (const candidate of result.candidates) {
       expect(candidate).toHaveProperty('id');
@@ -65,7 +65,7 @@ describe('getCandidatesV2()', () => {
   it('throws ApiError with status 404 for unknown job ID', async () => {
     let error: unknown;
     try {
-      await getCandidatesV2('non-existent-job');
+      await getCandidates('non-existent-job');
     } catch (e) {
       error = e;
     }
@@ -84,7 +84,7 @@ describe('getCandidatesV2()', () => {
       }),
     );
 
-    await getCandidatesV2(MOCK_JOB_ID, 10, 5);
+    await getCandidates(MOCK_JOB_ID, 10, 5);
 
     const url = new URL(capturedUrl);
     expect(url.searchParams.get('limit')).toBe('10');
@@ -92,11 +92,11 @@ describe('getCandidatesV2()', () => {
   });
 });
 
-// ── getCandidateDetailV2 ─────────────────────────────────────────────────────
+// ── getCandidateDetail ───────────────────────────────────────────────────────
 
-describe('getCandidateDetailV2()', () => {
-  it('returns a valid V2CandidateDetailResponse for known IDs', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+describe('getCandidateDetail()', () => {
+  it('returns a valid CandidateDetailResponse for known IDs', async () => {
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
 
     // Top-level identity fields
     expect(result.id).toBe(MOCK_CANDIDATE_ID);
@@ -112,7 +112,7 @@ describe('getCandidateDetailV2()', () => {
   });
 
   it('ats_result has correct shape: score, signals, flags, bounding_boxes', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
     const ats = result.ats_result;
 
     // ats_score is a number in [0, 100]
@@ -150,17 +150,17 @@ describe('getCandidateDetailV2()', () => {
   });
 
   it('bounding_box fixture matches expected coordinates', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
     expect(result.ats_result.bounding_boxes[0]).toStrictEqual(MOCK_BOUNDING_BOX);
   });
 
   it('ats_issue fixture matches expected fields', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
     expect(result.ats_result.flags[0]).toStrictEqual(MOCK_ATS_ISSUE);
   });
 
   it('score fields are all valid numbers', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
 
     expect(typeof result.score).toBe('number');
     expect(typeof result.skill_score).toBe('number');
@@ -170,7 +170,7 @@ describe('getCandidateDetailV2()', () => {
   });
 
   it('extraction.explicit_skills have name, provenance, confidence', async () => {
-    const result = await getCandidateDetailV2(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
+    const result = await getCandidateDetail(MOCK_JOB_ID, MOCK_CANDIDATE_ID);
 
     expect(Array.isArray(result.extraction?.explicit_skills)).toBe(true);
     const skill = result.extraction!.explicit_skills![0];
@@ -184,7 +184,7 @@ describe('getCandidateDetailV2()', () => {
   it('throws ApiError with status 404 for unknown candidate ID', async () => {
     let error: unknown;
     try {
-      await getCandidateDetailV2(MOCK_JOB_ID, 'unknown-candidate');
+      await getCandidateDetail(MOCK_JOB_ID, 'unknown-candidate');
     } catch (e) {
       error = e;
     }

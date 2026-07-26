@@ -1,10 +1,10 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getCandidatesV2, getCandidateDetailV2, runAtsCheck } from '@/lib/api-v2';
+import { getCandidates, getCandidateDetail, runAtsCheck } from '@/lib/api';
 
 export function useJobCandidates(jobId: string | null) {
   return useQuery({
     queryKey: ['candidates', jobId],
-    queryFn: () => getCandidatesV2(jobId!),
+    queryFn: () => getCandidates(jobId!),
     enabled: !!jobId,
   });
 }
@@ -12,7 +12,7 @@ export function useJobCandidates(jobId: string | null) {
 export function useCandidateDetail(jobId: string | null, candidateId: string | null) {
   return useQuery({
     queryKey: ['candidate', jobId, candidateId],
-    queryFn: () => getCandidateDetailV2(jobId!, candidateId!),
+    queryFn: () => getCandidateDetail(jobId!, candidateId!),
     enabled: !!jobId && !!candidateId,
   });
 }

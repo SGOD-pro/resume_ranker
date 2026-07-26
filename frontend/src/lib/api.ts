@@ -1,11 +1,25 @@
 /**
  * api.ts — Centralized API service layer
  * =========================================
- * EVERY backend call goes through this module.
- * No raw fetch() calls in components — ever.
+ * Single source of truth for all backend calls.
+ * All routes use /api/v2. No raw fetch() in components.
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+// ── Error class ─────────────────────────────────────────────────────────────
+
+export class ApiError extends Error {
+  status: number;
+  body?: unknown;
+
+  constructor(message: string, status: number, body?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
 
 // ── Internal fetch wrapper ──────────────────────────────────────────────────
 
@@ -14,26 +28,7 @@ interface ApiFetchOptions extends RequestInit {
   timeoutMs?: number;
 }
 
-export class ApiError extends Error {
-  status: number;
-  body?: unknown;
-
-  constructor(
-    message: string,
-    status: number,
-    body?: unknown,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.body = body;
-  }
-}
-
-async function apiFetch<T>(
-  path: string,
-  options: ApiFetchOptions = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { timeoutMs = 30_000, ...fetchOpts } = options;
 
   const controller = new AbortController();
@@ -44,7 +39,8 @@ async function apiFetch<T>(
       ...fetchOpts,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
+        // Don't set Content-Type for FormData — browser sets it with boundary
+        ...(fetchOpts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
         ...fetchOpts.headers,
       },
     });
@@ -56,11 +52,7 @@ async function apiFetch<T>(
       } catch {
         body = await res.text();
       }
-      throw new ApiError(
-        `API ${res.status}: ${path}`,
-        res.status,
-        body,
-      );
+      throw new ApiError(`API ${res.status}: ${path}`, res.status, body);
     }
 
     return (await res.json()) as T;
@@ -69,14 +61,8 @@ async function apiFetch<T>(
   }
 }
 
-// ── Public API functions ────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 
-/** Health check — 3s timeout, used by BackendHealthGate */
-export async function checkHealth(): Promise<{ status: string }> {
-  return apiFetch('/health', { timeoutMs: 3_000 });
-}
-
-/** Create a new screening job */
 export interface CreateJobPayload {
   title: string;
   department?: string;
@@ -96,10 +82,93 @@ export interface CreateJobResponse {
   status: string;
 }
 
-export async function createJob(
-  payload: CreateJobPayload,
-): Promise<CreateJobResponse> {
-  return apiFetch('/jobs', {
+export interface UploadResult {
+  job_id: string;
+  accepted: string[];
+  rejected: { filename: string; reason: string }[];
+  total_accepted: number;
+}
+
+export interface ExtractionEvent {
+  type: string;
+  current?: number;
+  total?: number;
+  filename?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface ScorePayload {
+  weights: Record<string, number>;
+}
+
+export interface ScoreResponse {
+  job_id: string;
+  status: string;
+  total_candidates: number;
+  weights_applied: Record<string, number>;
+  candidates: Record<string, unknown>[];
+}
+
+export interface AtsIssue {
+  severity: 'moderate' | 'severe';
+  message: string;
+  fix_suggestion?: string;
+  issue: string;
+}
+
+export interface BoundingBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  page: number;
+  issue: string;
+}
+
+export interface AtsResult {
+  ats_score: number;
+  signals: Record<string, string>;
+  flags: AtsIssue[];
+  bounding_boxes: BoundingBox[];
+}
+
+export interface CandidateListResponse {
+  job_id: string;
+  total_candidates: number;
+  limit: number;
+  cursor: number | null;
+  candidates: Record<string, unknown>[];
+}
+
+export interface CandidateDetailResponse {
+  id: string;
+  job_id: string;
+  status: string;
+  s3_pdf_key: string;
+  url: string;
+  ats_result: AtsResult;
+  extraction?: {
+    explicit_skills?: { name: string; provenance: string; confidence: number }[];
+  };
+  score: number;
+  skill_score: number;
+  experience_score: number;
+  education_score: number;
+  semantic_score: number;
+  [key: string]: unknown;
+}
+
+// ── Endpoints ───────────────────────────────────────────────────────────────
+
+/** Health check */
+export async function checkHealth(): Promise<{ status: string }> {
+  return apiFetch('/api/v2/health', { timeoutMs: 5_000 });
+}
+
+/** Create a new screening job */
+export async function createJob(payload: CreateJobPayload): Promise<CreateJobResponse> {
+  return apiFetch('/api/v2/jobs', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -110,92 +179,48 @@ export async function updateJob(
   jobId: string,
   payload: Partial<CreateJobPayload>,
 ): Promise<{ id: string; config: CreateJobPayload; status: string }> {
-  return apiFetch(`/jobs/${jobId}`, {
+  return apiFetch(`/api/v2/jobs/${jobId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
 
-/** Upload resumes via XMLHttpRequest (supports upload progress) */
-export interface UploadResult {
-  job_id: string;
-  accepted: string[];
-  rejected: { filename: string; reason: string }[];
-  total_accepted: number;
-}
-
-export function uploadResumes(
+/** Upload resume PDFs (multipart/form-data) */
+export async function uploadResumes(
   jobId: string,
   files: File[],
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<UploadResult> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const formData = new FormData();
+  const total = files.length;
+  if (onProgress) onProgress(0, total);
 
-    files.forEach((file) => formData.append('files', file));
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file, file.name);
+  }
 
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress(e.loaded, e.total);
-      }
-    });
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText) as UploadResult);
-        } catch {
-          reject(new ApiError('Failed to parse upload response', xhr.status));
-        }
-      } else {
-        let body: unknown;
-        try {
-          body = JSON.parse(xhr.responseText);
-        } catch {
-          body = xhr.responseText;
-        }
-        reject(new ApiError(`Upload failed: ${xhr.status}`, xhr.status, body));
-      }
-    });
-
-    xhr.addEventListener('error', () => {
-      reject(new ApiError('Upload network error', 0));
-    });
-
-    xhr.addEventListener('abort', () => {
-      reject(new ApiError('Upload aborted', 0));
-    });
-
-    xhr.open('POST', `${API_BASE}/jobs/${jobId}/resumes`);
-    xhr.send(formData);
+  const result = await apiFetch<UploadResult>(`/api/v2/jobs/${jobId}/resumes`, {
+    method: 'POST',
+    body: formData,
+    timeoutMs: 120_000, // 2 min for large batches
   });
+
+  if (onProgress) onProgress(total, total);
+  return result;
 }
 
-/** Start SSE extraction stream */
-export interface ExtractionEvent {
-  type: string;
-  current?: number;
-  total?: number;
-  filename?: string;
-  status?: string;
-  error?: string;
-}
-
+/** Start SSE extraction stream — returns a cleanup/close function */
 export function startExtraction(
   jobId: string,
   onEvent: (event: ExtractionEvent) => void,
   onError: (error: Error) => void,
   onComplete: () => void,
 ): () => void {
-  const eventSource = new EventSource(
-    `${API_BASE}/jobs/${jobId}/extract`,
-  );
+  const eventSource = new EventSource(`${API_BASE}/api/v2/jobs/${jobId}/extract`);
 
   eventSource.addEventListener('progress', (e) => {
     try {
-      const data = JSON.parse(e.data) as ExtractionEvent;
-      onEvent(data);
+      onEvent(JSON.parse(e.data) as ExtractionEvent);
     } catch {
       onError(new Error('Failed to parse SSE event'));
     }
@@ -203,8 +228,7 @@ export function startExtraction(
 
   eventSource.addEventListener('complete', (e) => {
     try {
-      const data = JSON.parse(e.data) as ExtractionEvent;
-      onEvent(data);
+      onEvent(JSON.parse(e.data) as ExtractionEvent);
     } catch {
       // ignore parse error on complete
     }
@@ -227,29 +251,40 @@ export function startExtraction(
     eventSource.close();
   };
 
-  // Return cleanup function
   return () => eventSource.close();
 }
 
-/** Score candidates */
-export interface ScorePayload {
-  weights: Record<string, number>;
-}
-
-export interface ScoreResponse {
-  job_id: string;
-  status: string;
-  total_candidates: number;
-  weights_applied: Record<string, number>;
-  candidates: Record<string, unknown>[];
-}
-
-export async function scoreJob(
-  jobId: string,
-  payload: ScorePayload,
-): Promise<ScoreResponse> {
-  return apiFetch(`/jobs/${jobId}/score`, {
+/** Score and rank candidates */
+export async function scoreJob(jobId: string, payload: ScorePayload): Promise<ScoreResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/score`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/** List candidates for a job */
+export async function getCandidates(
+  jobId: string,
+  limit = 20,
+  cursor = 0,
+): Promise<CandidateListResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/candidates?limit=${limit}&cursor=${cursor}`);
+}
+
+/** Get full detail for a single candidate */
+export async function getCandidateDetail(
+  jobId: string,
+  candidateId: string,
+): Promise<CandidateDetailResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/candidates/${candidateId}`);
+}
+
+/** Run ATS check on a PDF file */
+export async function runAtsCheck(file: File): Promise<AtsResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiFetch('/api/v2/ats-check', {
+    method: 'POST',
+    body: formData,
   });
 }

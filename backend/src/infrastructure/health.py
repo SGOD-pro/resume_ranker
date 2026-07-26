@@ -1,14 +1,13 @@
 """
 health.py — Infrastructure connectivity checks
 ==================================================
-V2: PostgreSQL + Redis + S3. DynamoDB removed.
+V2: DynamoDB + Redis + S3.
 Called on FastAPI startup and exposed via /health endpoint.
 """
 
 import logging
 
 import boto3
-import psycopg
 import redis
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
@@ -17,19 +16,16 @@ from src.config.aws import get_boto3_kwargs, get_settings
 logger = logging.getLogger(__name__)
 
 
-def check_postgres() -> bool:
-    """Check PostgreSQL connectivity with a simple SELECT 1."""
+def check_dynamodb() -> bool:
+    """Check DynamoDB connectivity by describing the main table."""
     settings = get_settings()
     try:
-        # Use sync psycopg directly — health check is a one-shot probe,
-        # no need for async or SQLAlchemy overhead here.
-        conninfo = settings.database_url.replace("postgresql+psycopg://", "postgresql://")
-        with psycopg.connect(conninfo, connect_timeout=5) as conn:
-            conn.execute("SELECT 1")
-        logger.info("✅ PostgreSQL connected — %s", conninfo.split("@")[-1])
+        client = boto3.client("dynamodb", **get_boto3_kwargs())
+        client.describe_table(TableName=settings.dynamodb_table_name)
+        logger.info("✅ DynamoDB connected — table: %s", settings.dynamodb_table_name)
         return True
     except Exception as e:
-        logger.error("❌ PostgreSQL unreachable: %s", e)
+        logger.error("❌ DynamoDB unreachable: %s", e)
         return False
 
 
@@ -84,10 +80,10 @@ def check_s3() -> bool:
 def check_all() -> dict:
     """Run all connectivity checks.
 
-    Returns {"postgres": bool, "redis": bool, "s3": bool}.
+    Returns {"dynamodb": bool, "redis": bool, "s3": bool}.
     """
     return {
-        "postgres": check_postgres(),
+        "dynamodb": check_dynamodb(),
         "redis": check_redis(),
         "s3": check_s3(),
     }

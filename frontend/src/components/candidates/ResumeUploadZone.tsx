@@ -14,8 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
 import { useJobStore } from '@/store/job-store';
-import { uploadResumes, createJob } from '@/lib/api';
-import type { UploadResult } from '@/lib/api';
+import { createJob, uploadResumes } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -88,7 +87,7 @@ export function ResumeUploadZone() {
         }
 
         // Upload with progress tracking
-        const result: UploadResult = await uploadResumes(
+        const result = await uploadResumes(
           currentJobId,
           files,
           (loaded, total) => {

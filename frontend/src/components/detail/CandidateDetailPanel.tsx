@@ -13,7 +13,7 @@ import { useAppStore } from '@/store/app-store';
 import { useCandidateDetail } from '@/hooks/useV2Queries';
 import { PdfAtsViewer } from './PdfAtsViewer';
 import type { Candidate } from '@/store/types';
-import type { BoundingBox } from '@/lib/api-v2';
+import type { BoundingBox } from '@/lib/api';
 
 export function CandidateDetailPanel() {
   const selectedId = useCandidateStore((s) => s.selectedId);

@@ -1,9 +1,9 @@
 import { http, HttpResponse } from 'msw';
 import type {
-  V2CandidateListResponse,
-  V2CandidateDetailResponse,
+  CandidateListResponse,
+  CandidateDetailResponse,
   AtsResult,
-} from '@/lib/api-v2';
+} from '@/lib/api';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -39,7 +39,7 @@ export const MOCK_ATS_RESULT: AtsResult = {
   bounding_boxes: [MOCK_BOUNDING_BOX],
 };
 
-export const MOCK_CANDIDATE_LIST: V2CandidateListResponse = {
+export const MOCK_CANDIDATE_LIST: CandidateListResponse = {
   job_id: MOCK_JOB_ID,
   total_candidates: 2,
   limit: 20,
@@ -66,7 +66,7 @@ export const MOCK_CANDIDATE_LIST: V2CandidateListResponse = {
   ],
 };
 
-export const MOCK_CANDIDATE_DETAIL: V2CandidateDetailResponse = {
+export const MOCK_CANDIDATE_DETAIL: CandidateDetailResponse = {
   id: MOCK_CANDIDATE_ID,
   job_id: MOCK_JOB_ID,
   status: 'ready',

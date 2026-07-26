@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useAtsCheck } from '@/hooks/useV2Queries';
 import { PdfAtsViewer } from '@/components/detail/PdfAtsViewer';
-import type { AtsResult } from '@/lib/api-v2';
+import type { AtsResult } from '@/lib/api';
 
 export function AtsCheckerPage() {
   const [isDragging, setIsDragging] = useState(false);

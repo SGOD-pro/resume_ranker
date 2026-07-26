@@ -1,7 +1,7 @@
 """
 aws.py — Application configuration via Pydantic Settings
 ============================================================
-V2: PostgreSQL + Redis + S3. DynamoDB removed.
+V2: DynamoDB + Redis + S3.
 Reads from environment variables or .env file.
 """
 
@@ -18,11 +18,6 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
-    )
-
-    # ── PostgreSQL ────────────────────────────────────────────────────────
-    database_url: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/resume_ranker"
     )
 
     # ── Redis ─────────────────────────────────────────────────────────────

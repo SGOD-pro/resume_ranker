@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Document, Page } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
-import type { BoundingBox } from '@/lib/api-v2';
+import type { BoundingBox } from '@/lib/api';
 import { AtsOverlay } from './AtsOverlay';
 
 interface PdfAtsViewerProps {
