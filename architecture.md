@@ -16,8 +16,11 @@ graph TD
     Dev -->|Local| BGTask[FastAPI BackgroundTask]
     Dev -->|Prod| SQS1[SQS DocumentQueue]
     
-    SQS1 --> LambdaA[Lambda A Docker: JVM + ODL]
+    SQS1 --> LambdaA[Lambda A Worker]
     BGTask --> LambdaALogic[Run Lambda A Logic Locally]
+    
+    LambdaA -->|boto3.invoke| ODLLambda[odl-parser-lambda via ECR]
+    LambdaALogic -->|boto3.invoke| ODLLambda
     
     LambdaA -->|Save JSON| S3
     LambdaALogic -->|Save JSON| S3
@@ -33,8 +36,9 @@ graph TD
 ## 2. Tech Stack
 
 - **Frontend:** React 18, Vite, Zustand (state), TanStack Query (fetching only).
-- **Local Dev:** FastAPI `BackgroundTasks` (simulates Lambda A synchronously).
-- **Prod Worker (Lambda A):** Python 3.12 Docker Image. `opendataloader-pdf`, JRE 17, PyMuPDF.
+- **Local Dev (Local-Cloud Split):** FastAPI `BackgroundTasks` (simulates Lambda A synchronously). S3 and DynamoDB point to LocalStack (`localhost:4566`), while Lambda/Bedrock calls hit real AWS.
+- **Prod Worker (Lambda A):** Python 3.12 ZIP. PyMuPDF, `boto3` (for invoking ODL).
+- **Standalone ODL Parser:** `odl-parser-lambda` deployed as a Docker container via ECR.
 - **Prod API (Lambda B):** Python 3.12 ZIP. FastAPI, `boto3`, `scikit-learn`, `rank_bm25`.
 - **Database:** DynamoDB (with purpose-built GSIs for filtering, see `design.md`).
 

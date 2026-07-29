@@ -3,9 +3,9 @@
 > Engineering rules, coding standards, and linting/CI enforcements.
 
 ## 1. Architecture Rules
-- **R-01 (Local-First):** The app MUST run locally without AWS SQS. Use `ENVIRONMENT=local` to trigger FastAPI `BackgroundTasks`. SQS logic MUST NOT execute in the local environment.
+- **R-01 (Local-Cloud Split):** The app runs locally via FastAPI BackgroundTasks. However, the BackgroundTask MUST use real AWS credentials to invoke the `odl-parser-lambda` and Bedrock. Only S3 and DynamoDB point to LocalStack.
 - **R-02 (No WebSockets):** SSE is the only real-time communication mechanism. Importing `websocket` or `ws` is a CI failure.
-- **R-03 (Module Isolation):** `fitz` (PyMuPDF) and `opendataloader_pdf` MUST NOT be imported outside the Parsing Module (`src/extraction/structural_parsing_service.py`). The API/Scoring Module MUST NOT parse raw PDFs.
+- **R-03 (Module Isolation):** `fitz` (PyMuPDF) MUST NOT be imported outside the Parsing Module (`src/extraction/structural_parsing_service.py`). The API/Scoring Module MUST NOT parse raw PDFs.
 - **R-04 (No Table Scans):** Multi-attribute filtering on DynamoDB (score range, skill presence) MUST use the GSIs defined in `design.md`. `scan()` with `FilterExpression` is strictly prohibited for candidate queries.
 - **R-05 (S3 Pointer Pattern):** SQS messages MUST only contain `document_id` and S3 keys. Never pass 50MB JSON payloads through SQS.
 
@@ -17,8 +17,9 @@
 
 ## 3. Scoring Rules
 - **R-10 (Fixed IDF):** BM25 IDF is NEVER computed from the candidate pool. It MUST come from the fixed reference corpus (`registries/idf.pkl`).
-- **R-11 (Deterministic ATS):** ATS scoring MUST be 100% deterministic bounding-box math. Zero LLM calls. ATS MUST NOT import from Extraction or Scoring contexts.
-- **R-12 (Immutable Component Scores):** Component scores (skill, experience, education) are computed once and persisted. Composite scores are computed at read time.
+- **R-11 (Synchronous Invocation):** The `boto3 lambda.invoke` call for ODL MUST use `InvocationType='RequestResponse'` and handle the response payload explicitly.
+- **R-12 (Deterministic ATS):** ATS scoring MUST be 100% deterministic bounding-box math. Zero LLM calls. ATS MUST NOT import from Extraction or Scoring contexts.
+- **R-13 (Immutable Component Scores):** Component scores (skill, experience, education) are computed once and persisted. Composite scores are computed at read time.
 
 ## 4. Resiliency Rules
 - **R-13 (Idempotency):** Lambda handlers and BackgroundTasks MUST check DynamoDB `status` before processing. If `status == 'SCORED'`, return immediately.

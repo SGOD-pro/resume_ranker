@@ -42,3 +42,9 @@
 **Context:** V2 stores candidate PII (resumes, contact info) and provides endpoints for creating jobs and scoring candidates. Implementing JWT/OAuth adds infrastructure complexity (Cognito/Auth0) and development overhead that currently bottlenecks rapid iteration. 
 **Decision:** All `/api/v2/` endpoints are unauthenticated (open). The standalone `/api/v2/ats-check` endpoint is IP-rate-limited to prevent abuse.
 **Consequences:** This is an explicit, accepted product risk for the V2 MVP. The system MUST NOT be deployed to a public-facing production environment without a reverse proxy (e.g., API Gateway with a custom authorizer or Cognito) in front of it. PII redaction in logs is strictly enforced to mitigate data leakage during local/development access.
+
+## ADR-08: Standalone ODL Lambda via ECR
+**Status:** Accepted
+**Context:** `opendataloader-pdf` requires a JVM. Bundling it in Resume Ranker complicates deployments.
+**Decision:** Deploy ODL as a standalone Lambda container image. Resume Ranker calls it synchronously via `boto3` using the S3 Pointer Pattern.
+**Consequences:** Adds network latency (~1-2s) for complex PDFs. Requires configuring `boto3` to point to real AWS even when `ENVIRONMENT=local`.

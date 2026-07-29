@@ -99,7 +99,7 @@ export interface CreateJobResponse {
 export async function createJob(
   payload: CreateJobPayload,
 ): Promise<CreateJobResponse> {
-  return apiFetch('/jobs', {
+  return apiFetch('/api/v2/jobs', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -110,7 +110,7 @@ export async function updateJob(
   jobId: string,
   payload: Partial<CreateJobPayload>,
 ): Promise<{ id: string; config: CreateJobPayload; status: string }> {
-  return apiFetch(`/jobs/${jobId}`, {
+  return apiFetch(`/api/v2/jobs/${jobId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
@@ -167,7 +167,7 @@ export function uploadResumes(
       reject(new ApiError('Upload aborted', 0));
     });
 
-    xhr.open('POST', `${API_BASE}/jobs/${jobId}/resumes`);
+    xhr.open('POST', `${API_BASE}/api/v2/jobs/${jobId}/resumes`);
     xhr.send(formData);
   });
 }
@@ -189,7 +189,7 @@ export function startExtraction(
   onComplete: () => void,
 ): () => void {
   const eventSource = new EventSource(
-    `${API_BASE}/jobs/${jobId}/extract`,
+    `${API_BASE}/api/v2/jobs/${jobId}/extract`,
   );
 
   eventSource.addEventListener('progress', (e) => {
@@ -248,7 +248,7 @@ export async function scoreJob(
   jobId: string,
   payload: ScorePayload,
 ): Promise<ScoreResponse> {
-  return apiFetch(`/jobs/${jobId}/score`, {
+  return apiFetch(`/api/v2/jobs/${jobId}/score`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

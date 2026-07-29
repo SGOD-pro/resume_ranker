@@ -7,7 +7,7 @@ Past attempts failed because the AI hallucinated infrastructure that didn't fit 
 Read the following repository files in this exact order and treat them as binding law:
 1. `AGENT.md`
 2. `mamori.md` (The V1 truth)
-3. `projectrequirement.md`
+3. `projectrequirement.md`A
 4. `project.md`
 5. `architecture.md`
 6. `design.md`

@@ -6,11 +6,11 @@
 The system is decoupled into a Parsing Module (Lambda A / Local BackgroundTask) and an API/Evaluation Module (Lambda B / FastAPI). These boundaries are absolute and enforced by CI.
 
 - **Parsing Module (Lambda A / BackgroundTask):**
-  - **Allowed:** `fitz` (PyMuPDF), `opendataloader_pdf`, `boto3` (S3/SQS).
+  - **Allowed:** `fitz` (PyMuPDF), `boto3` (S3/SQS/Lambda).
   - **Forbidden:** `src.api`, `src.scoring`, `src.ats`. It MUST NOT know what a "Job" or a "Score" is. It only transforms PDF bytes into `StructuralParse` JSON.
 - **API/Evaluation Module (Lambda B / FastAPI):**
   - **Allowed:** `fastapi`, `boto3` (S3/DynamoDB/Bedrock), `scikit-learn`, `rank_bm25`.
-  - **Forbidden:** `fitz`, `opendataloader_pdf`. It MUST NOT parse raw PDFs. It only reads the `StructuralParse` JSON from S3.
+  - **Forbidden:** `fitz`. It MUST NOT parse raw PDFs. It only reads the `StructuralParse` JSON from S3.
 
 **Why?** Lambda B is a ZIP package. If it imports JVM or heavy PDF libraries, the deployment package will exceed 250MB and fail. Furthermore, mixing parsing and scoring logic creates God-classes that are impossible to test.
 
@@ -21,7 +21,7 @@ To ensure no vendor SDK logic leaks into domain math, external dependencies are 
 | Dependency | Allowed ONLY In | Purpose |
 |---|---|---|
 | `fitz` (PyMuPDF) | `src/extraction/structural_parsing_service.py` | Fast-path text extraction and layout quality scoring. |
-| `opendataloader_pdf` | `src/extraction/structural_parsing_service.py` | Slow-path layout parsing (JVM) for multi-column/table PDFs. |
+| `boto3` (Lambda) | `src/extraction/structural_parsing_service.py` | Invokes the external `odl-parser-lambda` for slow-path parsing. Direct HTTP or SDK imports of `opendataloader_pdf` are prohibited. |
 | `boto3` (Bedrock) | `src/extraction/fallback/nova_service.py` | Isolates LLM API from extraction logic. |
 | `boto3` (S3/DynamoDB) | `src/infrastructure/` | Isolates AWS SDK from repositories. |
 
