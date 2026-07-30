@@ -31,11 +31,11 @@
 - **FR-15** System MUST deduplicate resumes by SHA-256 content hash.
 
 ## 2. Non-Functional Requirements
-- **NFR-01** The application MUST run locally without AWS SQS or Lambda networking.
+- **NFR-01** The application MUST run locally without AWS SQS or container-based Lambda A/B deployment (both run as local FastAPI processes/BackgroundTasks). S3 and DynamoDB MUST be floci-backed in local dev. The odl-parser-lambda invocation and Bedrock calls REQUIRE live AWS credentials and hit real AWS endpoints even in local dev, per ADR-08 — these two dependencies are the explicit exception to 'local-first' and MUST be documented as such in onboarding docs (README) with a note on the resulting real AWS cost during local development.
 - **NFR-02** Evaluation hot path (Scoring + ATS) MUST execute in < 50ms on pre-computed DTOs.
 - **NFR-03** Every extraction stage MUST emit a `StageTiming` record for latency and fallback-rate instrumentation.
 - **NFR-04** AWS Lambda SSE stream MUST use Function URLs with `RESPONSE_STREAM` or API Gateway HTTP API to bypass the 29-second REST timeout.
-- **NFR-05** AWS Lambda execution time for both Lambda A (Parsing) and Lambda B (Extraction/Scoring) MUST stay strictly under the 15-minute maximum timeout. Long-running batches MUST be chunked or handled via SQS batch windowing to prevent Lambda truncation.
+- **NFR-05** AWS Lambda execution time for both Lambda A (Parsing) and Lambda B (Extraction/Scoring) MUST stay strictly under the 15-minute maximum timeout. Long-running batches MUST be chunked or handled via SQS batch windowing to prevent Lambda truncation. Frontend MUST handle SSE disconnection via automatic EventSource reconnect; backend polling MUST be resumable from DynamoDB state with no duplicate work (see architecture.md §6b).
 
 ## 3. Hard Constraints (Non-Negotiable)
 | # | Constraint |

@@ -91,3 +91,7 @@ class ScoredCandidate:
 
     anomalies: List[str] = field(default_factory=list)
     extraction_quality: float = 0.0
+    
+    # Phase 3: ATS Score
+    ats_score: float = 0.0
+    ats_warnings: List[str] = field(default_factory=list)

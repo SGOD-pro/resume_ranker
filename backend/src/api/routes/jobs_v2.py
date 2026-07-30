@@ -23,7 +23,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, status
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, field_validator
 
@@ -172,8 +172,8 @@ async def update_job(job_id: str, body: UpdateJobRequest):
     }
 
 
-@router.post("/{job_id}/resumes", response_model=UploadResponse)
-async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
+@router.post("/{job_id}/resumes", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
+async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
     """Upload resume PDFs for a job.
 
     Server-side validation:
@@ -246,6 +246,10 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
     # Get final document count
     all_docs = _docs_repo.list_for_job(job_id)
 
+    from src.config.aws import get_settings
+    if get_settings().environment == "local":
+        background_tasks.add_task(_run_extraction_background, job_id)
+
     return UploadResponse(
         job_id=job_id,
         accepted=accepted,
@@ -254,65 +258,42 @@ async def upload_resumes(job_id: str, files: List[UploadFile] = File(...)):
     )
 
 
-def _extract_single_sync(pdf_path: str) -> Dict[str, Any]:
-    """Run extraction for a single PDF (CPU-bound, called via to_thread).
-
-    Returns the fields dict on success, or raises on failure.
-    """
-    result = _extraction_service.extract_single(pdf_path)
-    # Serialize complex field values to plain dicts/lists
-    fields = json.loads(json.dumps(
-        result.fields,
-        default=lambda o: o.__dict__ if hasattr(o, '__dict__') else str(o)
-    ))
-    # Add document_id and extraction_quality for the scorer
-    fields['_document_id'] = result.document_id
-    if 'extraction_quality' not in fields:
-        fields['extraction_quality'] = 0.0
-    return {
-        "fields": fields,
-        "document_id": result.document_id,
-        "extraction_quality": getattr(result, 'extraction_quality', 0.0),
-        "page_count": getattr(result, 'page_count', 0),
-        "domain": getattr(result, 'domain', ''),
-    }
+def _extract_single_sync(pdf_path: str, doc_id: str, s3_bucket: str, s3_key: str) -> Dict[str, Any]:
+    """Run extraction for a single PDF (CPU-bound, called via to_thread)."""
+    from src.extraction.extraction_pipeline import ExtractionPipeline
+    pipeline = ExtractionPipeline()
+    result = pipeline.run_pipeline(pdf_path, doc_id, s3_bucket, s3_key)
+    
+    if result.get("error_reason"):
+        # Log it but proceed with the degraded PyMuPDF Markdown
+        import logging
+        logging.getLogger(__name__).warning(f"Extraction fell back to degraded PyMuPDF due to: {result['error_reason']}")
+        
+    return result
 
 
-async def _extraction_event_stream(job_id: str):
-    """Generator that yields SSE events from REAL extraction.
-
-    1. Downloads PDFs from S3 to temp dir
-    2. Runs PDFPipelineV3.extract() concurrently via asyncio.to_thread()
-    3. Uploads extraction JSON back to S3
-    4. Updates DynamoDB document metadata
-    5. Yields progress events as each file completes
-    """
+async def _run_extraction_background(job_id: str):
+    """Background task to run extraction synchronously in local dev."""
     job = _jobs_repo.get(job_id)
     if not job:
-        yield f"event: error\ndata: {json.dumps({'error': 'Job not found'})}\n\n"
         return
 
     documents = _docs_repo.list_for_job(job_id)
     if not documents:
-        yield f"event: error\ndata: {json.dumps({'error': 'No resumes uploaded'})}\n\n"
         return
 
     # Update job status to extracting
     _jobs_repo.update_status(job_id, JobStatus.EXTRACTING, expected_version=job.version)
 
-    total = len(documents)
     succeeded = 0
-    failed = 0
-
-    result_queue: asyncio.Queue = asyncio.Queue()
 
     async def _extract_one(doc: DocumentItem) -> None:
-        """Download PDF from S3, extract, upload result JSON, update DynamoDB."""
+        nonlocal succeeded
         try:
-            # Mark document as extracting
+            # Mark document as parsing
             _docs_repo.update_status(
                 doc.job_id, doc.document_id,
-                DocumentStatus.EXTRACTING, expected_version=doc.version,
+                DocumentStatus.PARSING, expected_version=doc.version,
             )
 
             # Download PDF from S3 to a temp file
@@ -322,8 +303,16 @@ async def _extraction_event_stream(job_id: str):
                 tmp_path = tmp.name
 
             try:
+                from src.config.aws import get_settings
+                settings = get_settings()
                 # Run extraction (CPU-bound)
-                extraction_result = await asyncio.to_thread(_extract_single_sync, tmp_path)
+                extraction_result = await asyncio.to_thread(
+                    _extract_single_sync, 
+                    tmp_path, 
+                    doc.document_id, 
+                    settings.s3_bucket_name, 
+                    doc.s3_pdf_key
+                )
                 fields = extraction_result["fields"]
 
                 # Upload extraction JSON to S3
@@ -342,8 +331,8 @@ async def _extraction_event_stream(job_id: str):
                     page_count=extraction_result.get("page_count", 0),
                     expected_version=doc.version + 1,  # +1 because update_status already incremented
                 )
-
-                await result_queue.put(("ok", doc.filename, fields))
+                
+                succeeded += 1
             finally:
                 # Clean up temp file
                 Path(tmp_path).unlink(missing_ok=True)
@@ -356,43 +345,14 @@ async def _extraction_event_stream(job_id: str):
                 if fresh_doc:
                     _docs_repo.update_status(
                         doc.job_id, doc.document_id,
-                        DocumentStatus.EXTRACTION_FAILED,
+                        DocumentStatus.PARSE_FAILED,
                         expected_version=fresh_doc.version,
                     )
             except Exception:
                 pass  # Best-effort status update
-            await result_queue.put(("error", doc.filename, str(e)))
 
     # Launch all extractions concurrently
     tasks = [asyncio.create_task(_extract_one(doc)) for doc in documents]
-
-    # Read results as they complete
-    for completed in range(1, total + 1):
-        status, filename, payload = await result_queue.get()
-
-        if status == "ok":
-            succeeded += 1
-            event_data = json.dumps({
-                "type": "extraction_progress",
-                "current": completed,
-                "total": total,
-                "filename": filename,
-                "status": "extracted",
-            })
-        else:
-            failed += 1
-            event_data = json.dumps({
-                "type": "extraction_progress",
-                "current": completed,
-                "total": total,
-                "filename": filename,
-                "status": "failed",
-                "error": payload,
-            })
-
-        yield f"event: progress\ndata: {event_data}\n\n"
-
-    # Wait for all tasks to finish
     await asyncio.gather(*tasks, return_exceptions=True)
 
     # Update job status
@@ -401,8 +361,52 @@ async def _extraction_event_stream(job_id: str):
         new_status = JobStatus.EXTRACTED if succeeded > 0 else JobStatus.CREATED
         _jobs_repo.update_status(job_id, new_status, expected_version=updated_job.version)
 
-    # Final complete event
-    yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total, 'succeeded': succeeded, 'failed': failed})}\n\n"
+
+async def _extraction_event_stream(job_id: str):
+    """Generator that yields SSE events by polling DynamoDB state (resumable)."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        yield f"event: error\ndata: {json.dumps({'error': 'Job not found'})}\n\n"
+        return
+
+    seen_completed = set()
+
+    while True:
+        documents = _docs_repo.list_for_job(job_id)
+        if not documents:
+            yield f"event: error\ndata: {json.dumps({'error': 'No resumes uploaded'})}\n\n"
+            return
+
+        total = len(documents)
+        completed_docs = 0
+        succeeded = 0
+        failed = 0
+
+        for doc in documents:
+            is_completed = doc.status in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+            if is_completed:
+                completed_docs += 1
+                if doc.status == DocumentStatus.PARSE_FAILED:
+                    failed += 1
+                else:
+                    succeeded += 1
+
+                if doc.document_id not in seen_completed:
+                    seen_completed.add(doc.document_id)
+                    event_data = json.dumps({
+                        "type": "extraction_progress",
+                        "current": len(seen_completed),
+                        "total": total,
+                        "filename": doc.filename,
+                        "status": "failed" if doc.status == DocumentStatus.PARSE_FAILED else "extracted",
+                    })
+                    yield f"event: progress\ndata: {event_data}\n\n"
+
+        if completed_docs == total:
+            yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total, 'succeeded': succeeded, 'failed': failed})}\n\n"
+            break
+
+        await asyncio.sleep(2.0)
 
 
 @router.get("/{job_id}/extract")
@@ -443,7 +447,7 @@ async def score_job(job_id: str, body: ScoreRequest):
 
     # Load all extracted documents from DynamoDB
     documents = _docs_repo.list_for_job(job_id)
-    extracted_docs = [d for d in documents if d.status == DocumentStatus.EXTRACTED]
+    extracted_docs = [d for d in documents if d.status == DocumentStatus.PARSED]
 
     if not extracted_docs:
         raise HTTPException(
@@ -500,7 +504,31 @@ async def score_job(job_id: str, body: ScoreRequest):
     _scoring_repo.create(scoring)
 
     try:
-        results = _scorer.rank(jd, candidates)
+        from src.ats.ats_scoring_service import AtsScoringService
+        ats_service = AtsScoringService()
+
+        async def run_scoring():
+            return await asyncio.to_thread(_scorer.rank, jd, candidates)
+
+        async def run_ats(candidate):
+            return await asyncio.to_thread(ats_service.score, candidate.get("elements", []))
+
+        score_task = asyncio.create_task(run_scoring())
+        ats_tasks = [asyncio.create_task(run_ats(c)) for c in candidates]
+        
+        gathered_results = await asyncio.gather(score_task, *ats_tasks)
+        results = gathered_results[0]
+        ats_results = gathered_results[1:]
+        
+        # Merge ATS results using document_id
+        ats_by_doc_id = {c.get("_document_id"): ats for c, ats in zip(candidates, ats_results)}
+        
+        for r in results:
+            ats = ats_by_doc_id.get(r.document_id)
+            if ats:
+                r.ats_score = ats.ats_score
+                r.ats_warnings = ats.warnings
+                
     except Exception as e:
         logger.error("Scoring failed for job %s: %s", job_id, e, exc_info=True)
         # Mark scoring as failed

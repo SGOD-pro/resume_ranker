@@ -36,7 +36,7 @@ graph TD
 ## 2. Tech Stack
 
 - **Frontend:** React 18, Vite, Zustand (state), TanStack Query (fetching only).
-- **Local Dev (Local-Cloud Split):** FastAPI `BackgroundTasks` (simulates Lambda A synchronously). S3 and DynamoDB point to LocalStack (`localhost:4566`), while Lambda/Bedrock calls hit real AWS.
+- **Local Dev (Local-Cloud Split):** FastAPI `BackgroundTasks` (simulates Lambda A synchronously). S3 and DynamoDB point to floci (`localhost:4566`). Bedrock calls hit real AWS. ODL parser uses Local Bypass: imports `odl/main.py` directly via `lambda_handler(event, None)` instead of invoking the cloud Lambda. Same event payload shape both ways: `{"s3_bucket": ..., "s3_key": ...}`.
 - **Prod Worker (Lambda A):** Python 3.12 ZIP. PyMuPDF, `boto3` (for invoking ODL).
 - **Standalone ODL Parser:** `odl-parser-lambda` deployed as a Docker container via ECR.
 - **Prod API (Lambda B):** Python 3.12 ZIP. FastAPI, `boto3`, `scikit-learn`, `rank_bm25`.
@@ -56,7 +56,7 @@ graph TD
 1. Worker downloads PDF from S3.
 2. **Fast-Path (PyMuPDF):** Extract text using `fitz`.
 3. **Pre-Extraction Quality Gate:** Calculate a structural heuristic quality score (x-coordinate clustering, reading order monotonicity, char density). This runs *before* regex parsing.
-4. **Slow-Path (ODL):** If structural quality score < 0.90, run `opendataloader-pdf` (JVM). This resolves multi-column layouts and provides bounding boxes (`bbox`).
+4. **Slow-Path (ODL):** If structural quality score < 0.90, run `opendataloader-pdf` (JVM) using Local Bypass (import `odl/main.py`) in local dev, or `boto3.client('lambda').invoke()` in prod. This resolves multi-column layouts and provides bounding boxes (`bbox`). Same event payload shape both ways: `{"s3_bucket": ..., "s3_key": ...}`.
 5. Worker saves `StructuralParse` JSON to S3.
 6. Worker updates DynamoDB: `status: PARSED`.
 7. **Routing:** If local, worker directly calls the Evaluation function. If prod, worker pushes to `ExtractionQueue`.
@@ -101,3 +101,11 @@ To validate the PyMuPDF→ODL→Nova routing decision empirically, every extract
 
 Standard API Gateway REST API integration has a 29-second hard timeout. SSE streams processing >5 resumes will fail. 
 **Resolution:** The `/extract` endpoint MUST be exposed via **AWS Lambda Function URLs** configured with `RESPONSE_STREAM` invoke mode, or via API Gateway HTTP API (which supports streaming). The FastAPI handler must use `StreamingResponse` with async generators to yield SSE events continuously without holding the Lambda execution thread.
+
+## 6b. SSE Stream Lifetime vs Lambda B's 15-Minute Execution Ceiling
+
+RESPONSE_STREAM invoke mode solves the API Gateway 29-second timeout but does NOT extend Lambda's own maximum execution duration (15 minutes, hard AWS limit, cannot be configured higher). If a batch's total processing time (including any ODL-Lambda synchronous calls per ADR-09) exceeds 15 minutes, the Lambda B instance holding the SSE connection is terminated mid-stream by AWS, regardless of documents still PENDING.
+
+Required behavior:
+  - Frontend's EventSource onerror/reconnect handler MUST detect a dropped SSE connection and re-open GET /api/v2/jobs/{id}/extract. A fresh Lambda B invocation resumes polling DynamoDB from current state — it does NOT restart already-PARSED or already-SCORED documents (idempotency per R-14).
+  - This reconnect-and-resume behavior MUST be implemented in Phase 2 (SSE polling), not deferred to Phase 4, since it's a correctness property of the polling design, not an infrastructure concern.

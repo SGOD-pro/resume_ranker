@@ -15,11 +15,22 @@ from pydantic import BaseModel, Field
 
 
 class DocumentStatus(str, Enum):
-    """Document extraction lifecycle states."""
-    UPLOADED = "uploaded"
-    EXTRACTING = "extracting"
-    EXTRACTED = "extracted"
-    EXTRACTION_FAILED = "extraction_failed"
+    """Document extraction lifecycle states.
+
+    Phase 2 state machine: PENDING → PARSING → PARSED → SCORED
+    See phases.md for gate criteria.
+    """
+    PENDING = "pending"
+    PARSING = "parsing"
+    PARSED = "parsed"
+    SCORED = "scored"
+    PARSE_FAILED = "parse_failed"
+
+    # ── V1 backwards-compat aliases (mapped in from_dynamodb_item) ────
+    UPLOADED = "uploaded"           # V1 alias → treated as PENDING
+    EXTRACTING = "extracting"      # V1 alias → treated as PARSING
+    EXTRACTED = "extracted"        # V1 alias → treated as PARSED
+    EXTRACTION_FAILED = "extraction_failed"  # V1 alias → treated as PARSE_FAILED
 
 
 def _utcnow_iso() -> str:
@@ -55,7 +66,7 @@ class DocumentItem(BaseModel):
     pipeline_version: str = "v3"
 
     # ── State ─────────────────────────────────────────────────────────────
-    status: DocumentStatus = DocumentStatus.UPLOADED
+    status: DocumentStatus = DocumentStatus.PENDING
 
     # ── Versioning ────────────────────────────────────────────────────────
     version: int = 1
@@ -107,6 +118,18 @@ class DocumentItem(BaseModel):
     def from_dynamodb_item(cls, item: Dict[str, Any]) -> "DocumentItem":
         """Deserialize from a DynamoDB item dict."""
         eq = item.get("extraction_quality")
+        
+        # Map V1 backwards-compatibility statuses to Phase 2
+        raw_status = item.get("status", "pending")
+        if raw_status == "uploaded":
+            raw_status = "pending"
+        elif raw_status == "extracting":
+            raw_status = "parsing"
+        elif raw_status == "extracted":
+            raw_status = "parsed"
+        elif raw_status == "extraction_failed":
+            raw_status = "parse_failed"
+            
         return cls(
             document_id=item["document_id"],
             job_id=item["job_id"],
@@ -121,7 +144,7 @@ class DocumentItem(BaseModel):
             candidate_name=item.get("candidate_name"),
             parser_version=item.get("parser_version"),
             pipeline_version=item.get("pipeline_version", "v3"),
-            status=DocumentStatus(item.get("status", "uploaded")),
+            status=DocumentStatus(raw_status),
             version=int(item.get("version", 1)),
             created_at=item.get("created_at", ""),
             updated_at=item.get("updated_at", ""),

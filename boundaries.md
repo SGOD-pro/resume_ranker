@@ -22,6 +22,7 @@ To ensure no vendor SDK logic leaks into domain math, external dependencies are 
 |---|---|---|
 | `fitz` (PyMuPDF) | `src/extraction/structural_parsing_service.py` | Fast-path text extraction and layout quality scoring. |
 | `boto3` (Lambda) | `src/extraction/structural_parsing_service.py` | Invokes the external `odl-parser-lambda` for slow-path parsing. Direct HTTP or SDK imports of `opendataloader_pdf` are prohibited. |
+| ODL Failure Handling | `src/extraction/structural_parsing_service.py` | Centralizes try/except blocks and fallback routing for odl-parser-lambda, preventing scattered error handling (ADR-09). |
 | `boto3` (Bedrock) | `src/extraction/fallback/nova_service.py` | Isolates LLM API from extraction logic. |
 | `boto3` (S3/DynamoDB) | `src/infrastructure/` | Isolates AWS SDK from repositories. |
 

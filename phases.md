@@ -14,7 +14,7 @@
 - In `POST /api/v2/jobs/{id}/resumes`, if `ENVIRONMENT == 'local'`, schedule the extraction function via `BackgroundTasks` instead of running it synchronously.
 - Update DynamoDB state transitions (`PENDING` -> `PARSING` -> `PARSED` -> `SCORED`) inside the BackgroundTask.
 - Refactor `GET /api/v2/jobs/{id}/extract` SSE endpoint to poll DynamoDB every 2 seconds and emit events based on state transitions.
-- **Gate:** Upload PDF -> API returns 202 immediately -> Background task updates DB -> SSE pushes progress to frontend -> Spinner stops on completion. No infinite loading.
+- **Gate:** Upload PDF -> API returns 202 immediately -> Background task updates DB -> SSE pushes progress to frontend -> Spinner stops on completion. No infinite loading. Killing the Lambda B process mid-stream (simulated locally by raising an exception mid-poll-loop) and re-opening the EventSource resumes progress display without duplicate processing or lost documents.
 
 ## Phase 3: Tiered Extraction & V2 Scoring Engine (Days 7–10)
 **Goal:** Replace V1 PyMuPDF with the Tiered Extraction pipeline and wire V2 Scoring/ATS modules.
@@ -32,7 +32,7 @@
 - Implement `ENVIRONMENT == 'production'` logic: Push to SQS `DocumentQueue` instead of `BackgroundTasks`.
 - Define SQS queues, DLQs, and Lambda event mappings in `template.yaml`.
 - Configure API Gateway HTTP API or Lambda Function URL with `RESPONSE_STREAM` for the SSE endpoint.
-- **Gate:** `sam build` succeeds. Deployment to AWS works without local code changes. Production SSE stream does not hit 29-second timeout.
+- **Gate:** `sam build` succeeds. Deployment to AWS works without local code changes. Production SSE stream does not hit 29-second timeout. ODL Lambda timeout budget and Reserved Concurrency value are set from Phase 3 measured data, not estimated (ADR-09).
 
 ## Phase 5: Frontend V2 Features & Polish (Days 15–17)
 **Goal:** Build V2 UI features (ATS overlays, standalone checker, client-side weight recompute).

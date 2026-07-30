@@ -71,14 +71,14 @@ def pymupdf_layout_quality(page) -> float:
 1. Run PyMuPDF. Calculate `pymupdf_layout_quality` per page.
 2. If average page quality `< 0.90` -> Trigger `odl-parser-lambda` via `boto3`. Overwrite PyMuPDF output.
    ```python
-   response = lambda_client.invoke(
-       FunctionName="odl-parser-lambda",
-       InvocationType="RequestResponse",   # Wait for the parser to finish
-       Payload=json.dumps({"s3_bucket": "...", "s3_key": "..."}).encode("utf-8")
+   response = odl_client.parse(
+       s3_bucket="...", 
+       s3_key="..."
    )
+   # odl_client handles ENVIRONMENT branching internally (local sys.path bypass vs prod boto3.invoke)
    ```
    *The response payload contains `{"markdown": "...", "elements": [...]}`.*
-   **Note:** Because we pass S3 pointers, S3 buckets must be accessible by both the local app and the cloud ODL Lambda. (In local dev, the ODL Lambda will attempt to download from the LocalStack S3 URL, so LocalStack must be exposed or we must use a real S3 bucket for local PDF uploads).
+   **Note:** Because we pass S3 pointers, S3 buckets must be accessible by the parser. (In local dev, the Local Bypass simply reads from the local floci S3).
 3. Proceed to Evaluation.
 
 ---
