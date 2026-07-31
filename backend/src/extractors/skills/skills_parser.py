@@ -26,11 +26,28 @@ def _load_skills_dict() -> List[str]:
             ]
     except Exception:
         return []
-
 _SKILLS_LIST: List[str]   = _load_skills_dict()
+
+_SKILL_ALIASES = {
+    "JS": "JavaScript",
+    "TS": "TypeScript",
+    "Node": "Node.js",
+    "ReactJS": "React",
+    "VueJS": "Vue.js",
+    "AWS": "Amazon Web Services",
+    "GCP": "Google Cloud Platform",
+}
+
+# Add aliases into the scanner list
+_SKILLS_LIST.extend(_SKILL_ALIASES.keys())
+
 _SKILLS_SORTED            = sorted(_SKILLS_LIST, key=len, reverse=True)
 _SKILLS_LOWER: Set[str]   = {s.lower() for s in _SKILLS_LIST}
 _SKILLS_CANONICAL: dict   = {s.lower(): s for s in _SKILLS_LIST}
+
+# Map aliases in the canonical dictionary
+for alias, full in _SKILL_ALIASES.items():
+    _SKILLS_CANONICAL[alias.lower()] = full
 
 # ── Fuzzy matching index: group skills by word count for faster matching ──────
 _SKILLS_BY_WORDCOUNT: Dict[int, List[str]] = {}

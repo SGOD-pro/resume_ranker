@@ -15,45 +15,50 @@ v2 fixes:
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
+
 # ── Date component patterns ──────────────────────────────────────────────
 # Month names: full or abbreviated, with optional period
 _MONTH = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
 
+# Loosen to allow single characters spaced out for kerning: J A N U A R Y
+_MONTH_KERNING = r'(?:J\s*A\s*N(?:[\sA-Z]*)?|F\s*E\s*B(?:[\sA-Z]*)?|M\s*A\s*R(?:[\sA-Z]*)?|A\s*P\s*R(?:[\sA-Z]*)?|M\s*A\s*Y|J\s*U\s*N(?:[\sA-Z]*)?|J\s*U\s*L(?:[\sA-Z]*)?|A\s*U\s*G(?:[\sA-Z]*)?|S\s*E\s*P(?:[\sA-Z]*)?|O\s*C\s*T(?:[\sA-Z]*)?|N\s*O\s*V(?:[\sA-Z]*)?|D\s*E\s*C(?:[\sA-Z]*)?)'
+
+_MONTH_GROUP = r'(?:' + _MONTH + r'|' + _MONTH_KERNING + r')'
+
 # Start date patterns (order matters — most specific first)
 _START_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}',           # January 2020, Jan. 2020, Jan 2020
-    _MONTH + r'\.\d{4}',               # Jan.2020 (no space)
-    _MONTH + r"'\d{2}",                 # Jan'20
-    _MONTH + r'-\d{2,4}',              # Jan-20, Jan-2020
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',  # 1 June 2020, 15 January 2019
-    r'\d{1,2}/\d{1,2}/\d{4}',          # DD/MM/YYYY or MM/DD/YYYY
-    r'\d{1,2}-\d{1,2}-\d{4}',          # DD-MM-YYYY or MM-DD-YYYY
-    r'\d{1,2}/\d{4}',                  # MM/YYYY
-    r'\d{1,2}-\d{4}',                  # MM-YYYY
-    r'\d{1,2}\.\d{4}',                 # MM.YYYY
-    r'\d{4}/\d{1,2}',                  # YYYY/MM
-    r'\d{4}',                          # YYYY
-])
-
-# End date patterns (same as start + Present/Current/Now/Till Date)
-_END_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}',
-    _MONTH + r'\.\d{4}',
-    _MONTH + r"'\d{2}",
-    _MONTH + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',
+    _MONTH_GROUP + r'[,.]?\s+\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # January 2020, Jan, 2020, J A N  2 0 2 0
+    _MONTH_GROUP + r'\.\d{4}',
+    _MONTH_GROUP + r"'\d{2}",
+    _MONTH_GROUP + r'-\d{2,4}',
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
     r'\d{1,2}/\d{4}',
     r'\d{1,2}-\d{4}',
     r'\d{1,2}\.\d{4}',
     r'\d{4}/\d{1,2}',
-    r'Present|Current|Now|Till\s+Date|Till\s+Now|To\s+Date|Ongoing',
-    r'\d{4}',
+    r'\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # 2 0 2 0 or 2020
+])
+
+_END_PATTERNS = '|'.join([
+    _MONTH_GROUP + r'[,.]?\s+\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
+    _MONTH_GROUP + r'\.\d{4}',
+    _MONTH_GROUP + r"'\d{2}",
+    _MONTH_GROUP + r'-\d{2,4}',
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
+    r'\d{1,2}/\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{4}',
+    r'\d{1,2}\.\d{4}',
+    r'\d{4}/\d{1,2}',
+    r'P\s*R\s*E\s*S\s*E\s*N\s*T|C\s*U\s*R\s*R\s*E\s*N\s*T|N\s*O\s*W|T\s*i\s*l\s*l\s+D\s*a\s*t\s*e|O\s*n\s*g\s*o\s*i\s*n\s*g',
+    r'\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
 ])
 
 # Separator between start–end: dashes, em-dashes, "to", "till"
-_DATE_SEP = r'\s*(?:[–—\-–]+|to|till)\s*'
+_DATE_SEP = r'\s*(?:[–—\-–]+|t\s*o|t\s*i\s*l\s*l)\s*'
 
 DATE_RANGE_RE = re.compile(
     r'(?P<start>' + _START_PATTERNS + r')'

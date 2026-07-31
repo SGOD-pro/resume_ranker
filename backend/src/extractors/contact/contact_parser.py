@@ -393,8 +393,8 @@ class ContactParser:
 
     def _extract_phone(self, text: str) -> Optional[str]:
         patterns = [
-            r'\+\d{1,3}[\s\-.]?\(?\d{3,5}\)?[\s\-.]?\d{3,5}[\s\-.]?\d{3,5}',
-            r'\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}',
+            r'\+\d{1,3}[\s\-.]+?\(?\d{3,5}\)?[\s\-.]+?\d{3,5}[\s\-.]+?\d{3,5}',
+            r'\(?\d{3}\)?[\s\-.]+?\d{3}[\s\-.]+?\d{4}',
             r'\b\d{10}\b',
         ]
         for pat in patterns:

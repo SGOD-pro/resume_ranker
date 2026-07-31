@@ -1,0 +1,680 @@
+{
+  "timestamp": "2026-07-31T20:50:57.762083",
+  "merge_rule": {
+    "verdict": "PASSED",
+    "passed": 5,
+    "total": 5,
+    "checks": [
+      {
+        "test": "Step 3.4 Canonical: email=real, phone=null \u2192 LLM fills phone only",
+        "passed": true,
+        "failures": [],
+        "merged": {
+          "name": null,
+          "email": "real@example.com",
+          "phone": "555-1234",
+          "skills": []
+        }
+      },
+      {
+        "test": "All deterministic fields present \u2014 LLM must be fully rejected",
+        "passed": true,
+        "failures": [],
+        "merged": {
+          "name": "Alice",
+          "email": "alice@real.com",
+          "phone": "+1-555-0100",
+          "skills": [
+            "Python"
+          ]
+        }
+      },
+      {
+        "test": "All fields null \u2014 LLM fills everything",
+        "passed": true,
+        "failures": [],
+        "merged": {
+          "name": "Bob",
+          "email": "bob@build.com",
+          "phone": "555-BUILD",
+          "skills": []
+        }
+      },
+      {
+        "test": "LLM returns null (garbage input) \u2014 deterministic fields untouched",
+        "passed": true,
+        "failures": [],
+        "merged": {
+          "name": "Confirmed",
+          "email": "confirmed@x.com",
+          "phone": null,
+          "skills": [
+            "Java"
+          ]
+        }
+      },
+      {
+        "test": "Deterministic non-empty skills \u2192 LLM skills MUST NOT overwrite",
+        "passed": true,
+        "failures": [],
+        "merged": {
+          "skills": [
+            "Python",
+            "Django"
+          ]
+        }
+      }
+    ]
+  },
+  "odl_routing": {
+    "routing_verdict": "PASSED",
+    "odl_markdown_overwrite_verdict": "PASSED",
+    "details": [
+      {
+        "doc_id": "1",
+        "quality": 0.402,
+        "odl_called": true,
+        "should_call_odl": true,
+        "routing_correct": true,
+        "markdown_from_odl": true,
+        "markdown_snippet": "# Clean ODL Markdown Extracted by ODL."
+      },
+      {
+        "doc_id": "10",
+        "quality": 0.64,
+        "odl_called": true,
+        "should_call_odl": true,
+        "routing_correct": true,
+        "markdown_from_odl": true,
+        "markdown_snippet": "# Clean ODL Markdown Extracted by ODL."
+      },
+      {
+        "doc_id": "12",
+        "quality": 0.456,
+        "odl_called": true,
+        "should_call_odl": true,
+        "routing_correct": true,
+        "markdown_from_odl": true,
+        "markdown_snippet": "# Clean ODL Markdown Extracted by ODL."
+      }
+    ]
+  },
+  "benchmark": {
+    "pathing": {
+      "total": 50,
+      "processed_ok": 50,
+      "errors": 0,
+      "pymupdf_only": 8,
+      "odl_triggered": 42,
+      "nova_triggered": 50,
+      "pct_pymupdf_only": 16.0,
+      "pct_odl_triggered": 84.0,
+      "pct_nova_triggered": 100.0
+    },
+    "extraction": {
+      "email": {
+        "by_regex": 30,
+        "by_nova": 0,
+        "missing": 20,
+        "pct_regex": 60.0,
+        "pct_nova": 0.0,
+        "pct_total": 60.0
+      },
+      "phone": {
+        "by_regex": 44,
+        "by_nova": 0,
+        "missing": 6,
+        "pct_regex": 88.0,
+        "pct_nova": 0.0,
+        "pct_total": 88.0
+      },
+      "name": {
+        "found": 47,
+        "missing": 3,
+        "pct_found": 94.0
+      }
+    },
+    "quality": {
+      "avg": 0.619,
+      "p50": 0.5,
+      "p95": 1.0,
+      "below_threshold": 42,
+      "threshold": 0.9
+    },
+    "latency": {
+      "pymupdf": {
+        "count": 50,
+        "p50_ms": 89.9,
+        "p95_ms": 172.9,
+        "avg_ms": 101.4
+      },
+      "odl": {
+        "count": 42,
+        "p50_ms": 0.1,
+        "p95_ms": 0.1,
+        "avg_ms": 0.1
+      },
+      "regex_parse": {
+        "count": 50,
+        "p50_ms": 56.8,
+        "p95_ms": 139.9,
+        "avg_ms": 65.2
+      },
+      "nova": {
+        "count": 50,
+        "p50_ms": 0.7,
+        "p95_ms": 1.2,
+        "avg_ms": 0.7
+      },
+      "total": {
+        "count": 50,
+        "p50_ms": 235.8,
+        "p95_ms": 446.5,
+        "avg_ms": 274.9
+      }
+    },
+    "errors": []
+  },
+  "per_resume": [
+    {
+      "doc_id": "1",
+      "quality": 0.402,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "JULIE MONROE",
+      "error": null
+    },
+    {
+      "doc_id": "10",
+      "quality": 0.64,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "890-555-0401",
+      "name": "Charly Dolman",
+      "error": null
+    },
+    {
+      "doc_id": "12",
+      "quality": 0.456,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "Jason Miller",
+      "error": null
+    },
+    {
+      "doc_id": "13",
+      "quality": 0.483,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "Kristen Connelly",
+      "error": null
+    },
+    {
+      "doc_id": "14",
+      "quality": 0.55,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "890-555-0401",
+      "name": "New York",
+      "error": null
+    },
+    {
+      "doc_id": "15",
+      "quality": 0.494,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "(541) 754-3010",
+      "name": "John Smith",
+      "error": null
+    },
+    {
+      "doc_id": "16",
+      "quality": 0.618,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": null,
+      "name": "Christopher Fowler",
+      "error": null
+    },
+    {
+      "doc_id": "17",
+      "quality": 0.425,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "sophia.bennett@email.com",
+      "phone": "(555) 123-7890",
+      "name": "Sophia Bennett",
+      "error": null
+    },
+    {
+      "doc_id": "18",
+      "quality": 0.492,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": null,
+      "name": "Sam Pronove",
+      "error": null
+    },
+    {
+      "doc_id": "2",
+      "quality": 0.457,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "resume@example.com",
+      "phone": "890-555-0401",
+      "name": "DANIEL GAN",
+      "error": null
+    },
+    {
+      "doc_id": "3",
+      "quality": 0.785,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": null,
+      "name": "Christopher Fowler",
+      "error": null
+    },
+    {
+      "doc_id": "5",
+      "quality": 0.469,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "John Smith",
+      "error": null
+    },
+    {
+      "doc_id": "6",
+      "quality": 0.595,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "San Antonio",
+      "error": null
+    },
+    {
+      "doc_id": "7",
+      "quality": 0.477,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3056478349",
+      "name": "Sarah West",
+      "error": null
+    },
+    {
+      "doc_id": "8",
+      "quality": 0.479,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "(541) 754-3010",
+      "name": "San Antonio",
+      "error": null
+    },
+    {
+      "doc_id": "9",
+      "quality": 0.663,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "email@email.com",
+      "phone": "3868683442",
+      "name": "ROBERT COOPER",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Aditya_Joshi",
+      "quality": 0.989,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "aditya@joshtech.io",
+      "phone": "+1-123-456-7890",
+      "name": "Aditya Joshi",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Amit_Sharma",
+      "quality": 1.0,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "amit@sharma.io",
+      "phone": "+1-234-567-8901",
+      "name": "Amit Sharma",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Ananya_Desai",
+      "quality": 0.988,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "ananya@desaitech.com",
+      "phone": "+1-789-012-3456",
+      "name": "Ananya Desai",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Neha_Singh",
+      "quality": 0.988,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "neha@singhcode.com",
+      "phone": "+1-567-890-1234",
+      "name": "Neha Singh",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Priya_Patel",
+      "quality": 1.0,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "priya@patelworks.com",
+      "phone": "+1-345-678-9012",
+      "name": "Priya Patel",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Rahul_Gupta",
+      "quality": 0.992,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "rahul@guptatech.com",
+      "phone": "+1-456-789-0123",
+      "name": "Rahul Gupta",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Shalini_Nair",
+      "quality": 0.989,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "shalini@nairtech.com",
+      "phone": "+1-012-345-6789",
+      "name": "Shalini Nair",
+      "error": null
+    },
+    {
+      "doc_id": "CV_Vikram_Rao",
+      "quality": 0.987,
+      "odl_triggered": false,
+      "nova_triggered": true,
+      "email": "vikram@raotech.io",
+      "phone": "+1-678-901-2345",
+      "name": "Vikram Rao",
+      "error": null
+    },
+    {
+      "doc_id": "SUBHADIPcv",
+      "quality": 0.542,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "bc2227.mid7063@gmail.com",
+      "phone": "+91  6297 763 665",
+      "name": null,
+      "error": null
+    },
+    {
+      "doc_id": "backend",
+      "quality": 0.465,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "+1-(234)-555-1234",
+      "name": "ZOE THOMPSON",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1)",
+      "quality": 0.871,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": null,
+      "name": null,
+      "error": null
+    },
+    {
+      "doc_id": "cv (10)",
+      "quality": 0.48,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": null,
+      "name": "Jaroslav Chechnik",
+      "error": null
+    },
+    {
+      "doc_id": "cv (100)",
+      "quality": 0.567,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "aadipandey@yahoo.com",
+      "phone": "7017692645",
+      "name": "Yogesh Chandra Pandey",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1000)",
+      "quality": 0.416,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "arunkumar.uc@stfc.in",
+      "phone": "+91 9745004628",
+      "name": "ARUN KUMAR U.C.",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1001)",
+      "quality": 0.555,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "athuliagthoppil@gmail.com",
+      "phone": "+91 9539198718",
+      "name": "ATHULIA GOPI",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1002)",
+      "quality": 0.498,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "ajoo@ce-os.eu",
+      "phone": "463-17-79",
+      "name": null,
+      "error": null
+    },
+    {
+      "doc_id": "cv (1003)",
+      "quality": 0.529,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Al Pacino",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1004)",
+      "quality": 0.645,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Allison Eastwood",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1005)",
+      "quality": 0.533,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Ashley Judd",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1006)",
+      "quality": 0.539,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "American Express",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1007)",
+      "quality": 0.483,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "binceg@gmail.com",
+      "phone": "+91 9645228683",
+      "name": "Bince George",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1008)",
+      "quality": 0.898,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "drsantoshkakade@gmail.com",
+      "phone": "0985067117",
+      "name": "DR.SANTOSH KAKADE",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1009)",
+      "quality": 0.899,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": null,
+      "name": "Dr. Kunal Aneja",
+      "error": null
+    },
+    {
+      "doc_id": "cv (101)",
+      "quality": 0.405,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": "sp725897@gmail.com",
+      "phone": "+919540020585",
+      "name": "Mob. No.",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1010)",
+      "quality": 0.545,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Abbie Cornish",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1011)",
+      "quality": 0.537,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Anna Nalick",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1012)",
+      "quality": 0.555,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Abigail Breslin",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1013)",
+      "quality": 0.549,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Alfre Woodard",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1014)",
+      "quality": 0.527,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Adam Goldberg",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1015)",
+      "quality": 0.491,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Amanda Blank",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1016)",
+      "quality": 0.637,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Aaron Neville",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1017)",
+      "quality": 0.36,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "0997829711",
+      "name": "Curriculum Vitae",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1018)",
+      "quality": 0.542,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Alex Kingston",
+      "error": null
+    },
+    {
+      "doc_id": "cv (1019)",
+      "quality": 0.489,
+      "odl_triggered": true,
+      "nova_triggered": true,
+      "email": null,
+      "phone": "90034      310. 839. 8722",
+      "name": "Daniel Arenas",
+      "error": null
+    }
+  ]
+}

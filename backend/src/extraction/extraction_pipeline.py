@@ -30,7 +30,7 @@ class ExtractionPipeline:
         # Step 3: Regex Parse on Clean Markdown
         import time
         t0 = time.time()
-        md_result = self.markdown_service.extract(parse_result.markdown)
+        md_result = self.markdown_service.extract(parse_result.markdown, parse_result.hyperlinks)
         t1 = time.time()
         timings.append(StageTiming(
             document_id=doc_id,
