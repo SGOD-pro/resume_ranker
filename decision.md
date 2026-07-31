@@ -57,3 +57,12 @@
   - If odl-parser-lambda invocation raises (error, throttle, or timeout), Lambda A MUST catch the exception, mark the document's StageTiming record with triggered_fallback=false and an error reason, set DynamoDB status to PARSE_FAILED (not silently skip), and route the document directly to Nova fallback using RAW PyMuPDF output as the input chunk (degraded but non-blocking).
   - odl-parser-lambda MUST be deployed with Reserved Concurrency set to a fixed value (define in template.yaml, initial value: 10). Lambda A invocations beyond that concurrency limit MUST retry with exponential backoff (max 2 retries) before falling through to the PARSE_FAILED path above.
 **Consequences:** Adds a defined degraded path so no document silently disappears from the pipeline. Requires Phase 3 benchmark data before Phase 4 timeout values can be finalized — Phase 4 gate criteria must include "ODL Lambda timeout value confirmed via Phase 3 StageTiming data," not a placeholder. The Local Bypass (direct Python import of odl/main.py, see architecture.md) uses a different failure surface than the production boto3.invoke() path — import errors and in-process exceptions instead of cold-start/throttle/concurrency errors. Both paths MUST funnel into the same PARSE_FAILED handling in odl_client.py via a single try/except wrapping both branches, so callers (Phase 3 pipeline code) never need to know which environment they're in. Do not duplicate error-handling logic across the two branches.
+
+## ADR-10: Multi-PDF Batch convert() Support and Partial Failures
+**Status:** Accepted
+**Context:** ODL's `convert()` is expensive per-file due to JVM boots. Passing an array of files processes them sequentially in a single JVM run, yielding ~2.4x throughput speedups (from 1.06s/file down to 0.44s/file). However, if any PDF in the batch is corrupted, `convert()` finishes processing valid files but exits with return code 1, which raises an exception in Python. 
+**Decision:** 
+  - Change the event contract to accept an array of documents (`{"documents": [...]}`). 
+  - Wrap `convert()` in a try/except block. Since the output for valid files is still written despite the exception, lambda_handler MUST rely strictly on the existence of `.md`/`.json` output files to determine success.
+  - Return `{ "results": [...], "failed": [...] }`.
+**Consequences:** Substantially increases batch throughput and eliminates N-1 JVM cold starts. Requires callers to adapt to the batch API and explicitly handle partial failures returned in the `"failed"` list.

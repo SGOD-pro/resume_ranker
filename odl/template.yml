@@ -5,8 +5,10 @@ Description: ODL PDF Parser Lambda
 
 Globals:
   Function:
-    Timeout: 300
-    MemorySize: 2048
+    Timeout: 600
+    MemorySize: 4096
+    EphemeralStorage:
+      Size: 4096
 
 Resources:
   ODLBucket:
