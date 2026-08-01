@@ -14,3 +14,6 @@ backend/.aws-sam/
 odl/*.json
 # Vercel
 .vercel/
+odl_*
+
+__pycache__

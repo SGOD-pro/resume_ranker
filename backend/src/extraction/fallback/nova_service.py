@@ -49,20 +49,14 @@ class NovaService:
     """
 
     def __init__(self):
-        s = get_settings()
+        from src.config.aws import get_client
         # Strict 10-second timeout — fail loudly, don't hang
-        config = Config(
+        _config = Config(
             connect_timeout=10,
             read_timeout=10,
             retries={"max_attempts": 2},
         )
-        kwargs: Dict[str, Any] = {
-            "region_name":           s.aws_default_region,
-            "aws_access_key_id":     s.aws_access_key_id,
-            "aws_secret_access_key": s.aws_secret_access_key,
-            "config":                config,
-        }
-        self.bedrock_client = boto3.client("bedrock-runtime", **kwargs)
+        self.bedrock_client = get_client("bedrock-runtime", config=_config)
         self._dead = False  # Set True if quota exhausted — skip further calls
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -106,102 +100,113 @@ class NovaService:
         Calls the Bedrock converse API and returns the parsed JSON dict.
         Returns {} on any error so the caller falls back to deterministic fields.
         """
-        try:
-            response = self.bedrock_client.converse(
-                modelId="amazon.nova-lite-v1:0",
-                system=[{"text": _SYSTEM_PROMPT}],
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [{"text": user_text}],
-                    },
-                    # Prefill the assistant turn with "{" — nudges Nova directly
-                    # into the JSON body, skipping any preamble text.
-                    {
-                        "role": "assistant",
-                        "content": [{"text": "{"}],
-                    },
-                ],
-                inferenceConfig={
-                    "temperature": 0.0,
-                    "maxTokens": 512,
-                    # Stop on closing fence in case the model emits one anyway
-                    "stopSequences": ["```"],
-                },
-            )
+        import time
+        max_retries = 3
 
-            # ── Extract text block from converse response ──────────────────
-            content_blocks = (
-                response.get("output", {})
-                        .get("message", {})
-                        .get("content", [])
-            )
-            raw_text = ""
-            for block in content_blocks:
-                if isinstance(block, dict) and "text" in block:
-                    raw_text = block["text"].strip()
-                    break
-
-            # The model continues from the prefilled "{", so re-prepend it
-            if raw_text and not raw_text.startswith("{"):
-                raw_text = "{" + raw_text
-
-            usage = response.get("usage", {})
-
-            # ── Parse JSON ─────────────────────────────────────────────────
+        for attempt in range(max_retries):
             try:
-                parsed = json.loads(raw_text)
-                parsed["_nova_tokens"] = usage
-                return parsed
-            except (json.JSONDecodeError, ValueError) as parse_err:
-                logger.warning(
-                    "Nova JSON parse error (%s). Raw response: %.300s",
-                    parse_err, raw_text,
+                response = self.bedrock_client.converse(
+                    modelId="amazon.nova-lite-v1:0",
+                    system=[{"text": _SYSTEM_PROMPT}],
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [{"text": user_text}],
+                        },
+                        # Prefill the assistant turn with "{" — nudges Nova directly
+                        # into the JSON body, skipping any preamble text.
+                        {
+                            "role": "assistant",
+                            "content": [{"text": "{"}],
+                        },
+                    ],
+                    inferenceConfig={
+                        "temperature": 0.0,
+                        "maxTokens": 512,
+                        # Stop on closing fence in case the model emits one anyway
+                        "stopSequences": ["```"],
+                    },
                 )
-                # Best-effort: grab the first balanced { … } block
-                m = re.search(r"\{.*?\}", raw_text, re.DOTALL)
-                if m:
-                    try:
-                        parsed = json.loads(m.group(0))
-                        parsed["_nova_tokens"] = usage
-                        return parsed
-                    except Exception:
-                        pass
+
+                # ── Extract text block from converse response ──────────────────
+                content_blocks = (
+                    response.get("output", {})
+                            .get("message", {})
+                            .get("content", [])
+                )
+                raw_text = ""
+                for block in content_blocks:
+                    if isinstance(block, dict) and "text" in block:
+                        raw_text = block["text"].strip()
+                        break
+
+                # The model continues from the prefilled "{", so re-prepend it
+                if raw_text and not raw_text.startswith("{"):
+                    raw_text = "{" + raw_text
+
+                usage = response.get("usage", {})
+
+                # ── Parse JSON ─────────────────────────────────────────────────
+                try:
+                    parsed = json.loads(raw_text)
+                    parsed["_nova_tokens"] = usage
+                    return parsed
+                except (json.JSONDecodeError, ValueError) as parse_err:
+                    logger.warning(
+                        "Nova JSON parse error (%s). Raw response: %.300s",
+                        parse_err, raw_text,
+                    )
+                    # Best-effort: grab the first balanced { … } block
+                    m = re.search(r"\{.*?\}", raw_text, re.DOTALL)
+                    if m:
+                        try:
+                            parsed = json.loads(m.group(0))
+                            parsed["_nova_tokens"] = usage
+                            return parsed
+                        except Exception:
+                            pass
+                    return {}
+
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+                error_msg = exc.response.get("Error", {}).get("Message", str(exc))
+                http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+                if error_code in ("ThrottlingException", "TooManyRequestsException",
+                                  "ServiceQuotaExceededException"):
+                    logger.error(
+                        "Nova LLM QUOTA EXHAUSTED [%s] HTTP %s: %s — "
+                        "Attempt %d/%d. Sleeping...",
+                        error_code, http_status, error_msg, attempt + 1, max_retries
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # 1s, 2s
+                        continue
+                    else:
+                        return {}
+                elif error_code in ("AccessDeniedException", "UnrecognizedClientException",
+                                    "InvalidSignatureException"):
+                    logger.error(
+                        "Nova LLM AUTH FAILURE [%s] HTTP %s: %s",
+                        error_code, http_status, error_msg,
+                    )
+                    self._dead = True
+                    return {}
+                else:
+                    logger.error(
+                        "Nova LLM ClientError [%s] HTTP %s: %s",
+                        error_code, http_status, error_msg,
+                    )
+                    return {}
+
+            except Exception as exc:
+                logger.error(
+                    "Nova LLM unexpected error [%s]: %s",
+                    type(exc).__name__, exc,
+                )
                 return {}
 
-        except ClientError as exc:
-            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
-            error_msg = exc.response.get("Error", {}).get("Message", str(exc))
-            http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-
-            if error_code in ("ThrottlingException", "TooManyRequestsException",
-                              "ServiceQuotaExceededException"):
-                logger.error(
-                    "Nova LLM QUOTA EXHAUSTED [%s] HTTP %s: %s — "
-                    "Disabling LLM for remainder of session.",
-                    error_code, http_status, error_msg,
-                )
-                self._dead = True  # Stop wasting time on further calls
-            elif error_code in ("AccessDeniedException", "UnrecognizedClientException",
-                                "InvalidSignatureException"):
-                logger.error(
-                    "Nova LLM AUTH FAILURE [%s] HTTP %s: %s",
-                    error_code, http_status, error_msg,
-                )
-                self._dead = True
-            else:
-                logger.error(
-                    "Nova LLM ClientError [%s] HTTP %s: %s",
-                    error_code, http_status, error_msg,
-                )
-            return {}
-
-        except Exception as exc:
-            logger.error(
-                "Nova LLM unexpected error [%s]: %s",
-                type(exc).__name__, exc,
-            )
-            return {}
+        return {}
 
     @staticmethod
     def _merge(existing: Dict[str, Any], extracted: Dict[str, Any]) -> Dict[str, Any]:

@@ -19,6 +19,16 @@
 **Decision:** Run PyMuPDF first. Calculate a *pre-extraction structural heuristic* (x-coordinate clustering, reading order monotonicity, char density, table detection) BEFORE any regex parsing. If the structural quality score `< 0.90`, fall back to ODL.
 **Consequences:** ODL fallback rate is empirically measurable via `StageTiming` instrumentation. The structural quality gate formula must be strictly maintained and cannot be swapped for a post-extraction metric.
 
+**Aug 2026 Formula Revision (after 200-resume empirical benchmark):**
+- **Root-cause finding:** `reading_order_monotonicity` cannot distinguish garbled 2-column text from clean text. PyMuPDF Y-coordinates remain monotonically non-decreasing even in 2-column layouts, so the signal is flat (~0.95) for all valid text PDFs.
+- **Fix:** Shifted all discriminating weight onto `col_penalty` (weighted 0.35, binary 1.0/0.0). X-clustering gap raised from 20 px → 50 px to detect true structural columns only.
+- **Formula change:** `0.35×col_penalty + 0.30×reading_order + 0.20×char_density + 0.15×not_table_heavy`  *(was: `0.40×reading_order + 0.35×char_density + 0.15×not_table_heavy + 0.10×col_penalty`)*
+- **Threshold:** Lowered from 0.90 → 0.70 to prevent excessive ODL triggering on sparse-but-clean resumes.
+- **Before (200 resumes, v1 formula, threshold 0.90):** PyMuPDF 37.5% / ODL 4.5% / Nova 58.0%
+- **After (200 resumes, v2 formula, threshold 0.70):** PyMuPDF 35.5% / ODL 2.0% / Nova 62.5%
+- **Observation:** ODL rate dropped (not increased) because the 50 px x-clustering is flagging some 1-column resumes with right-aligned date columns as 2-column, pushing them into ODL→Nova path (counts as Nova in layer breakdown). Further calibration of the x-clustering gap or switching to absolute page-width fraction is a tracked follow-up item.
+
+
 ## ADR-04: DynamoDB with Purpose-Built GSIs (No Postgres Migration)
 **Status:** Accepted
 **Context:** V1 uses DynamoDB. V2 requirements (score-range filtering, skill-presence filtering, CSV export) cannot be efficiently supported by DynamoDB base table scans. A migration to PostgreSQL was considered to solve this natively.
@@ -60,9 +70,12 @@
 
 ## ADR-10: Multi-PDF Batch convert() Support and Partial Failures
 **Status:** Accepted
-**Context:** ODL's `convert()` is expensive per-file due to JVM boots. Passing an array of files processes them sequentially in a single JVM run, yielding ~2.4x throughput speedups (from 1.06s/file down to 0.44s/file). However, if any PDF in the batch is corrupted, `convert()` finishes processing valid files but exits with return code 1, which raises an exception in Python. 
-**Decision:** 
+**Context:** ODL's `convert()` is expensive per-file due to JVM boots. Passing an array of files processes them sequentially in a single JVM run, yielding ~2.4× throughput speedups (from 1.06s/file down to 0.44s/file, measured locally on 5 same-size PDFs). However, if any PDF in the batch is corrupted, `convert()` finishes processing valid files but exits with return code 1, which raises a `CalledProcessError` in Python.
+**Decision:**
   - Change the event contract to accept an array of documents (`{"documents": [...]}`). 
-  - Wrap `convert()` in a try/except block. Since the output for valid files is still written despite the exception, lambda_handler MUST rely strictly on the existence of `.md`/`.json` output files to determine success.
+  - Wrap `convert()` in a try/except block. Since the output for valid files is still written despite the exception, `lambda_handler` MUST rely strictly on the existence of `.md`/`.json` output files to determine success — not on exit code or exception absence.
   - Return `{ "results": [...], "failed": [...] }`.
+  - `odl_client.py` exposes `parse_batch(documents: List[DocDescriptor]) -> BatchParseResult` which maps `failed` doc_ids to per-document `ODLParseError` entries. Callers never see a batch-level exception.
+**Partial-failure behavior (empirically confirmed):** When a corrupt PDF is in a batch of N, `convert()` processes all valid files, writes their `.md` and `.json` outputs, then raises `CalledProcessError` (exit code 1). The lambda catches this, then checks for output files: docs with files get `results`, docs without get `failed`. The pipeline degrades the failed doc to PyMuPDF text and marks it `PARSE_FAILED` — no silent drop.
+**UX tradeoff:** In production, `MaximumBatchingWindowInSeconds=60` means a single quality-failed document on low-traffic periods may wait up to 60 seconds for its batch window to flush. This is an explicit, accepted tradeoff: ODL is used for layout-scrambled multi-column PDFs where the extra latency is preferable to garbled extraction output. The `/ats-check` path is exempt and uses `parse()` directly (synchronous, user-facing).
 **Consequences:** Substantially increases batch throughput and eliminates N-1 JVM cold starts. Requires callers to adapt to the batch API and explicitly handle partial failures returned in the `"failed"` list.

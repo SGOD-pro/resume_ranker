@@ -278,6 +278,14 @@ async def _run_extraction_background(job_id: str):
     if not job:
         return
 
+    # R-14: idempotency guard — do not re-process if already extracted or scored.
+    if job.status in (JobStatus.SCORED, JobStatus.EXTRACTED, JobStatus.EXTRACTING):
+        logger.info(
+            "Job %s already in status %s — skipping re-extraction (R-14)",
+            job_id, job.status,
+        )
+        return
+
     documents = _docs_repo.list_for_job(job_id)
     if not documents:
         return
@@ -289,7 +297,10 @@ async def _run_extraction_background(job_id: str):
 
     async def _extract_one(doc: DocumentItem) -> None:
         nonlocal succeeded
-        try:
+        # R-14: skip already-processed documents
+        if doc.status in (DocumentStatus.PARSED, DocumentStatus.SCORED):
+            succeeded += 1
+            return
             # Mark document as parsing
             _docs_repo.update_status(
                 doc.job_id, doc.document_id,

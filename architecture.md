@@ -19,8 +19,15 @@ graph TD
     SQS1 --> LambdaA[Lambda A Worker]
     BGTask --> LambdaALogic[Run Lambda A Logic Locally]
     
-    LambdaA -->|boto3.invoke| ODLLambda[odl-parser-lambda via ECR]
-    LambdaALogic -->|boto3.invoke| ODLLambda
+    LambdaA -->|quality OK| DirectPipe1[Per-doc regex → Nova → Score]
+    LambdaALogic -->|quality OK| DirectPipe2[Per-doc regex → Nova → Score]
+
+    LambdaA -->|quality FAIL| OdlQ[SQS OdlBatchQueue]
+    LambdaALogic -->|quality FAIL| OdlQ
+
+    OdlQ -->|BatchSize=10, Window=60s| ODLLambda[odl-parser-lambda via ECR]
+    ODLLambda -->|parse_batch - one JVM boot| BatchResults[N ParseResults]
+    BatchResults --> PerDocPipe[Per-doc regex → Nova → Score]
     
     LambdaA -->|Save JSON| S3
     LambdaALogic -->|Save JSON| S3
@@ -37,10 +44,22 @@ graph TD
 
 - **Frontend:** React 18, Vite, Zustand (state), TanStack Query (fetching only).
 - **Local Dev (Local-Cloud Split):** FastAPI `BackgroundTasks` (simulates Lambda A synchronously). S3 and DynamoDB point to floci (`localhost:4566`). Bedrock calls hit real AWS. ODL parser uses Local Bypass: imports `odl/main.py` directly via `lambda_handler(event, None)` instead of invoking the cloud Lambda. Same event payload shape both ways: `{"s3_bucket": ..., "s3_key": ...}`.
-- **Prod Worker (Lambda A):** Python 3.12 ZIP. PyMuPDF, `boto3` (for invoking ODL).
-- **Standalone ODL Parser:** `odl-parser-lambda` deployed as a Docker container via ECR.
+- **Prod Worker (Lambda A):** Python 3.12 ZIP. PyMuPDF, `boto3` (for enqueueing to OdlBatchQueue and invoking ODL).
+- **ODL Batch Queue (`OdlBatchQueue`):** SQS FIFO queue. Documents that fail the quality gate are enqueued here. Native SQS batch trigger (`BatchSize=10, MaximumBatchingWindowInSeconds=60`) flushes groups to `odl-parser-lambda` in one invoke.
+- **Standalone ODL Parser:** `odl-parser-lambda` deployed as a Docker container via ECR. Receives `{"documents": [...]}` (batch API, ADR-10).
 - **Prod API (Lambda B):** Python 3.12 ZIP. FastAPI, `boto3`, `scikit-learn`, `rank_bm25`.
 - **Database:** DynamoDB (with purpose-built GSIs for filtering, see `design.md`).
+
+## 2b. ODL Batching — JVM Amortisation
+
+Every `odl-parser-lambda` invocation pays a **~0.74s JVM cold-start cost** regardless of how many PDFs are in the payload. The old per-document routing paid this cost N times for N quality-failed documents. The new routing amortises one JVM boot across up to 10 documents per SQS window flush:
+
+| Approach | 10 ODL-destined docs | JVM boots | Approx. savings |
+|----------|---------------------|-----------|----------------|
+| Serial (old) | 10 × `parse()` | 10 | — |
+| Batch (new) | 1 × `parse_batch()` | 1 | ~0.74s × 9 = **6.7s** |
+
+**Why Nova stays per-document:** Nova calls hit Bedrock (no JVM, no cold start). Each call costs fractions of a cent and completes in ~200-500ms. Batching Nova calls would add a `MaximumBatchingWindowInSeconds` latency floor for users on low-traffic periods with no benefit — the bottleneck was always JVM boot, which Bedrock doesn't have.
 
 ## 3. The "Big Picture" Data Flow
 

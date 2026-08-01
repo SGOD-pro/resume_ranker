@@ -58,11 +58,18 @@ def lambda_handler(event, context):
         # 2. Run opendataloader_pdf on all files in one call
         logger.info(f"Running opendataloader_pdf.convert on {len(input_paths)} files")
         try:
-            opendataloader_pdf.convert(
-                input_path=input_paths, 
-                output_dir=str(out_dir), 
-                format="json,markdown"
-            )
+            convert_kwargs = {
+                "input_path": input_paths,
+                "output_dir": str(out_dir),
+                "format": "json,markdown"
+            }
+            if save_images:
+                convert_kwargs["image_output"] = "external"
+                convert_kwargs["image_dir"] = str(out_dir)
+            else:
+                convert_kwargs["image_output"] = "off"
+                
+            opendataloader_pdf.convert(**convert_kwargs)
         except Exception as e:
             # The convert function throws if ANY file is corrupt. 
             # However, it still produces output for the valid files.
@@ -85,8 +92,31 @@ def lambda_handler(event, context):
             markdown_content = ""
             elements = []
             
+            image_s3_keys = []
             if md_file.exists():
                 markdown_content = md_file.read_text(encoding="utf-8")
+                
+                if save_images:
+                    import re
+                    # Find all images in markdown. Format is usually ![](path)
+                    # ODL uses local paths like /tmp/xxx/out/filename-img_001.png or relative.
+                    # We will upload all actual images in out_dir that correspond to this doc
+                    # and rewrite any matches in the markdown.
+                    img_prefix = f"{doc_id}-img_"
+                    for f in out_dir.iterdir():
+                        if f.is_file() and f.name.startswith(doc_id) and f.suffix.lower() in ('.png', '.jpg', '.jpeg'):
+                            # upload to S3
+                            s3_img_key = f"{doc_map[doc_id].get('s3_key')}_images/{f.name}"
+                            bucket = doc_map[doc_id].get('s3_bucket')
+                            logger.info(f"Uploading image {f.name} to s3://{bucket}/{s3_img_key}")
+                            s3_client.upload_file(str(f), bucket, s3_img_key)
+                            image_s3_keys.append(s3_img_key)
+                            
+                            # replace in markdown: we assume the markdown references the image name or path ending with f.name
+                            # e.g., ![](1234-img_1.png) or ![](/tmp/.../1234-img_1.png)
+                            # Safe replacement using regex to find ![...](...f.name)
+                            pattern = r'(!\[.*?\]\()([^\)]*?' + re.escape(f.name) + r')(\))'
+                            markdown_content = re.sub(pattern, r'\g<1>' + s3_img_key + r'\g<3>', markdown_content)
                 
             if json_file.exists():
                 elements = json.loads(json_file.read_text(encoding="utf-8"))
@@ -94,7 +124,8 @@ def lambda_handler(event, context):
             result_item = {
                 "document_id": doc_id,
                 "markdown": markdown_content,
-                "elements": elements
+                "elements": elements,
+                "image_s3_keys": image_s3_keys
             }
             results.append(result_item)
             

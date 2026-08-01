@@ -1,11 +1,11 @@
 import fitz
 import time
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 
 from src.extraction import odl_client
-from src.extraction.odl_client import ODLParseError
+from src.extraction.odl_client import ODLParseError, DocDescriptor, parse_batch
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def cluster_word_x_positions(page: fitz.Page) -> list:
     clusters: list = []
     curr = [xs[0]]
     for x in xs[1:]:
-        if x - curr[-1] < 20:
+        if x - curr[-1] < 50:
             curr.append(x)
         else:
             clusters.append(curr)
@@ -92,21 +92,19 @@ def pymupdf_layout_quality(page: fitz.Page) -> float:
     # 3. Table detection (soft: 0.0 only when truly table-heavy)
     signals["not_table_heavy"] = 0.0 if looks_tabular(page) else 1.0
 
-    # 4. Column penalty — soft; only penalises extreme multi-column (≥4 clusters)
+    # 4. Column penalty — strict; heavily penalizes any multi-column layout detected
     x_clusters = cluster_word_x_positions(page)
     n_cols = len(x_clusters)
-    if n_cols <= 2:
-        signals["col_penalty"] = 1.0        # normal 1- or 2-col layout
-    elif n_cols == 3:
-        signals["col_penalty"] = 0.5        # mild deduction
+    if n_cols <= 1:
+        signals["col_penalty"] = 1.0        # true 1-col layout
     else:
-        signals["col_penalty"] = 0.0        # very fragmented layout
+        signals["col_penalty"] = 0.0        # 2+ columns (detected with 50px gap)
 
     return (
-        signals["reading_order"]  * 0.40
-        + signals["char_density"] * 0.35
+        signals["col_penalty"] * 0.35
+        + signals["reading_order"]  * 0.30
+        + signals["char_density"] * 0.20
         + signals["not_table_heavy"] * 0.15
-        + signals["col_penalty"] * 0.10
     )
 
 
@@ -117,8 +115,8 @@ def pymupdf_layout_quality_signals(page: fitz.Page) -> dict:
     ro = reading_order_monotonicity(page)
     cd = min(1.0, len(page.get_text()) / EXPECTED_CHARS_PER_PAGE)
     nt = 0.0 if looks_tabular(page) else 1.0
-    cp = 1.0 if n_cols <= 2 else (0.5 if n_cols == 3 else 0.0)
-    score = ro * 0.40 + cd * 0.35 + nt * 0.15 + cp * 0.10
+    cp = 1.0 if n_cols <= 1 else 0.0
+    score = cp * 0.35 + ro * 0.30 + cd * 0.20 + nt * 0.15
     return {
         "reading_order": round(ro, 3),
         "char_density":  round(cd, 3),
@@ -150,6 +148,16 @@ class ParseResult:
     quality_score: float
     hyperlinks: list
     error_reason: Optional[str] = None
+
+
+@dataclass
+class BatchDoc:
+    """Input descriptor for parse_pdf_batch."""
+    document_id: str
+    pdf_path: str
+    s3_bucket: str
+    s3_key: str
+    save_images: bool = False
 
 
 class StructuralParsingService:
@@ -239,3 +247,154 @@ class StructuralParsingService:
             hyperlinks=hyperlinks,
             error_reason=error_reason,
         )
+
+    def parse_pdf_batch(self, docs: List[BatchDoc]) -> List[ParseResult]:
+        """
+        Batch version of parse_pdf.
+
+        Runs PyMuPDF quality gate on every document individually (fast), then
+        calls odl_client.parse_batch() ONCE for all quality-failed documents —
+        a single JVM boot amortised across N documents (ADR-10).
+
+        Per-document ODL failures are caught and degraded to PyMuPDF text output
+        with PARSE_FAILED error_reason, per ADR-09. No document silently disappears.
+        Returns results in the same order as the input list.
+        """
+        if not docs:
+            return []
+
+        pymupdf_results: List[ParseResult] = []
+        odl_needed: List[BatchDoc] = []
+        odl_pymupdf_fallback: dict = {}  # doc_id -> raw PyMuPDF markdown (for degraded path)
+
+        # ── Phase A: PyMuPDF quality gate for every document ─────────────────
+        for doc in docs:
+            timings: List[StageTiming] = []
+            t0 = time.time()
+
+            try:
+                fitz_doc = fitz.open(doc.pdf_path)
+                page_qualities: List[float] = []
+                raw_pymupdf_text: List[str] = []
+                hyperlinks: List[dict] = []
+
+                for page in fitz_doc:
+                    page_qualities.append(pymupdf_layout_quality(page))
+                    raw_pymupdf_text.append(page.get_text())
+                    for link in page.get_links():
+                        if 'uri' in link:
+                            hyperlinks.append({"uri": link['uri']})
+
+                avg_quality = (
+                    sum(page_qualities) / len(page_qualities) if page_qualities else 0.0
+                )
+                fitz_doc.close()
+                t1 = time.time()
+                raw_markdown = "\n".join(raw_pymupdf_text)
+                triggered_fallback = avg_quality < QUALITY_THRESHOLD
+
+                timings.append(StageTiming(
+                    document_id=doc.document_id,
+                    stage="quality_check",
+                    method_used="pymupdf",
+                    duration_ms=(t1 - t0) * 1000,
+                    triggered_fallback=triggered_fallback,
+                    quality_score=avg_quality,
+                ))
+
+                if triggered_fallback:
+                    odl_needed.append(doc)
+                    odl_pymupdf_fallback[doc.document_id] = (raw_markdown, hyperlinks, timings, avg_quality)
+                    # Placeholder will be replaced after batch parse
+                    pymupdf_results.append(None)  # type: ignore[arg-type]
+                else:
+                    pymupdf_results.append(ParseResult(
+                        markdown=raw_markdown,
+                        elements=[],
+                        stage_timings=timings,
+                        quality_score=avg_quality,
+                        hyperlinks=hyperlinks,
+                    ))
+
+            except Exception as fitz_exc:
+                logger.error("PyMuPDF failed for %s: %s", doc.document_id, fitz_exc)
+                t1 = time.time()
+                timings.append(StageTiming(
+                    document_id=doc.document_id,
+                    stage="quality_check",
+                    method_used="pymupdf",
+                    duration_ms=(t1 - t0) * 1000,
+                    triggered_fallback=False,
+                    error_reason=str(fitz_exc),
+                ))
+                pymupdf_results.append(ParseResult(
+                    markdown="",
+                    elements=[],
+                    stage_timings=timings,
+                    quality_score=0.0,
+                    hyperlinks=[],
+                    error_reason=str(fitz_exc),
+                ))
+
+        # ── Phase B: ONE batch ODL call for all quality-failed docs ──────────
+        if odl_needed:
+            batch_descriptors = [
+                DocDescriptor(
+                    document_id=d.document_id,
+                    s3_bucket=d.s3_bucket,
+                    s3_key=d.s3_key,
+                    save_images=d.save_images,
+                )
+                for d in odl_needed
+            ]
+
+            t_batch_start = time.time()
+            batch_result = parse_batch(batch_descriptors)
+            t_batch_end = time.time()
+            batch_duration_ms = (t_batch_end - t_batch_start) * 1000
+            per_doc_ms = batch_duration_ms / len(odl_needed)
+
+            # Fill in results for each ODL-needed doc
+            for doc in odl_needed:
+                raw_markdown, hyperlinks, timings, avg_quality = odl_pymupdf_fallback[doc.document_id]
+                odl_idx = docs.index(doc)
+
+                if doc.document_id in batch_result.results:
+                    odl_out = batch_result.results[doc.document_id]
+                    timings.append(StageTiming(
+                        document_id=doc.document_id,
+                        stage="odl_parse",
+                        method_used="opendataloader",
+                        duration_ms=per_doc_ms,
+                        triggered_fallback=False,
+                    ))
+                    pymupdf_results[odl_idx] = ParseResult(
+                        markdown=odl_out.markdown,
+                        elements=odl_out.elements,
+                        stage_timings=timings,
+                        quality_score=avg_quality,
+                        hyperlinks=hyperlinks,
+                    )
+                else:
+                    # ODL failed for this specific doc — degrade to PyMuPDF text
+                    err = batch_result.failed.get(doc.document_id)
+                    error_reason = str(err) if err else f"ODL failed for {doc.document_id}"
+                    logger.error("ODL batch partial failure for %s: %s", doc.document_id, error_reason)
+                    timings.append(StageTiming(
+                        document_id=doc.document_id,
+                        stage="odl_parse",
+                        method_used="opendataloader",
+                        duration_ms=per_doc_ms,
+                        triggered_fallback=False,
+                        error_reason=error_reason,
+                    ))
+                    pymupdf_results[odl_idx] = ParseResult(
+                        markdown=raw_markdown,
+                        elements=[],
+                        stage_timings=timings,
+                        quality_score=avg_quality,
+                        hyperlinks=hyperlinks,
+                        error_reason=error_reason,
+                    )
+
+        return pymupdf_results

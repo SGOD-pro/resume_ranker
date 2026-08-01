@@ -29,59 +29,116 @@ Sparse index: one item per (candidate, skill). Only populated for candidates tha
 *   **GSI3 SK:** `created_at`
 *   *Query Pattern:* To get all shortlisted candidates, query PK `JOB#123#STATUS#shortlisted`.
 
----
-
-## 2. Pre-Extraction Structural Quality Gate
+---## 2. Pre-Extraction Structural Quality Gate
 
 V1's PyMuPDF extraction failed on multi-column layouts because it scrambled reading order. We cannot use the post-extraction composite presence score to route fallbacks, because a garbled layout might still produce a non-empty (but wrong) `experience` field.
 
 The routing decision MUST be a pre-extraction structural heuristic, computed from raw layout geometry *before* field parsing happens.
 
 ```python
+EXPECTED_CHARS_PER_PAGE = 1500   # raised from 3000 (Aug 2026): 1000-3000 chars typical
+QUALITY_THRESHOLD = 0.70          # lowered from 0.90 (Aug 2026): avoids over-triggering ODL
+
+def cluster_word_x_positions(page) -> list:
+    """Gap threshold = 50 px to catch true structural columns.
+    Standard sidebars (date columns, bullet indents) sit < 50 px from the main text block.
+    A two-pane newspaper-style layout has a large gutter (> 50 px) that this detects."""
+    ...
+
 def pymupdf_layout_quality(page) -> float:
     """
     Computed BEFORE field parsing. Answers: 'is this text extractable
     in reading order at all', not 'did we successfully parse a name'.
+
+    Weights (v2, Aug 2026 — revised after 200-resume benchmark):
+      col_penalty     0.35  → most discriminating; 2-column layouts get 0.0
+      reading_order   0.30  → monotonic Y-flow; flat ~0.95 for all valid text PDFs
+      char_density    0.20  → catches scanned/image-only pages
+      not_table_heavy 0.15  → tables scramble reading order
     """
     signals = {}
 
-    # 1. Column consistency — PyMuPDF's actual failure mode.
+    # 1. Column penalty — strict binary: score 1.0 if ≤1 structural column, else 0.0.
+    #    Uses 50 px gap threshold to distinguish true two-pane layouts from date sidebars.
     x_clusters = cluster_word_x_positions(page)
-    signals["single_column"] = 1.0 if len(x_clusters) <= 1 else 0.0
+    signals["col_penalty"] = 1.0 if len(x_clusters) <= 1 else 0.0
 
-    # 2. Reading-order sanity — do consecutive words/lines have
-    #    monotonically non-decreasing y-position within a column?
-    signals["reading_order_score"] = reading_order_monotonicity(page)  # 0.0-1.0
+    # 2. Reading-order sanity — fraction of consecutive word pairs where Y is non-decreasing.
+    #    NOTE: This signal is fundamentally flat (~0.95) for all valid text PDFs because
+    #    PyMuPDF reads columns top-to-bottom regardless of column order. A two-column resume
+    #    read left-to-right appears nearly monotonic. Do NOT rely on this as the primary
+    #    discriminator for column layout detection.
+    signals["reading_order"] = reading_order_monotonicity(page)
 
     # 3. Char density vs page area — catches scanned/image PDFs
     signals["char_density"] = min(1.0, len(page.get_text()) / EXPECTED_CHARS_PER_PAGE)
 
     # 4. Table detection — if the page looks tabular, PyMuPDF will misread it.
-    signals["not_table_heavy"] = 1.0 if not looks_tabular(page) else 0.0
+    signals["not_table_heavy"] = 0.0 if looks_tabular(page) else 1.0
 
     return (
-        signals["single_column"] * 0.35 +
-        signals["reading_order_score"] * 0.30 +
-        signals["char_density"] * 0.20 +
+        signals["col_penalty"]     * 0.35 +
+        signals["reading_order"]   * 0.30 +
+        signals["char_density"]    * 0.20 +
         signals["not_table_heavy"] * 0.15
     )
 ```
 
+**Aug 2026 Empirical Note:** The `reading_order_monotonicity` cannot distinguish garbled 2-column text
+from clean text because PyMuPDF's Y-coordinate always increases within a column. Observed scores:
+- 1-column, clean: `RO ~1.00`, `CD ~0.8–1.0`, `CP = 1.0` → composite **~0.90**
+- 2-column layout: `RO ~0.95`, `CD ~0.5–1.0`, `CP = 0.0` → composite **~0.57** (fails gate)
+- Scanned image: `RO ~1.0`, `CD ~0.0–0.1`, `CP = 0.0–1.0` → composite **~0.3–0.45** (fails gate)
+
+**Known calibration risk:** The 50 px x-clustering gap may flag normal 1-column resumes where the
+pdf renderer places date text > 50 px from the leftmost text column (e.g., right-aligned dates,
+page headers). In that case `col_penalty = 0.0` and the composite drops to ~0.58, triggering ODL
+unnecessarily. Monitoring `StageTiming.triggered_fallback` rate is the authoritative check.
+
 **Routing Logic (Lambda A / BackgroundTask):**
 1. Run PyMuPDF. Calculate `pymupdf_layout_quality` per page.
-2. If average page quality `< 0.90` -> Trigger `odl-parser-lambda` via `boto3`. Overwrite PyMuPDF output.
+2. If average page quality `>= 0.70` → proceed directly to Evaluation with PyMuPDF output.
+3. If average page quality `< 0.70` → enqueue doc to `OdlBatchQueue`. **Do NOT call `parse()` directly.**
+   - In production: `sqs.send_message(OdlBatchQueue, {"document_id": ..., "s3_bucket": ..., "s3_key": ...})`.
+   - In local dev / benchmark: accumulate docs, call `parse_batch()` once per batch window flush:
    ```python
-   response = odl_client.parse(
-       s3_bucket="...", 
-       s3_key="..."
-   )
-   # odl_client handles ENVIRONMENT branching internally (local sys.path bypass vs prod boto3.invoke)
+   batch_result = odl_client.parse_batch([
+       DocDescriptor(document_id="...", s3_bucket="...", s3_key="..."),
+       DocDescriptor(document_id="...", s3_bucket="...", s3_key="..."),
+       # ... up to BatchSize=10
+   ])
+   # batch_result.results: dict[doc_id, ODLParseResult]  — successful docs
+   # batch_result.failed:  dict[doc_id, ODLParseError]   — per-doc failures
    ```
-   *The response payload contains `{"markdown": "...", "elements": [...]}`.*
-   **Note:** Because we pass S3 pointers, S3 buckets must be accessible by the parser. (In local dev, the Local Bypass simply reads from the local floci S3).
-3. Proceed to Evaluation.
+4. For each doc in `batch_result.results` → use `.markdown` and `.elements`.
+5. For each doc in `batch_result.failed` → degrade to PyMuPDF text, set `error_reason`, mark `PARSE_FAILED`.
+6. Proceed to Evaluation.
+
+**Exception: `/api/v2/ats-check`** — single-file, synchronous, user-facing. Uses `odl_client.parse()` directly. Batching would add up to `MaximumBatchingWindowInSeconds` latency to a live interactive check.
 
 ---
+
+## 2b. BatchParseResult Schema
+
+```python
+@dataclass
+class DocDescriptor:
+    document_id: str
+    s3_bucket: str
+    s3_key: str
+    save_images: bool = False   # upload extracted images to S3 and rewrite MD refs
+
+@dataclass
+class BatchParseResult:
+    results: dict[str, ODLParseResult]   # document_id -> success
+    failed:  dict[str, ODLParseError]    # document_id -> per-doc error
+```
+
+**Partial-failure contract (ADR-09 / ADR-10):**
+- If `convert()` exits with code 1 (confirmed by test: corrupt PDF in batch), it still writes output for valid files. `odl/main.py` relies on *file existence* to determine success, not exit code.
+- Every failed `doc_id` is surfaced in `BatchParseResult.failed` as a typed `ODLParseError`.
+- If the entire boto3 invoke fails (throttle, cold-start timeout, network), every document in the batch is attributed to `BatchParseResult.failed`.
+- **No document silently disappears** from the pipeline. A failed doc must land in `PARSE_FAILED` DynamoDB status.
 
 ## 3. Instrumentation & Telemetry (StageTiming)
 

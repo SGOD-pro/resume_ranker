@@ -30,9 +30,10 @@
 **Goal:** Containerize Lambda A and wire SQS for production deployment.
 - Create `Dockerfile.lambda_a` (Python 3.12 + JRE 17 + ODL + PyMuPDF).
 - Implement `ENVIRONMENT == 'production'` logic: Push to SQS `DocumentQueue` instead of `BackgroundTasks`.
-- Define SQS queues, DLQs, and Lambda event mappings in `template.yaml`.
+- Define SQS queues, DLQs, and Lambda event mappings in `template.yaml`. Include `OdlBatchQueue` event source mapping (`BatchSize=10, MaximumBatchingWindowInSeconds=60`).
+- Wire quality-gate-failed documents to `OdlBatchQueue` (send_message) instead of direct `parse()` invocation — per R-21.
 - Configure API Gateway HTTP API or Lambda Function URL with `RESPONSE_STREAM` for the SSE endpoint.
-- **Gate:** `sam build` succeeds. Deployment to AWS works without local code changes. Production SSE stream does not hit 29-second timeout. ODL Lambda timeout budget and Reserved Concurrency value are set from Phase 3 measured data, not estimated (ADR-09).
+- **Gate:** `sam build` succeeds. Deployment to AWS works without local code changes. Production SSE stream does not hit 29-second timeout. ODL Lambda timeout budget and Reserved Concurrency value are set from Phase 3 measured data, not estimated (ADR-09). **ODL batch deliverable gate: CloudWatch logs confirm exactly ONE `odl-parser-lambda` invocation per batch window flush (not N invocations for N quality-failed docs). Verify with a 15-resume upload where ~8 fail the quality gate.**
 
 ## Phase 5: Frontend V2 Features & Polish (Days 15–17)
 **Goal:** Build V2 UI features (ATS overlays, standalone checker, client-side weight recompute).
