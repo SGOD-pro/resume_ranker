@@ -48,6 +48,9 @@ class NovaService:
     model directly into a JSON object — no ``toolConfig`` / ``invoke_model`` needed.
     """
 
+    _last_call_time: float = 0.0
+    _min_call_interval: float = 4.0  # 15 calls per minute (60s / 15 = 4.0s)
+
     def __init__(self):
         from src.config.aws import get_client
         # Strict 10-second timeout — fail loudly, don't hang
@@ -101,12 +104,21 @@ class NovaService:
         Returns {} on any error so the caller falls back to deterministic fields.
         """
         import time
-        max_retries = 3
+        max_retries = 2
+
+        # Enforce rate limit: 15 API calls per minute (minimum 4.0s interval)
+        now = time.time()
+        elapsed = now - NovaService._last_call_time
+        if elapsed < NovaService._min_call_interval:
+            sleep_needed = NovaService._min_call_interval - elapsed
+            logger.info("Rate limiting Bedrock API (15 calls/min limit): sleeping %.2fs", sleep_needed)
+            time.sleep(sleep_needed)
+        NovaService._last_call_time = time.time()
 
         for attempt in range(max_retries):
             try:
                 response = self.bedrock_client.converse(
-                    modelId="amazon.nova-lite-v1:0",
+                    modelId="apac.amazon.nova-lite-v1:0",
                     system=[{"text": _SYSTEM_PROMPT}],
                     messages=[
                         {

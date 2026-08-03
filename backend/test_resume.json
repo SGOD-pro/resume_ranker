@@ -1,0 +1,65 @@
+{
+  "file name" : "test_resume.pdf",
+  "number of pages" : 1,
+  "author" : "anonymous",
+  "title" : "untitled",
+  "creation date" : "D:20260804014215+05'00'",
+  "modification date" : "D:20260804014215+05'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 1,
+    "level" : "Doctitle",
+    "page number" : 1,
+    "bounding box" : [ 100.0, 796.352, 183.568, 815.392 ],
+    "heading level" : 1,
+    "font" : "Helvetica-Bold",
+    "font size" : 16.0,
+    "text color" : "[0.0]",
+    "content" : "JOHN DOE"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 1,
+    "bounding box" : [ 100.0, 777.3, 413.224, 791.172 ],
+    "font" : "Helvetica",
+    "font size" : 12.0,
+    "text color" : "[0.0]",
+    "content" : "Software Engineer | john.doe@email.com | (555) 123-4567"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 3,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 100.0, 746.808, 174.704, 763.468 ],
+    "heading level" : 2,
+    "font" : "Helvetica-Bold",
+    "font size" : 14.0,
+    "text color" : "[0.0]",
+    "content" : "Experience"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 1,
+    "bounding box" : [ 100.0, 727.3, 366.76, 741.172 ],
+    "font" : "Helvetica",
+    "font size" : 12.0,
+    "text color" : "[0.0]",
+    "content" : "- Senior Developer at Acme Corp (2020 - Present)"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "2",
+    "page number" : 1,
+    "bounding box" : [ 106.672, 712.3, 226.06, 726.172 ],
+    "font" : "Helvetica",
+    "font size" : 12.0,
+    "text color" : "[0.0]",
+    "content" : "* Did stuff with python."
+  } ]
+}

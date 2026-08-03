@@ -26,6 +26,18 @@ class AWSSettings(BaseSettings):
     def is_local(self) -> bool:
         return self.ENVIRONMENT == "local"
 
+    @property
+    def environment(self) -> str:
+        return self.ENVIRONMENT
+
+    @property
+    def s3_bucket_name(self) -> str:
+        return self.S3_BUCKET_NAME
+
+    @property
+    def dynamodb_table_name(self) -> str:
+        return self.DYNAMODB_TABLE_NAME
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AWSSettings:
@@ -40,6 +52,14 @@ def _get_session() -> boto3.Session:
     if s.is_local() and s.AWS_PROFILE:
         return boto3.Session(profile_name=s.AWS_PROFILE, region_name=s.AWS_DEFAULT_REGION)
     return boto3.Session(region_name=s.AWS_DEFAULT_REGION)
+
+
+def get_boto3_kwargs() -> dict:
+    s = get_settings()
+    kwargs: dict = {"region_name": s.AWS_DEFAULT_REGION}
+    if s.AWS_ENDPOINT_URL:
+        kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    return kwargs
 
 
 def get_client(service: str, config=None):
@@ -59,3 +79,4 @@ def get_client(service: str, config=None):
     kwargs.update(extra)
 
     return _get_session().client(service, **kwargs)
+

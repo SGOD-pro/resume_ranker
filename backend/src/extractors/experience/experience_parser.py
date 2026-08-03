@@ -32,6 +32,8 @@ _START_PATTERNS = '|'.join([
     _MONTH_GROUP + r"'\d{2}",
     _MONTH_GROUP + r'-\d{2,4}',
     r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
+    r'\d{4}\s+' + _MONTH_GROUP,           # YYYY Mon (year-first) e.g. "2014 Aug" — Cat A/B gap
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "16th April 2005"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
     r'\d{1,2}/\d{4}',
@@ -47,6 +49,8 @@ _END_PATTERNS = '|'.join([
     _MONTH_GROUP + r"'\d{2}",
     _MONTH_GROUP + r'-\d{2,4}',
     r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
+    r'\d{4}\s+' + _MONTH_GROUP,           # YYYY Mon (year-first)
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "27th September 2007"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
     r'\d{1,2}/\d{4}',
@@ -54,6 +58,7 @@ _END_PATTERNS = '|'.join([
     r'\d{1,2}\.\d{4}',
     r'\d{4}/\d{1,2}',
     r'P\s*R\s*E\s*S\s*E\s*N\s*T|C\s*U\s*R\s*R\s*E\s*N\s*T|N\s*O\s*W|T\s*i\s*l\s*l\s+D\s*a\s*t\s*e|O\s*n\s*g\s*o\s*i\s*n\s*g',
+    r'till\s+date|Till\s+Date|TILL\s+DATE',  # "till date" end phrase
     r'\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
 ])
 
@@ -66,13 +71,26 @@ DATE_RANGE_RE = re.compile(
     r'(?P<end>' + _END_PATTERNS + r')',
     re.I)
 
-# "Since YYYY" / "From YYYY" → treated as YYYY – Present
+# "Since YYYY" / "From YYYY" / "From <ordinal date>" → treated as start – Present
 SINCE_RE = re.compile(
     r'(?:Since|From)\s+(?P<start>\d{4})',
     re.I)
 
+# "From <ordinal-date> to <ordinal-date>" split across label lines
+# e.g. "Duration : From 16th April 2005 to 27th September 2007"
+_FROM_ORDINAL_RE = re.compile(
+    r'(?:From|from)\s+(?P<start>\d{1,2}(?:st|nd|rd|th)?\s+' + _MONTH_GROUP + r'(?:,?\s*\d{4})?)'
+    r'\s*(?:to|till|until)\s+'
+    r'(?P<end>\d{1,2}(?:st|nd|rd|th)?\s+' + _MONTH_GROUP + r'(?:,?\s*\d{4})?|present|current|till\s+date)',
+    re.I)
+
 BULLET_RE = re.compile(r'^[•·▪▸►✓✔\*\-]\s+(.+)')
 SEP_RE = re.compile(r'\s*[|/]\s*')
+
+# Strip PUA icon-font bullets (e.g. \uf076 from ODL markdown) and markdown heading markers
+_PUA_BULLET_RE = re.compile(r'^[\ue000-\uf8ff]+\s*')   # ODL icon font chars at line start
+_MD_HEADING_RE = re.compile(r'^#{1,3}\s+')              # ### / ## / # heading markers
+_MD_BULLET_RE = re.compile(r'^[-*•]\s+')
 
 # ── Role / Company disambiguation patterns ────────────────────────────────
 
@@ -192,11 +210,39 @@ def _company_score(text: str) -> float:
 class ExperienceParser:
     """Parse work experience entries. Output: [{ role, company, start, end, description }]"""
 
-    def parse(self, text: str) -> List[Dict[str, Any]]:
+    def parse(self, text: str, elements: list = None) -> List[Dict[str, Any]]:
+        # Section Boundary Scoping using ODL elements
+        if elements:
+            exp_text = ""
+            in_experience = False
+            for el in elements:
+                if not isinstance(el, dict):
+                    continue
+                is_heading = (el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'))
+                c = str(el.get('content', '')).strip().lower()
+                
+                if is_heading:
+                    if c in ['experience', 'work experience', 'employment', 'employment history', 'professional experience']:
+                        in_experience = True
+                        continue
+                    elif in_experience and c:
+                        # Reached the next heading, stop capturing
+                        break
+                
+                if in_experience:
+                    exp_text += str(el.get('content', '')) + "\n\n"
+                    
+            if exp_text.strip():
+                text = exp_text
+
         if not text or not text.strip():
             return []
         date_matches = list(DATE_RANGE_RE.finditer(text))
         if not date_matches:
+            # Try "From <ordinal> to <ordinal>" label-split pattern (Cat A/B gap)
+            ordinal_entries = self._parse_from_ordinal(text)
+            if ordinal_entries:
+                return ordinal_entries
             # Try "Since YYYY" / "From YYYY" patterns
             since_entries = self._parse_since(text)
             if since_entries:
@@ -238,7 +284,10 @@ class ExperienceParser:
         - Handles both Role/Company and Company/Role orderings
         """
         lines = [l.strip() for l in before.split('\n') if l.strip()]
-        
+        # Strip PUA icon-font bullets, markdown bullets, and markdown heading markers before filtering
+        lines = [_MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip() for l in lines if l.strip()]
+        lines = [l for l in lines if l]  # drop lines that became empty after stripping
+
         # Filter out lines that are clearly descriptions/bullets
         clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
         
@@ -354,6 +403,7 @@ class ExperienceParser:
         for dm in SINCE_RE.finditer(text):
             before = text[max(0, dm.start()-200):dm.start()].strip()
             lines = [l.strip() for l in before.split('\n') if l.strip()]
+            lines = [_MD_BULLET_RE.sub('', l).strip() for l in lines if l.strip()]
             clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
 
             if len(clean_lines) >= 2:
@@ -372,6 +422,47 @@ class ExperienceParser:
                 entries.append({
                     "role": role, "company": company,
                     "start": dm.group('start'), "end": "Present",
+                    "description": None, "achievements": [],
+                })
+        return entries
+
+    def _parse_from_ordinal(self, text: str) -> List[Dict[str, Any]]:
+        """Parse 'From <ordinal-date> to <ordinal-date>' patterns.
+
+        Handles the Cat A/B gap where experience entries use label-prefixed
+        date blocks split across lines, e.g.:
+          Duration : From 16th April 2005 to 27th September 2007
+        The DATE_RANGE_RE misses these because 'From' prefixes the start date
+        and the colon label sits on the same or prior line.
+        """
+        entries = []
+        for dm in _FROM_ORDINAL_RE.finditer(text):
+            before = text[max(0, dm.start() - 300):dm.start()].strip()
+            lines = [l.strip() for l in before.split('\n') if l.strip()]
+            # Strip PUA bullets, markdown bullets and markdown headings
+            lines = [_MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip() for l in lines if l.strip()]
+            lines = [l for l in lines if l]
+            # Drop label lines like "Duration :" "Company Name :" before using for role/company
+            lines = [l for l in lines if not re.match(r'^(?:Duration|Period|Company\s*Name|Designation|Country)\s*:', l, re.I)]
+            clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+
+            if len(clean_lines) >= 2:
+                role, company = self._disambiguate_role_company(
+                    clean_lines[-1], clean_lines[-2]
+                )
+            elif clean_lines:
+                role, company = self._split_role_company(clean_lines[-1])
+            else:
+                continue
+
+            role = _clean_loc_tags(role)
+            company = _clean_loc_tags(company)
+
+            if role or company:
+                entries.append({
+                    "role": role, "company": company,
+                    "start": dm.group('start').strip(),
+                    "end": dm.group('end').strip(),
                     "description": None, "achievements": [],
                 })
         return entries

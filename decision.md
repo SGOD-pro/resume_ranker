@@ -79,3 +79,14 @@
 **Partial-failure behavior (empirically confirmed):** When a corrupt PDF is in a batch of N, `convert()` processes all valid files, writes their `.md` and `.json` outputs, then raises `CalledProcessError` (exit code 1). The lambda catches this, then checks for output files: docs with files get `results`, docs without get `failed`. The pipeline degrades the failed doc to PyMuPDF text and marks it `PARSE_FAILED` — no silent drop.
 **UX tradeoff:** In production, `MaximumBatchingWindowInSeconds=60` means a single quality-failed document on low-traffic periods may wait up to 60 seconds for its batch window to flush. This is an explicit, accepted tradeoff: ODL is used for layout-scrambled multi-column PDFs where the extra latency is preferable to garbled extraction output. The `/ats-check` path is exempt and uses `parse()` directly (synchronous, user-facing).
 **Consequences:** Substantially increases batch throughput and eliminates N-1 JVM cold starts. Requires callers to adapt to the batch API and explicitly handle partial failures returned in the `"failed"` list.
+
+## ADR-11: Nova Trigger Scoped to Critical Fields Only
+**Status:** Accepted  
+**Context:** Step 0 classification on 200 resumes showed 151 Nova invocations (75.5% fallback rate). Analysis of unresolved chunks showed Nova was being triggered by missing `education` entries and other non-critical fields even when `name`, `email`, `phone`, `experience`, and `skills` were all resolved. Every Nova call costs ~4s (rate-limit floor) and real Bedrock spend. Triggering it for `education` alone is a cost/latency regression with no product-quality upside for the ranking use-case.  
+**Decision:** Nova MUST only fire when at least one of the five **critical** fields (`name`, `email`, `phone`, `experience`, `skills`) is unresolved after deterministic parsing. `education`, `projects`, `github`, and `location` are **best-effort only** — they will remain null on regex-miss. This is a permanent product policy change (not an optimization tweak): these fields carry no scoring weight in the composite formula and are not part of the 93% composite target.  
+**Tradeoff explicitly accepted:**
+- **Savings:** Eliminates Nova invocations for docs where only non-critical fields are missing. Expected Nova rate reduction: see benchmark post-fix.
+- **Cost:** `education` field will be null for any resume where the regex parser fails and all critical fields are present. This is accepted: education is not in the 5-field composite score.  
+**Implementation:** `markdown_extraction_service.py` already contains the critical-fields gate (lines 39–46). This ADR locks that gate definition and forbids expanding it to include `education` or other non-critical fields without an explicit ADR update.  
+**Benchmark baseline (pre-fix, 200 docs, seed=42):** Nova fallback 75.5% (151/200). Post-fix target: 5–8%.
+

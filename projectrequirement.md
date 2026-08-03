@@ -19,6 +19,7 @@
 ### 1.3 Evaluation & LLM Fallback (Lambda B)
 - **FR-08** Lambda B MUST read the `StructuralParse` JSON and run V1 ported regex parsers.
 - **FR-09** If regex yields `UnresolvedChunk`s, the system MUST batch them (up to 10) and invoke Amazon Nova (Bedrock) for structured fallback extraction.
+- **FR-09a** Nova MUST only be triggered when at least one **critical** field is unresolved after deterministic parsing. Critical fields are: `name`, `email`, `phone`, `experience`, `skills`. Non-critical fields (`education`, `projects`, `github`, `location`) are **best-effort only** — they will remain null on regex-miss and MUST NOT independently trigger a Nova call. This is an explicit product policy: completeness for non-critical fields is not guaranteed. (See ADR-11.)
 - **FR-10** LLM fallback MUST use tool-use constrained decoding (`toolConfig`), `temperature=0.0`, and MUST NEVER overwrite a field resolved by the deterministic engine.
 
 ### 1.4 Scoring & ATS

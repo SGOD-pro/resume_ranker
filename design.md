@@ -97,8 +97,8 @@ unnecessarily. Monitoring `StageTiming.triggered_fallback` rate is the authorita
 
 **Routing Logic (Lambda A / BackgroundTask):**
 1. Run PyMuPDF. Calculate `pymupdf_layout_quality` per page.
-2. If average page quality `>= 0.70` → proceed directly to Evaluation with PyMuPDF output.
-3. If average page quality `< 0.70` → enqueue doc to `OdlBatchQueue`. **Do NOT call `parse()` directly.**
+2. If the MINIMUM page quality `>= 0.70` → proceed directly to Evaluation with PyMuPDF output. (Changed to minimum because averaging masks single garbled multi-column pages).
+3. If the MINIMUM page quality `< 0.70` → enqueue doc to `OdlBatchQueue`. **Do NOT call `parse()` directly.**
    - In production: `sqs.send_message(OdlBatchQueue, {"document_id": ..., "s3_bucket": ..., "s3_key": ...})`.
    - In local dev / benchmark: accumulate docs, call `parse_batch()` once per batch window flush:
    ```python

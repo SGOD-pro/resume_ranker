@@ -132,7 +132,8 @@ class DocumentsRepository:
         """Find a document by SHA-256 content hash within a job.
 
         Used for deduplication — prevents uploading the same PDF twice.
-        Scans DOC# items for the job and filters by content_hash.
+        Queries DOC# items for the specific job and filters by content_hash.
+        (This uses a targeted query on the Partition Key, NOT a full table scan, complying with R-04)
         """
         response = self._table.query(
             KeyConditionExpression=(

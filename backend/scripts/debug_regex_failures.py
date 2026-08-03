@@ -1,18 +1,12 @@
-#!/usr/bin/env python3
-"""
-scripts/debug_regex_failures.py
-=================================
-Diagnoses regex parser failures by printing out the exact text chunks
-and regex patterns when a critical field is missed.
-"""
-
 import sys
 import os
 import fitz
 from pathlib import Path
+import random
+import time
 
-SCRIPT_DIR   = Path(__file__).resolve().parent
-BACKEND_DIR  = SCRIPT_DIR.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 
 for p in [str(BACKEND_DIR), str(PROJECT_ROOT)]:
@@ -22,69 +16,104 @@ for p in [str(BACKEND_DIR), str(PROJECT_ROOT)]:
 from src.extractors.contact.contact_parser import ContactParser, _EMAIL_RE
 from src.extractors.experience.experience_parser import ExperienceParser, DATE_RANGE_RE
 from src.extractors.skills.skills_parser import SkillsParser
+from src.extraction.extraction_pipeline import ExtractionPipeline
+from src.config.aws import get_settings
 
-def extract_pymupdf_raw(pdf_path: str) -> dict:
-    doc = fitz.open(pdf_path)
-    pages_text = []
-    hyperlinks = []
-    for page in doc:
-        pages_text.append(page.get_text())
-        for link in page.get_links():
-            if 'uri' in link:
-                hyperlinks.append({"uri": link['uri']})
-    return {
-        "raw_text": "\n".join(pages_text),
-        "hyperlinks": hyperlinks
-    }
+def print_failure(title, raw_text, missing):
+    print(f"\n{'━' * 80}")
+    print(f"  {title}")
+    print(f"  MISSING: {', '.join(missing)}")
+    print(f"{'━' * 80}")
+    
+    if "experience" in missing:
+        print(f"\n  🔴 EXPERIENCE FAILED")
+        print(f"  Regex Used: {DATE_RANGE_RE.pattern}")
+        # Print a snippet, handle unicode errors
+        snippet = raw_text[:500].encode('ascii', 'ignore').decode('ascii').replace('\n', '\\n')
+        print(f"  First 500 chars of text: {snippet}")
+        
+    if "skills" in missing:
+        print(f"\n  🔴 SKILLS FAILED")
+        snippet = raw_text[:500].encode('ascii', 'ignore').decode('ascii').replace('\n', '\\n')
+        print(f"  First 500 chars of text: {snippet}")
 
 def main():
     data_dir = BACKEND_DIR / "data" / "resumes"
     pdfs = sorted(data_dir.glob("*.pdf"))
+    random.seed(42)
+    random.shuffle(pdfs)
+    pdfs = pdfs[:200]
 
-    cp = ContactParser()
-    ep = ExperienceParser()
-    sp = SkillsParser()
+    pipeline = ExtractionPipeline()
+
+    cat_a = []
+    cat_b = []
 
     print("=" * 80)
-    print("  REGEX FAILURE DIAGNOSTIC")
+    print("  REGEX FAILURE DIAGNOSTIC (Step 1)")
     print("=" * 80)
+    
+    # We will run just enough to get 10 of each
+    from unittest.mock import patch, MagicMock
+    import shutil
+    import uuid
+    
+    _pdf_path_map = {str(i): str(p) for i, p in enumerate(pdfs)}
+    
+    def _s3_side_effect(service_name, *args, **kwargs):
+        if service_name == "s3":
+            mock_s3 = MagicMock()
+            def fake_download(Bucket, Key, Filename, **_kw):
+                stem = Path(Filename).stem
+                if stem in _pdf_path_map:
+                    shutil.copy(_pdf_path_map[stem], Filename)
+            mock_s3.download_file.side_effect = fake_download
+            return mock_s3
+        import boto3
+        return boto3.client(service_name, *args, **kwargs)
 
-    for pdf in pdfs:
-        data = extract_pymupdf_raw(str(pdf))
-        raw = data["raw_text"]
-        hyperlinks = data["hyperlinks"]
-
-        contact = cp.parse(raw_text=raw, hyperlinks=hyperlinks)
-        experience = ep.parse(raw)
-        skills = sp.parse(full_text=raw, also_scan_fulltext=True)
-
-        missing = []
-        if not contact.get("email"): missing.append("email")
-        if not contact.get("phone"): missing.append("phone")
-        if not experience: missing.append("experience")
-        if not skills: missing.append("skills")
-
-        # Skip resumes that are intentionally empty (like celebrity lists)
-        # We can detect these by checking if there's any standard resume sections
-        # But let's just print the first 5 real failures.
-        if missing:
-            print(f"\n{'━' * 80}")
-            print(f"  FILE: {pdf.name}")
-            print(f"  MISSING: {', '.join(missing)}")
-            print(f"{'━' * 80}")
+    with patch("boto3.client", side_effect=_s3_side_effect):
+        for i, pdf_path in enumerate(pdfs):
+            if len(cat_a) >= 10 and len(cat_b) >= 10:
+                break
+                
+            doc_id = str(i)
+            # Run structural parse
+            parse_result = pipeline.structural_service.parse_pdf(
+                str(pdf_path), doc_id, "mock-bucket", "mock-key"
+            )
             
-            if "email" in missing:
-                print(f"  🔴 EMAIL FAILED")
-                print(f"  Regex Used: {_EMAIL_RE.pattern}")
-                print(f"  Hyperlinks passed: {[h['uri'] for h in hyperlinks]}")
+            # Check what's missing using markdown service (regex parsers)
+            md_result = pipeline.markdown_service.extract(parse_result.markdown, parse_result.hyperlinks)
+            fields = md_result["fields"]
+            missing = []
+            if not fields.get("experience"): missing.append("experience")
+            if not fields.get("skills"): missing.append("skills")
             
-            if "experience" in missing:
-                print(f"\n  🔴 EXPERIENCE FAILED")
-                print(f"  Regex Used: {DATE_RANGE_RE.pattern}")
-                print(f"  First 300 chars of text: {raw[:300].replace('\n', ' ')}")
+            if not missing:
+                continue
+                
+            gate_score = parse_result.quality_score
             
-            # We'll just halt after finding a few to analyze
-            break
+            if gate_score < 0.90 and len(cat_a) < 10:
+                # Category A: ODL used, regex failed
+                cat_a.append({
+                    "file": pdf_path.name,
+                    "markdown": parse_result.markdown,
+                    "missing": missing
+                })
+            elif gate_score >= 0.90 and len(cat_b) < 10:
+                # Category B: PyMuPDF used, regex failed
+                cat_b.append({
+                    "file": pdf_path.name,
+                    "text": parse_result.markdown, # It's PyMuPDF raw text
+                    "missing": missing
+                })
+                
+    import json
+    with open("diagnostic_output.json", "w", encoding="utf-8") as f:
+        json.dump({"cat_a": cat_a, "cat_b": cat_b}, f, indent=2)
+    print("Diagnostics written to diagnostic_output.json")
 
 if __name__ == "__main__":
     main()

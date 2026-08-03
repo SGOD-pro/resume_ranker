@@ -318,15 +318,25 @@ class ContactParser:
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
               sidebar_text: str = "", main_text: str = "",
-              hyperlinks: list = None) -> Dict[str, Any]:
+              hyperlinks: list = None, elements: list = None) -> Dict[str, Any]:
+        contact_text_scope = ""
+        if elements:
+            # Scope to top 15 elements on page 1 for contact fields
+            header_elems = [el.get('content', '') for el in elements if isinstance(el, dict) and el.get('page number', 1) == 1][:15]
+            contact_text_scope = "\n".join(filter(None, header_elems))
+            
         combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
-        # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub
+        email_phone_text = contact_text_scope if contact_text_scope else combined
+        
+        # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub/Email
         if hyperlinks:
             link_text = "\n".join(h.get('uri', '') for h in hyperlinks if h.get('uri'))
+            email_phone_text = email_phone_text + "\n" + link_text
             combined = combined + "\n" + link_text
+            
         return {
-            "name":     self._extract_name(full_width_text, raw_text, sidebar_text, main_text),
-            "email":    self._extract_email(combined),
+            "name":     self._extract_name(full_width_text, raw_text, sidebar_text, main_text, elements),
+            "email":    self._extract_email(email_phone_text, hyperlinks),
             "phone":    self._extract_phone(combined),
             "linkedin": self._extract_linkedin(combined),
             "github":   self._extract_github(combined),
@@ -334,7 +344,19 @@ class ContactParser:
         }
 
     def _extract_name(self, full_width_text: str, raw_text: str,
-                       sidebar_text: str = "", main_text: str = "") -> Optional[str]:
+                       sidebar_text: str = "", main_text: str = "", elements: list = None) -> Optional[str]:
+        # Strategy 0: ODL JSON Heading
+        if elements:
+            for el in elements:
+                if not isinstance(el, dict):
+                    continue
+                # Top elements with large fonts or explicit heading tags
+                if el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'):
+                    c = str(el.get('content', '')).strip()
+                    if c:
+                        c = re.split(r'[,|]| - ', c)[0].strip()
+                        if _is_name_line(c):
+                            return c
         # Strategy 1: [NAME] tag from layout_extractor (most reliable)
         for text_src in [full_width_text, sidebar_text, raw_text]:
             m = re.search(r'\[NAME\](.*?)\[/NAME\]', text_src, re.DOTALL)
@@ -356,46 +378,94 @@ class ContactParser:
             lines = [l.strip() for l in text_src.split('\n') if l.strip()]
             for line in lines[:5]:
                 clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
+                clean = re.sub(r'^#+\s*', '', clean).strip()
+                
+                # Check for "Lastname, Firstname" format (2 pure words)
+                lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
+                if lf_match:
+                    return f"{lf_match.group(2)} {lf_match.group(1)}"
+                    
+                # Truncate titles/noise if comma, pipe, or dash present
+                candidate = re.split(r'[,|]| - ', clean)[0].strip()
+                
                 # First try the full line
-                if _is_name_line(clean):
-                    return clean
+                if _is_name_line(candidate):
+                    return candidate
                 # Then try splitting name from contact info on same line
-                # e.g. "Kiran Malhotra Email : kiran@m.com" → "Kiran Malhotra"
-                split = _split_name_from_contact(clean)
-                if split != clean and _is_name_line(split):
+                split = _split_name_from_contact(candidate)
+                if split != candidate and _is_name_line(split):
                     return split
 
         # Strategy 3: scan first 10 lines of raw_text (fallback)
         lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
         for line in lines[:10]:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-            if _is_name_line(clean):
-                return clean
-            split = _split_name_from_contact(clean)
-            if split != clean and _is_name_line(split):
+            clean = re.sub(r'^#+\s*', '', clean).strip()
+            lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
+            if lf_match:
+                return f"{lf_match.group(2)} {lf_match.group(1)}"
+            candidate = re.split(r'[,|]| - ', clean)[0].strip()
+            
+            if _is_name_line(candidate):
+                return candidate
+            split = _split_name_from_contact(candidate)
+            if split != candidate and _is_name_line(split):
                 return split
 
         # Strategy 4: ALL CAPS line in first 5 lines
         for line in lines[:5]:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
+            clean = re.sub(r'^#+\s*', '', clean).strip()
+            candidate_base = re.split(r'[,|]| - ', clean)[0].strip()
+            
             # Try split first for ALL CAPS check too
-            split = _split_name_from_contact(clean)
-            for candidate in [clean, split]:
+            split = _split_name_from_contact(candidate_base)
+            for candidate in [candidate_base, split]:
                 words = candidate.split()
                 if 2 <= len(words) <= 4 and candidate.isupper() and not re.search(r'\d', candidate):
                     return candidate.title()
 
         return None
 
-    def _extract_email(self, text: str) -> Optional[str]:
+    def _extract_email(self, text: str, hyperlinks: list = None) -> Optional[str]:
+        if hyperlinks:
+            for h in hyperlinks:
+                uri = h.get('uri', '')
+                if uri.lower().startswith('mailto:'):
+                    email = uri[7:].split('?')[0].strip()
+                    m = _EMAIL_RE.search(email)
+                    if m: return m.group(0).lower()
+                elif '@' in uri and not uri.lower().startswith('http'):
+                    m = _EMAIL_RE.search(uri)
+                    if m: return m.group(0).lower()
+        
+        # Match markdown links [text](mailto:email)
+        m_md = re.search(r'\]\(mailto:([^)?\s]+)', text, re.IGNORECASE)
+        if m_md:
+            return m_md.group(1).lower()
+
         m = _EMAIL_RE.search(text)
         return m.group(0).lower() if m else None
 
     def _extract_phone(self, text: str) -> Optional[str]:
         patterns = [
+            # User request: "use regex if there is a group of number in the entire raw text, 
+            # with nay contry code +91,+92 take all the numbers"
+            r'\+(?:[1-9]\d{0,3})[\s\-.]*(?:\(?\d{1,4}\)?[\s\-.]*){2,4}\d{2,4}',
+            
+            # Additional permissive country code matcher: + followed by 1-4 digits (code), then 7-12 digits (with spaces/dots/dashes)
+            r'\+\d{1,4}[\s\-.()]*\d[\d\s\-.()]{6,14}\d',
+            
+            # Traditional patterns
             r'\+\d{1,3}[\s\-.]+?\(?\d{3,5}\)?[\s\-.]+?\d{3,5}[\s\-.]+?\d{3,5}',
             r'\(?\d{3}\)?[\s\-.]+?\d{3}[\s\-.]+?\d{4}',
+            
+            # User request: "10digit number present in the doc text(for indian number) make it phone number"
+            r'\b\d{5}[\s\-.]?\d{5}\b', # e.g. 98765 43210
             r'\b\d{10}\b',
+            
+            # More general loose matcher for 10-12 digits
+            r'\b\d{3,4}[\s\-.]\d{3,4}[\s\-.]\d{3,4}\b'
         ]
         for pat in patterns:
             m = re.search(pat, text)
@@ -403,6 +473,13 @@ class ContactParser:
                 result = m.group(0).strip()
                 if len(re.sub(r'\D', '', result)) >= 7:
                     return result
+        # Match markdown links [text](tel:phone)
+        m_tel = re.search(r'\]\(tel:([^)\s]+)', text, re.IGNORECASE)
+        if m_tel:
+            result = m_tel.group(1).strip()
+            if len(re.sub(r'\D', '', result)) >= 7:
+                return result
+
         # Fallback: extract from tel: hyperlink URIs
         tel_m = re.search(r'tel:(\+?[\d\s\-().]+)', text)
         if tel_m:

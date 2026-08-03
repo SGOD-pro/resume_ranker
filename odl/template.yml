@@ -16,10 +16,6 @@ Resources:
     Properties:
       BucketName: docker-containers-070905
 
-  # ── ODL Batch Queue (Phase 4 SQS-native batch trigger stub) ─────────────────
-  # Documents that fail the quality gate are enqueued here.
-  # BatchSize=10, MaximumBatchingWindowInSeconds=60 will be wired in Phase 4
-  # when the full prod event-source mapping is added.
   OdlBatchQueueDLQ:
     Type: AWS::SQS::Queue
     Properties:
@@ -58,8 +54,6 @@ Resources:
               Resource:
                 - arn:aws:s3:::*/*
 
-        # Allow the function to receive / delete messages from OdlBatchQueue
-        # (Phase 4 will add the event source mapping that auto-polls the queue)
         - Statement:
             - Effect: Allow
               Action:
@@ -87,4 +81,4 @@ Outputs:
 
   OdlBatchQueueArn:
     Description: "ARN of the ODL batch queue"
-    Value: !GetAtt OdlBatchQueue.Arn
+    Value: !GetAtt OdlBatchQueue.Arn

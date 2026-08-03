@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 EXPECTED_CHARS_PER_PAGE = 1500
 
 # ODL fallback threshold: quality below this triggers the slow path.
-# 0.70 is more permissive than 0.90 so normal column layouts don't misfire.
-QUALITY_THRESHOLD = 0.70
+QUALITY_THRESHOLD = 0.90
 
 
 def cluster_word_x_positions(page: fitz.Page) -> list:
@@ -184,13 +183,14 @@ class StructuralParsingService:
                 if 'uri' in link:
                     hyperlinks.append({"uri": link['uri']})
 
-        avg_quality = (
-            sum(page_qualities) / len(page_qualities) if page_qualities else 0.0
-        )
+        # Fix: Use min() instead of average. If ANY page is multi-column (score ~0.50),
+        # averaging with 1-column pages (~0.95) pulls the score above 0.70 and skips ODL,
+        # leading to garbled text for that page.
+        min_quality = min(page_qualities) if page_qualities else 0.0
         t1 = time.time()
 
         raw_markdown = "\n".join(raw_pymupdf_text)
-        triggered_fallback = avg_quality < QUALITY_THRESHOLD
+        triggered_fallback = min_quality < QUALITY_THRESHOLD
 
         timings.append(
             StageTiming(
@@ -199,7 +199,7 @@ class StructuralParsingService:
                 method_used="pymupdf",
                 duration_ms=(t1 - t0) * 1000,
                 triggered_fallback=triggered_fallback,
-                quality_score=avg_quality,
+                quality_score=min_quality,
             )
         )
 
@@ -243,7 +243,7 @@ class StructuralParsingService:
             markdown=markdown,
             elements=elements,
             stage_timings=timings,
-            quality_score=avg_quality,
+            quality_score=min_quality,
             hyperlinks=hyperlinks,
             error_reason=error_reason,
         )
@@ -285,13 +285,13 @@ class StructuralParsingService:
                         if 'uri' in link:
                             hyperlinks.append({"uri": link['uri']})
 
-                avg_quality = (
-                    sum(page_qualities) / len(page_qualities) if page_qualities else 0.0
+                min_quality = (
+                    min(page_qualities) if page_qualities else 0.0
                 )
                 fitz_doc.close()
                 t1 = time.time()
                 raw_markdown = "\n".join(raw_pymupdf_text)
-                triggered_fallback = avg_quality < QUALITY_THRESHOLD
+                triggered_fallback = min_quality < QUALITY_THRESHOLD
 
                 timings.append(StageTiming(
                     document_id=doc.document_id,
@@ -299,12 +299,12 @@ class StructuralParsingService:
                     method_used="pymupdf",
                     duration_ms=(t1 - t0) * 1000,
                     triggered_fallback=triggered_fallback,
-                    quality_score=avg_quality,
+                    quality_score=min_quality,
                 ))
 
                 if triggered_fallback:
                     odl_needed.append(doc)
-                    odl_pymupdf_fallback[doc.document_id] = (raw_markdown, hyperlinks, timings, avg_quality)
+                    odl_pymupdf_fallback[doc.document_id] = (raw_markdown, hyperlinks, timings, min_quality)
                     # Placeholder will be replaced after batch parse
                     pymupdf_results.append(None)  # type: ignore[arg-type]
                 else:
@@ -312,7 +312,7 @@ class StructuralParsingService:
                         markdown=raw_markdown,
                         elements=[],
                         stage_timings=timings,
-                        quality_score=avg_quality,
+                        quality_score=min_quality,
                         hyperlinks=hyperlinks,
                     ))
 
@@ -356,7 +356,7 @@ class StructuralParsingService:
 
             # Fill in results for each ODL-needed doc
             for doc in odl_needed:
-                raw_markdown, hyperlinks, timings, avg_quality = odl_pymupdf_fallback[doc.document_id]
+                raw_markdown, hyperlinks, timings, min_quality = odl_pymupdf_fallback[doc.document_id]
                 odl_idx = docs.index(doc)
 
                 if doc.document_id in batch_result.results:
@@ -372,7 +372,7 @@ class StructuralParsingService:
                         markdown=odl_out.markdown,
                         elements=odl_out.elements,
                         stage_timings=timings,
-                        quality_score=avg_quality,
+                        quality_score=min_quality,
                         hyperlinks=hyperlinks,
                     )
                 else:
@@ -392,7 +392,7 @@ class StructuralParsingService:
                         markdown=raw_markdown,
                         elements=[],
                         stage_timings=timings,
-                        quality_score=avg_quality,
+                        quality_score=min_quality,
                         hyperlinks=hyperlinks,
                         error_reason=error_reason,
                     )

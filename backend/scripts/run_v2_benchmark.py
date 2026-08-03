@@ -186,6 +186,13 @@ class Stats:
         self.pymupdf_only_count = 0
         self.odl_fallback_count = 0
         self.nova_fallback_count = 0
+        self.nova_category_a = 0
+        self.nova_category_b = 0
+        self.pymupdf_fields = {"name": 0, "email": 0, "phone": 0}
+        self.pymupdf_docs = 0
+        self.odl_fields = {"name": 0, "email": 0, "phone": 0}
+        self.odl_docs = 0
+        
         self.total_quality = 0.0
         self.field_counts: Dict[str, int] = {
             "name": 0, "email": 0, "phone": 0,
@@ -208,10 +215,6 @@ class Stats:
         self._pymupdf_only_quality: List[float] = []
         self._pymupdf_only_composite: List[float] = []
         self._odl_quality: List[float] = []
-        self._odl_composite: List[float] = []
-        self._nova_quality: List[float] = []
-        self._nova_composite: List[float] = []
-
         self._odl_composite: List[float] = []
         self._nova_quality: List[float] = []
         self._nova_composite: List[float] = []
@@ -246,6 +249,17 @@ class Stats:
         f_exp    = _has(fields.get("experience"))
         f_edu    = _has(fields.get("education"))
 
+        if used_odl:
+            self.odl_docs += 1
+            if f_name: self.odl_fields["name"] += 1
+            if f_email: self.odl_fields["email"] += 1
+            if f_phone: self.odl_fields["phone"] += 1
+        else:
+            self.pymupdf_docs += 1
+            if f_name: self.pymupdf_fields["name"] += 1
+            if f_email: self.pymupdf_fields["email"] += 1
+            if f_phone: self.pymupdf_fields["phone"] += 1
+
         nova_t = fields.get("_nova_tokens", {})
         if nova_t:
             self.input_tokens.append(nova_t.get("inputTokens", 0))
@@ -267,6 +281,10 @@ class Stats:
 
         if used_nova:
             self.nova_fallback_count += 1
+            if used_odl:
+                self.nova_category_a += 1
+            else:
+                self.nova_category_b += 1
             self.latencies["nova_ms"].append(nova_ms)
             self._nova_quality.append(q)
             self._nova_composite.append(comp)
@@ -341,7 +359,7 @@ def run_serial(pipeline: ExtractionPipeline, pdfs: List[Path],
 # Batch (new) run
 # ─────────────────────────────────────────────────────────────────────────────
 
-BATCH_SIZE = 10  # mirrors SQS BatchSize=10 in prod
+BATCH_SIZE = 25  # Tuned up from 10 to amortize JVM boot; paired with a larger MaximumBatchingWindowInSeconds in prod
 
 def run_batch(pipeline: ExtractionPipeline, pdfs: List[Path],
               job_id: str, settings) -> Stats:
@@ -437,6 +455,21 @@ def print_report(label: str, stats: Stats, n: int) -> None:
     print(f"  Errors:             {len(stats.errors)}")
     print(f"  Avg quality score:  {avg_q:.3f}  (threshold={QUALITY_THRESHOLD})")
     print(f"  Avg composite:      {avg_composite:.1f}%")
+
+    print("\n  ┌── Nova Fallback Categories ──────────────────────────────────────────")
+    print(f"  Category A (ODL -> Nova):        {stats.nova_category_a} docs")
+    print(f"  Category B/C (PyMuPDF -> Nova):  {stats.nova_category_b} docs")
+    print(f"  Total Nova Fallbacks:            {stats.nova_fallback_count} docs")
+
+    print("\n  ┌── Field Extraction Split (Name / Email / Phone) ───────────────────")
+    p_name = stats.pymupdf_fields['name']/stats.pymupdf_docs*100 if stats.pymupdf_docs else 0
+    p_email = stats.pymupdf_fields['email']/stats.pymupdf_docs*100 if stats.pymupdf_docs else 0
+    p_phone = stats.pymupdf_fields['phone']/stats.pymupdf_docs*100 if stats.pymupdf_docs else 0
+    print(f"  PyMuPDF Docs ({stats.pymupdf_docs}): Name {p_name:.1f}%, Email {p_email:.1f}%, Phone {p_phone:.1f}%")
+    o_name = stats.odl_fields['name']/stats.odl_docs*100 if stats.odl_docs else 0
+    o_email = stats.odl_fields['email']/stats.odl_docs*100 if stats.odl_docs else 0
+    o_phone = stats.odl_fields['phone']/stats.odl_docs*100 if stats.odl_docs else 0
+    print(f"  ODL Docs ({stats.odl_docs}):     Name {o_name:.1f}%, Email {o_email:.1f}%, Phone {o_phone:.1f}%")
     print()
 
     # ── Per-layer breakdown ────────────────────────────────────────────────────
