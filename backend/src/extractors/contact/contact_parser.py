@@ -222,7 +222,9 @@ def _is_name_line(line: str) -> bool:
     if not s:
         return False
     words = s.split()
-    if not (2 <= len(words) <= 4):
+    if not (1 <= len(words) <= 5):
+        return False
+    if len(words) == 1 and '.' not in words[0]:
         return False
     for w in words:
         clean = re.sub(r"[.\-']", '', w)
@@ -457,8 +459,8 @@ class ContactParser:
             r'\+\d{1,4}[\s\-.()]*\d[\d\s\-.()]{6,14}\d',
             
             # Traditional patterns
-            r'\+\d{1,3}[\s\-.]+?\(?\d{3,5}\)?[\s\-.]+?\d{3,5}[\s\-.]+?\d{3,5}',
-            r'\(?\d{3}\)?[\s\-.]+?\d{3}[\s\-.]+?\d{4}',
+            r'\+\d{1,3}[\s\-.]*\(?\d{3,5}\)?[\s\-.]*\d{3,5}[\s\-.]*\d{3,5}',
+            r'\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{4}',
             
             # User request: "10digit number present in the doc text(for indian number) make it phone number"
             r'\b\d{5}[\s\-.]?\d{5}\b', # e.g. 98765 43210

@@ -95,12 +95,26 @@ def _invoke_prod(event: Dict[str, Any]) -> Dict[str, Any]:
     ValueError, or any other raw exception past this boundary (R-20).
     """
     try:
-        lambda_client = boto3.client("lambda")
+        lambda_client = boto3.client("lambda", region_name="ap-south-1")
         response = lambda_client.invoke(
-            FunctionName="odl-parser-lambda",
+            FunctionName="odl-parser-lambda-prod",
             InvocationType="RequestResponse",
+            LogType="Tail",
             Payload=json.dumps(event).encode("utf-8"),
         )
+        
+        # Log Lambda memory usage
+        if "LogResult" in response:
+            import base64
+            import re
+            log_result = base64.b64decode(response["LogResult"]).decode("utf-8")
+            print("--- LAMBDA LOG ---")
+            print(log_result)
+            print("------------------")
+            memory_match = re.search(r"Max Memory Used:\s*(\d+\s*MB)", log_result)
+            if memory_match:
+                print(f"ODL Lambda Max Memory Used: {memory_match.group(1)}")
+
         payload_bytes = response["Payload"].read()
         response_dict = json.loads(payload_bytes)
 

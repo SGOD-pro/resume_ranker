@@ -40,7 +40,7 @@ _START_PATTERNS = '|'.join([
     r'\d{1,2}-\d{4}',
     r'\d{1,2}\.\d{4}',
     r'\d{4}/\d{1,2}',
-    r'\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # 2 0 2 0 or 2020
+    r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',  # 2 0 2 0 or 2020
 ])
 
 _END_PATTERNS = '|'.join([
@@ -59,7 +59,7 @@ _END_PATTERNS = '|'.join([
     r'\d{4}/\d{1,2}',
     r'P\s*R\s*E\s*S\s*E\s*N\s*T|C\s*U\s*R\s*R\s*E\s*N\s*T|N\s*O\s*W|T\s*i\s*l\s*l\s+D\s*a\s*t\s*e|O\s*n\s*g\s*o\s*i\s*n\s*g',
     r'till\s+date|Till\s+Date|TILL\s+DATE',  # "till date" end phrase
-    r'\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
+    r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',
 ])
 
 # Separator between start–end: dashes, em-dashes, "to", "till"
