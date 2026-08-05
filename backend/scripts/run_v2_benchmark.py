@@ -621,9 +621,10 @@ def run_benchmark():
     job_id_serial = f"bench-serial-{uuid.uuid4().hex[:8]}"
     job_id_batch  = f"bench-batch-{uuid.uuid4().hex[:8]}"
 
-    # ── Run 1: Serial baseline ─────────────────────────────────────────────────
-    serial_stats = run_serial(pipeline, pdfs, job_id_serial, settings)
-    print_report("SERIAL MODE (baseline — old one-by-one ODL)", serial_stats, n)
+    # ── Run 1: Serial baseline (DISABLED TO SAVE TIME) ───────────────
+    serial_stats = {"total_time_ms": 0, "odl_calls": 0, "odl_time_ms": 0, "nova_calls": 0, "nova_time_ms": 0}
+    # serial_stats = run_serial(pipeline, pdfs, job_id_serial, settings)
+    # print_report("SERIAL MODE (baseline — old one-by-one ODL)", serial_stats, n)
 
     # ── Run 2: Batch mode ──────────────────────────────────────────────────────
     _pdf_path_map.clear()  # reset before batch run
@@ -631,7 +632,7 @@ def run_benchmark():
     print_report("BATCH MODE (new — single JVM boot per batch)", batch_stats, n)
 
     # ── Comparison table ───────────────────────────────────────────────────────
-    print_comparison(serial_stats, batch_stats, n)
+    # print_comparison(serial_stats, batch_stats, n)
 
 
 if __name__ == "__main__":

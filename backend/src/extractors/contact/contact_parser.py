@@ -12,7 +12,7 @@ All other fields: pure regex.
 """
 
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -318,28 +318,114 @@ class ContactParser:
     Accepts full_width_text (tagged header), raw_text, sidebar_text.
     """
 
+    # ── ODL coordinate constants ──────────────────────────────────────────────
+    # ODL uses PDF coordinate space: origin (0,0) at BOTTOM-LEFT.
+    # bounding_box = [x0, y0, x1, y1] where:
+    #   y0 (index 1) = bottom edge of element
+    #   y1 (index 3) = top edge of element
+    # Standard A4 page height = 841.89 pt ≈ 842 pt.
+    # "Top 35%" means y1 (top edge) > 842 * 0.65 = 547.
+    # We derive max_y dynamically from page-1 elements so non-A4 pages work too.
+    _HEADER_Y1_THRESHOLD_STATIC = 547  # fallback for A4 when no dynamic max available
+
+    def _build_header_text_from_elements(self, elements: Union[list, dict]) -> str:
+        """
+        Return concatenated content of ODL elements that are physically located
+        in the top 20% of page 1 (by bounding_box y1 — the TOP edge of each element
+        in bottom-left PDF coordinate space).
+
+        Side-column contacts appear at LOW array indices only by accident; their
+        physical y1 coordinate places them in the header zone regardless of where
+        ODL serialised them in the elements array.
+        """
+        # ODL returns a top-level dict where the elements are in the "kids" array.
+        kids = elements.get('kids', []) if isinstance(elements, dict) else elements
+
+        # ODL nests text blocks inside paragraphs/lists. Flatten the tree to find
+        # all elements with a bounding box and content.
+        def _flatten_elements(node_list: list) -> list:
+            flat = []
+            for node in node_list:
+                if not isinstance(node, dict):
+                    continue
+                flat.append(node)
+                if 'kids' in node and isinstance(node['kids'], list):
+                    flat.extend(_flatten_elements(node['kids']))
+            return flat
+
+        all_elems = _flatten_elements(kids)
+
+        page1_elems = [
+            el for el in all_elems
+            if el.get('page number', el.get('page_number', 1)) == 1
+        ]
+        if not page1_elems:
+            return ""
+
+        # Derive page height from the highest y1 value seen on the page.
+        # Fall back to the static A4 constant if the bbox data is missing.
+        max_y1 = 0.0
+        for el in page1_elems:
+            bb = el.get('bounding box', el.get('bounding_box'))
+            if bb and len(bb) >= 4:
+                try:
+                    max_y1 = max(max_y1, float(bb[3]))
+                except (TypeError, ValueError):
+                    pass
+
+        if max_y1 < 100:  # degenerate / missing bbox data
+            threshold = self._HEADER_Y1_THRESHOLD_STATIC
+        else:
+            threshold = max_y1 * 0.65  # top 35% → y1 above 65% of page height
+
+        header_contents = []
+        for el in page1_elems:
+            bb = el.get('bounding box', el.get('bounding_box'))
+            if bb and len(bb) >= 4:
+                try:
+                    y1 = float(bb[3])
+                except (TypeError, ValueError):
+                    y1 = 0.0
+                if y1 < threshold:
+                    continue  # element is BELOW the header zone — skip
+            # No bbox → include by default (conservative fallback)
+            content = el.get('content', el.get('text', ''))
+            if content:
+                header_contents.append(str(content))
+
+        return "\n".join(header_contents)
+
     def parse(self, full_width_text: str = "", raw_text: str = "",
               sidebar_text: str = "", main_text: str = "",
               hyperlinks: list = None, elements: list = None) -> Dict[str, Any]:
-        contact_text_scope = ""
+
+        # ── Build header text from ODL bounding-box geometry ─────────────────
+        # This catches email/phone in side-column headers that appear late in
+        # the ODL elements array but are physically at the top of the page.
+        header_text = ""
         if elements:
-            # Scope to top 15 elements on page 1 for contact fields
-            header_elems = [el.get('content', '') for el in elements if isinstance(el, dict) and el.get('page number', 1) == 1][:15]
-            contact_text_scope = "\n".join(filter(None, header_elems))
-            
+            header_text = self._build_header_text_from_elements(elements)
+
         combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
-        email_phone_text = contact_text_scope if contact_text_scope else combined
-        
+
+        # Candidate text for email/phone: header zone first, then full text.
+        # Appending full text ensures the fallback still works when the header
+        # zone missed something (e.g. very short / image-only header).
+        if header_text:
+            email_phone_text = header_text + "\n" + combined
+        else:
+            email_phone_text = combined
+
         # Append hyperlink URIs so regex patterns can find LinkedIn/GitHub/Email
         if hyperlinks:
             link_text = "\n".join(h.get('uri', '') for h in hyperlinks if h.get('uri'))
             email_phone_text = email_phone_text + "\n" + link_text
             combined = combined + "\n" + link_text
-            
+
         return {
             "name":     self._extract_name(full_width_text, raw_text, sidebar_text, main_text, elements),
             "email":    self._extract_email(email_phone_text, hyperlinks),
-            "phone":    self._extract_phone(combined),
+            "phone":    self._extract_phone(email_phone_text),
             "linkedin": self._extract_linkedin(combined),
             "github":   self._extract_github(combined),
             "location": self._extract_location(combined, sidebar_text, main_text),
@@ -349,7 +435,17 @@ class ContactParser:
                        sidebar_text: str = "", main_text: str = "", elements: list = None) -> Optional[str]:
         # Strategy 0: ODL JSON Heading
         if elements:
-            for el in elements:
+            kids = elements.get('kids', []) if isinstance(elements, dict) else elements
+            def _flatten(node_list):
+                flat = []
+                for node in node_list:
+                    if not isinstance(node, dict): continue
+                    flat.append(node)
+                    if 'kids' in node and isinstance(node['kids'], list):
+                        flat.extend(_flatten(node['kids']))
+                return flat
+
+            for el in _flatten(kids):
                 if not isinstance(el, dict):
                     continue
                 # Top elements with large fonts or explicit heading tags
@@ -450,24 +546,34 @@ class ContactParser:
         return m.group(0).lower() if m else None
 
     def _extract_phone(self, text: str) -> Optional[str]:
+        # ── Priority 0: Markdown link [text](tel:...) — catches ODL-rendered links ──
+        m_tel_md = re.search(r'\]\(tel:([^)\s]+)', text, re.IGNORECASE)
+        if m_tel_md:
+            result = m_tel_md.group(1).strip()
+            if len(re.sub(r'\D', '', result)) >= 7:
+                return result
+
+        # ── Priority 1: bare tel: URI (from hyperlinks appended to text) ──────
+        tel_m = re.search(r'tel:(\+?[\d\s\-().]+)', text)
+        if tel_m:
+            phone = tel_m.group(1).strip()
+            if len(re.sub(r'\D', '', phone)) >= 7:
+                return phone
+
+        # ── Priority 2: standard digit patterns ──────────────────────────────
         patterns = [
-            # User request: "use regex if there is a group of number in the entire raw text, 
-            # with nay contry code +91,+92 take all the numbers"
+            # International with country code (+91, +1, etc.)
             r'\+(?:[1-9]\d{0,3})[\s\-.]*(?:\(?\d{1,4}\)?[\s\-.]*){2,4}\d{2,4}',
-            
-            # Additional permissive country code matcher: + followed by 1-4 digits (code), then 7-12 digits (with spaces/dots/dashes)
+            # Permissive country code: +X followed by 7-12 digits
             r'\+\d{1,4}[\s\-.()]*\d[\d\s\-.()]{6,14}\d',
-            
-            # Traditional patterns
+            # Traditional N-NNN-NNN-NNNN
             r'\+\d{1,3}[\s\-.]*\(?\d{3,5}\)?[\s\-.]*\d{3,5}[\s\-.]*\d{3,5}',
             r'\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{4}',
-            
-            # User request: "10digit number present in the doc text(for indian number) make it phone number"
-            r'\b\d{5}[\s\-.]?\d{5}\b', # e.g. 98765 43210
+            # 10-digit Indian format: 98765 43210 or 9876543210
+            r'\b\d{5}[\s\-.]?\d{5}\b',
             r'\b\d{10}\b',
-            
-            # More general loose matcher for 10-12 digits
-            r'\b\d{3,4}[\s\-.]\d{3,4}[\s\-.]\d{3,4}\b'
+            # General N-NNN-NNNN style
+            r'\b\d{3,4}[\s\-.]\d{3,4}[\s\-.]\d{3,4}\b',
         ]
         for pat in patterns:
             m = re.search(pat, text)
@@ -475,19 +581,6 @@ class ContactParser:
                 result = m.group(0).strip()
                 if len(re.sub(r'\D', '', result)) >= 7:
                     return result
-        # Match markdown links [text](tel:phone)
-        m_tel = re.search(r'\]\(tel:([^)\s]+)', text, re.IGNORECASE)
-        if m_tel:
-            result = m_tel.group(1).strip()
-            if len(re.sub(r'\D', '', result)) >= 7:
-                return result
-
-        # Fallback: extract from tel: hyperlink URIs
-        tel_m = re.search(r'tel:(\+?[\d\s\-().]+)', text)
-        if tel_m:
-            phone = tel_m.group(1).strip()
-            if len(re.sub(r'\D', '', phone)) >= 7:
-                return phone
         return None
 
     def _extract_linkedin(self, text: str) -> Optional[str]:

@@ -36,9 +36,10 @@ _START_PATTERNS = '|'.join([
     r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "16th April 2005"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
     r'\d{1,2}/\d{4}',
     r'\d{1,2}-\d{4}',
-    r'\d{1,2}\.\d{4}',
+    r'\d{1,2}\.\d{4}',                    # MM.YYYY e.g. 08.2020
     r'\d{4}/\d{1,2}',
     r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',  # 2 0 2 0 or 2020
 ])
@@ -53,12 +54,16 @@ _END_PATTERNS = '|'.join([
     r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "27th September 2007"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
     r'\d{1,2}/\d{4}',
     r'\d{1,2}-\d{4}',
-    r'\d{1,2}\.\d{4}',
+    r'\d{1,2}\.\d{4}',                    # MM.YYYY e.g. 08.2020
     r'\d{4}/\d{1,2}',
+    # Plain-text open-ended markers (case-insensitive via re.I on DATE_RANGE_RE)
+    r'Present|Current|Now|Ongoing',
+    r'Till\s+[Dd]ate|till\s+date|TILL\s+DATE',
+    # Kerned/spaced variants (OCR artefacts)
     r'P\s*R\s*E\s*S\s*E\s*N\s*T|C\s*U\s*R\s*R\s*E\s*N\s*T|N\s*O\s*W|T\s*i\s*l\s*l\s+D\s*a\s*t\s*e|O\s*n\s*g\s*o\s*i\s*n\s*g',
-    r'till\s+date|Till\s+Date|TILL\s+DATE',  # "till date" end phrase
     r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',
 ])
 
@@ -210,30 +215,81 @@ def _company_score(text: str) -> float:
 class ExperienceParser:
     """Parse work experience entries. Output: [{ role, company, start, end, description }]"""
 
+    # Section heading keywords for the ODL element router
+    _EXP_SECTION_KEYWORDS = {
+        'experience', 'work experience', 'employment', 'employment history',
+        'professional experience', 'career history', 'work history',
+        'experience & projects',  # combined headings
+    }
+
     def parse(self, text: str, elements: list = None) -> List[Dict[str, Any]]:
         # Section Boundary Scoping using ODL elements
+        exp_text = ""
+        in_experience = False
         if elements:
-            exp_text = ""
-            in_experience = False
-            for el in elements:
+            kids = elements.get('kids', []) if isinstance(elements, dict) else elements
+            
+            def _flatten(node_list):
+                flat = []
+                for node in node_list:
+                    if not isinstance(node, dict): continue
+                    flat.append(node)
+                    if 'kids' in node and isinstance(node['kids'], list):
+                        flat.extend(_flatten(node['kids']))
+                return flat
+
+            for el in _flatten(kids):
                 if not isinstance(el, dict):
                     continue
-                is_heading = (el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'))
-                c = str(el.get('content', '')).strip().lower()
                 
-                if is_heading:
-                    if c in ['experience', 'work experience', 'employment', 'employment history', 'professional experience']:
+                raw_content = str(el.get('content', el.get('text', ''))).strip()
+                if not raw_content:
+                    continue
+
+                if el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'):
+                    c = re.sub(r'[^a-zA-Z\s]', '', raw_content.lower()).strip()
+                    if c in self._EXP_SECTION_KEYWORDS:
                         in_experience = True
                         continue
                     elif in_experience and c:
-                        # Reached the next heading, stop capturing
+                        # Reached the next section heading, stop capturing
                         break
-                
+
                 if in_experience:
-                    exp_text += str(el.get('content', '')) + "\n\n"
-                    
+                    exp_text += raw_content + "\n\n"
+
             if exp_text.strip():
                 text = exp_text
+
+        # ── Markdown / flat-text section scoping (PyMuPDF path) ──────────────
+        # When there are no ODL elements, try to find the experience section in
+        # the flat Markdown/plain text.  Matches:
+        #   - "## Work Experience" / "# Experience" (Markdown headings)
+        #   - "PROFESSIONAL EXPERIENCE" / "Professional Experience :" (plain text)
+        #   - "Career History" / "Employment" / "EXPERINCE" (typo)
+        # This is the dominant failure mode for PyMuPDF-parsed resumes.
+        if not elements or not exp_text.strip():
+            _EXP_FLAT_RE = re.compile(
+                r'(?:^|\n)'
+                r'(?:#{0,3}\s*)'  # optional Markdown heading prefix
+                r'(?:work\s+)?(?:professional\s+)?'
+                r'(?:experience|experince|employment(?:\s+history)?|'
+                r'career\s+(?:history|summary)|work\s+(?:experience|history)|'
+                r'positions?\s+held|relevant\s+experience)'
+                r'\s*:?\s*\n',
+                re.I,
+            )
+            _NEXT_SECTION_RE = re.compile(
+                r'\n(?:#{1,3}\s*\S|\n[A-Z][A-Z &/]{3,}\s*:?\s*\n)',
+            )
+            m = _EXP_FLAT_RE.search(text)
+            if m:
+                candidate = text[m.end():]
+                nm = _NEXT_SECTION_RE.search(candidate)
+                if nm and nm.start() > 50:
+                    candidate = candidate[:nm.start()]
+                if candidate.strip():
+                    text = candidate
 
         if not text or not text.strip():
             return []
@@ -366,7 +422,7 @@ class ExperienceParser:
 
     def _parse_year_only(self, text: str) -> List[Dict[str, Any]]:
         yr = re.compile(
-            r'(?P<start>20\d{2}|19\d{2})\s*[-–—]+\s*(?P<end>20\d{2}|19\d{2}|Present|Current)',
+            r'(?P<start>20\d{2}|19\d{2})\s*[-–—]+\s*(?P<end>20\d{2}|19\d{2}|Present|Current|Now|Ongoing|Till\s+[Dd]ate)',
             re.I
         )
         entries = []
