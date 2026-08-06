@@ -131,6 +131,7 @@ class ExtractionPipeline:
             output.append({
                 "fields": fields,
                 "document_id": doc_id,
+                "filename": __import__('os').path.basename(doc.pdf_path),
                 "extraction_quality": parse_result.quality_score,
                 "page_count": 0,
                 "domain": "resume",

@@ -238,10 +238,14 @@ def _is_name_line(line: str) -> bool:
         return False
     if {w.lower() for w in words} & _SECTION_KW:
         return False
-    # Require ALL words start uppercase (or are name particles)
-    for w in words:
+    # Require ALL words start uppercase (or are name particles), but allow
+    # second or third word to be lowercase if it's a 2-3 word name
+    for i, w in enumerate(words):
         if not w[0].isupper() and w.lower() not in _NAME_PARTICLES:
-            return False
+            if i > 0 and len(words) <= 3:
+                pass # Allow e.g. "Jitender kumar"
+            else:
+                return False
     # Reject known non-name phrases (hard blacklist)
     if s.lower() in _NOT_NAMES:
         return False
@@ -349,8 +353,9 @@ class ContactParser:
                 if not isinstance(node, dict):
                     continue
                 flat.append(node)
-                if 'kids' in node and isinstance(node['kids'], list):
-                    flat.extend(_flatten_elements(node['kids']))
+                for k, v in node.items():
+                    if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
+                        flat.extend(_flatten_elements(v))
             return flat
 
         all_elems = _flatten_elements(kids)
@@ -441,8 +446,9 @@ class ContactParser:
                 for node in node_list:
                     if not isinstance(node, dict): continue
                     flat.append(node)
-                    if 'kids' in node and isinstance(node['kids'], list):
-                        flat.extend(_flatten(node['kids']))
+                    for k, v in node.items():
+                        if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
+                            flat.extend(_flatten(v))
                 return flat
 
             for el in _flatten(kids):
@@ -494,9 +500,10 @@ class ContactParser:
                 if split != candidate and _is_name_line(split):
                     return split
 
-        # Strategy 3: scan first 10 lines of raw_text (fallback)
+        # Strategy 3: scan first 10 lines and last 10 lines of raw_text (fallback)
         lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-        for line in lines[:10]:
+        search_lines = lines[:10] + (lines[-10:] if len(lines) > 10 else [])
+        for line in search_lines:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
             clean = re.sub(r'^#+\s*', '', clean).strip()
             lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
@@ -510,8 +517,9 @@ class ContactParser:
             if split != candidate and _is_name_line(split):
                 return split
 
-        # Strategy 4: ALL CAPS line in first 5 lines
-        for line in lines[:5]:
+        # Strategy 4: ALL CAPS line in first 5 or last 5 lines
+        search_lines_caps = lines[:5] + (lines[-5:] if len(lines) > 5 else [])
+        for line in search_lines_caps:
             clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
             clean = re.sub(r'^#+\s*', '', clean).strip()
             candidate_base = re.split(r'[,|]| - ', clean)[0].strip()
@@ -573,7 +581,9 @@ class ContactParser:
             r'\b\d{5}[\s\-.]?\d{5}\b',
             r'\b\d{10}\b',
             # General N-NNN-NNNN style
-            r'\b\d{3,4}[\s\-.]\d{3,4}[\s\-.]\d{3,4}\b',
+            r'\b\d{3,4}[\s\-.]+\d{3,4}[\s\-.]+\d{3,4}\b',
+            # Add a more permissive pattern for things like 310. 839. 8722
+            r'\b\d{3}[\s\-.]+\d{3}[\s\-.]+\d{4}\b',
         ]
         for pat in patterns:
             m = re.search(pat, text)

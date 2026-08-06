@@ -27,13 +27,13 @@ _MONTH_GROUP = r'(?:' + _MONTH + r'|' + _MONTH_KERNING + r')'
 
 # Start date patterns (order matters — most specific first)
 _START_PATTERNS = '|'.join([
-    _MONTH_GROUP + r'[,.]?\s+\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # January 2020, Jan, 2020, J A N  2 0 2 0
+    _MONTH_GROUP + r'[,.]?\s*\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # January 2020, Jan, 2020, J A N  2 0 2 0, JULY2011
     _MONTH_GROUP + r'\.\d{4}',
-    _MONTH_GROUP + r"'\d{2}",
+    _MONTH_GROUP + r"['’‘`]\d{2}",  # July'15, July’15
     _MONTH_GROUP + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
-    r'\d{4}\s+' + _MONTH_GROUP,           # YYYY Mon (year-first) e.g. "2014 Aug" — Cat A/B gap
-    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "16th April 2005"
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s*\d{4}',
+    r'\d{4}\s*' + _MONTH_GROUP,           # YYYY Mon (year-first) e.g. "2014 Aug" — Cat A/B gap
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s*\d{4}',  # ordinal: "16th April 2005"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
     r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
@@ -45,13 +45,13 @@ _START_PATTERNS = '|'.join([
 ])
 
 _END_PATTERNS = '|'.join([
-    _MONTH_GROUP + r'[,.]?\s+\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
+    _MONTH_GROUP + r'[,.]?\s*\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
     _MONTH_GROUP + r'\.\d{4}',
-    _MONTH_GROUP + r"'\d{2}",
+    _MONTH_GROUP + r"['’‘`]\d{2}",
     _MONTH_GROUP + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s+\d{4}',
-    r'\d{4}\s+' + _MONTH_GROUP,           # YYYY Mon (year-first)
-    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s+\d{4}',  # ordinal: "27th September 2007"
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s*\d{4}',
+    r'\d{4}\s*' + _MONTH_GROUP,           # YYYY Mon (year-first)
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s*\d{4}',  # ordinal: "27th September 2007"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
     r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
@@ -68,7 +68,7 @@ _END_PATTERNS = '|'.join([
 ])
 
 # Separator between start–end: dashes, em-dashes, "to", "till"
-_DATE_SEP = r'\s*(?:[–—\-–]+|t\s*o|t\s*i\s*l\s*l)\s*'
+_DATE_SEP = r'\s*(?:[–—\-–]+|t\s*o|t\s*i\s*l\s*l|u\s*n\s*t\s*i\s*l\s*l?)\s*'
 
 DATE_RANGE_RE = re.compile(
     r'(?P<start>' + _START_PATTERNS + r')'
@@ -234,11 +234,15 @@ class ExperienceParser:
                 for node in node_list:
                     if not isinstance(node, dict): continue
                     flat.append(node)
-                    if 'kids' in node and isinstance(node['kids'], list):
-                        flat.extend(_flatten(node['kids']))
+                    for k, v in node.items():
+                        if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
+                            flat.extend(_flatten(v))
                 return flat
 
-            for el in _flatten(kids):
+            flat_kids = _flatten(kids)
+            heading_index = -1
+            
+            for i, el in enumerate(flat_kids):
                 if not isinstance(el, dict):
                     continue
                 
@@ -250,6 +254,7 @@ class ExperienceParser:
                     c = re.sub(r'[^a-zA-Z\s]', '', raw_content.lower()).strip()
                     if c in self._EXP_SECTION_KEYWORDS:
                         in_experience = True
+                        heading_index = i
                         continue
                     elif in_experience and c:
                         # Reached the next section heading, stop capturing
@@ -259,7 +264,10 @@ class ExperienceParser:
                     exp_text += raw_content + "\n\n"
 
             if exp_text.strip():
-                text = exp_text
+                # If we captured very little text (e.g., just one line) or we started capturing very late,
+                # it might be an out-of-order header extraction.
+                if heading_index >= 0 and heading_index < len(flat_kids) * 0.8:
+                    text = exp_text
 
         # ── Markdown / flat-text section scoping (PyMuPDF path) ──────────────
         # When there are no ODL elements, try to find the experience section in
@@ -284,11 +292,16 @@ class ExperienceParser:
             )
             m = _EXP_FLAT_RE.search(text)
             if m:
+                # If PyMuPDF scrambled the order, the text might be before the heading.
+                # Try the text after the heading first.
                 candidate = text[m.end():]
                 nm = _NEXT_SECTION_RE.search(candidate)
                 if nm and nm.start() > 50:
                     candidate = candidate[:nm.start()]
-                if candidate.strip():
+                
+                # If the candidate actually contains date ranges, use it.
+                # Otherwise, fall back to scanning the entire document.
+                if candidate.strip() and DATE_RANGE_RE.search(candidate):
                     text = candidate
 
         if not text or not text.strip():
@@ -303,7 +316,16 @@ class ExperienceParser:
             since_entries = self._parse_since(text)
             if since_entries:
                 return since_entries
-            return self._parse_year_only(text)
+            
+            dur_m = re.search(r'\b(?:1|2|3|4|5|6|7|8|9|10|one|two|three|four|five|six|seven|eight|nine|ten|[1-9]\d{0,1})\s*(?:\+?\s*)?(?:years?|yrs?|months?|mos?)\s*(?:of\s*)?(?:working\s*)?experience\b', text, re.I)
+            if dur_m:
+                return [{"role": dur_m.group(0).strip(), "company": "", "start": "", "end": "", "description": "", "achievements": []}]
+                
+            yr_entries = self._parse_year_only(text)
+            if yr_entries:
+                return yr_entries
+                
+            return self._parse_single_date(text)
 
         entries = []
         for i, dm in enumerate(date_matches):
@@ -449,6 +471,38 @@ class ExperienceParser:
                 entries.append({
                     "role": role, "company": company,
                     "start": dm.group('start'), "end": dm.group('end'),
+                    "description": None, "achievements": [],
+                })
+        return entries
+
+    def _parse_single_date(self, text: str) -> List[Dict[str, Any]]:
+        """Parse standalone month-year dates (e.g. 'May 2020') without a range."""
+        single_date_re = re.compile(
+            r'(?<![-–—\w])(?P<start>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4})(?![-–—\w])',
+            re.I
+        )
+        entries = []
+        for dm in single_date_re.finditer(text):
+            before = text[max(0, dm.start()-200):dm.start()].strip()
+            lines = [l.strip() for l in before.split('\n') if l.strip()]
+            clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+
+            if len(clean_lines) >= 2:
+                role, company = self._disambiguate_role_company(
+                    clean_lines[-1], clean_lines[-2]
+                )
+            elif clean_lines:
+                role, company = self._split_role_company(clean_lines[-1])
+            else:
+                continue
+
+            role = _clean_loc_tags(role)
+            company = _clean_loc_tags(company)
+
+            if role or company:
+                entries.append({
+                    "role": role, "company": company,
+                    "start": dm.group('start'), "end": "",
                     "description": None, "achievements": [],
                 })
         return entries

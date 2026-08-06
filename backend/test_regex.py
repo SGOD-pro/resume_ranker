@@ -1,32 +1,22 @@
 import re
-import fitz
-import sys
+new_re = re.compile(r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)')
+old_re = re.compile(r'\b(?:19|20)\d{2}\b')
 
-_MONTH = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
-_START_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}', _MONTH + r'\.\d{4}', _MONTH + r"'\d{2}", _MONTH + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}', r'\d{1,2}/\d{1,2}/\d{4}', r'\d{1,2}-\d{1,2}-\d{4}',
-    r'\d{1,2}/\d{4}', r'\d{1,2}-\d{4}', r'\d{1,2}\.\d{4}', r'\d{4}/\d{1,2}', r'\d{4}',
-])
-_END_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}', _MONTH + r'\.\d{4}', _MONTH + r"'\d{2}", _MONTH + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}', r'\d{1,2}/\d{1,2}/\d{4}', r'\d{1,2}-\d{1,2}-\d{4}',
-    r'\d{1,2}/\d{4}', r'\d{1,2}-\d{4}', r'\d{1,2}\.\d{4}', r'\d{4}/\d{1,2}',
-    r'Present|Current|Now|Till\s+Date|Till\s+Now|To\s+Date|Ongoing', r'\d{4}',
-])
-_DATE_SEP = r'\s*(?:[–—\-–]+|to|till)\s*'
-DATE_RANGE_RE = re.compile(r'(?P<start>' + _START_PATTERNS + r')' + _DATE_SEP + r'(?P<end>' + _END_PATTERNS + r')', re.I)
+tests = [
+    "2020",
+    " 2020 ",
+    "July2020",
+    "July 2020",
+    "2 0 2 0",
+    "9876543210 2020",
+    "98765432102020",
+    "2020-2021",
+    "2020 - 2021"
+]
 
-doc = fitz.open('data/resumes/cv (1025).pdf')
-text = ""
-for page in doc: text += page.get_text()
-
-import time
-t0 = time.time()
-print("Starting regex finditer...")
-try:
-    for m in DATE_RANGE_RE.finditer(text):
-        pass
-    print("Done in", time.time() - t0)
-except Exception as e:
-    print(e)
+for t in tests:
+    print(f"'{t}':")
+    old_m = old_re.search(t)
+    new_m = new_re.search(t)
+    print(f"  Old: {old_m.group() if old_m else None}")
+    print(f"  New: {new_m.group() if new_m else None}")

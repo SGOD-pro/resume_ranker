@@ -219,6 +219,8 @@ class Stats:
         self._nova_quality: List[float] = []
         self._nova_composite: List[float] = []
 
+        self.raw_dump: List[Dict[str, Any]] = []
+
         self.input_tokens: List[int] = []
         self.output_tokens: List[int] = []
 
@@ -288,6 +290,14 @@ class Stats:
             self.latencies["nova_ms"].append(nova_ms)
             self._nova_quality.append(q)
             self._nova_composite.append(comp)
+
+        layer_used = "nova" if used_nova else ("odl" if used_odl else "pymupdf")
+        self.raw_dump.append({
+            "doc_id": result.get("document_id", "unknown"),
+            "layer_used": layer_used,
+            "extraction_quality": q,
+            "composite_score": comp
+        })
 
         self.latencies["pymupdf_ms"].append(pymupdf_ms)
         self.latencies["total_ms"].append(t_total_ms)
@@ -486,24 +496,31 @@ def print_report(label: str, stats: Stats, n: int) -> None:
     odl_avg_c  = _avg_pct(stats._odl_composite)
     nov_avg_c  = _avg_pct(stats._nova_composite)
 
-    print("  ── Per-Layer Breakdown ────────────────────────────────────────────────────────")
-    print(f"  {'Layer':<28} {'PDFs':>6} {'%':>6}  {'AvgTime p50ms':>14}  {'AvgQuality':>11}  {'AvgComposite':>12}")
+    print("  ── Terminal Layer Breakdown ───────────────────────────────────────────────────")
+    print("  (Shows where documents FINISHED their processing path)")
+    print(f"  {'Terminal Layer':<28} {'PDFs':>6} {'%':>6}  {'AvgTime p50ms':>14}  {'AvgQuality':>11}  {'AvgComposite':>12}")
     print(f"  {'─'*80}")
     # PyMuPDF-only (no ODL, no Nova)
-    print(f"  {'PyMuPDF-only (fast path)':<28} {len(stats._pymupdf_only_quality):>6} {_pct(len(stats._pymupdf_only_quality),n):>6.1f}%"
+    print(f"  {'Ended at PyMuPDF':<28} {len(stats._pymupdf_only_quality):>6} {_pct(len(stats._pymupdf_only_quality),n):>6.1f}%"
           f"  {py_p50:>13.1f}ms  {py_avg_q:>11.3f}  {py_avg_c:>11.1f}%")
     # ODL fallback (quality gate fired, no Nova)
-    print(f"  {'ODL fallback (JVM parse)':<28} {len(stats._odl_quality):>6} {_pct(len(stats._odl_quality),n):>6.1f}%"
+    print(f"  {'Ended at ODL':<28} {len(stats._odl_quality):>6} {_pct(len(stats._odl_quality),n):>6.1f}%"
           f"  {odl_p50:>13.1f}ms  {odl_avg_q:>11.3f}  {odl_avg_c:>11.1f}%")
     # Nova fallback (LLM infill, may fire after PyMuPDF or ODL)
-    print(f"  {'Nova fallback (LLM infill)':<28} {nova_n:>6} {_pct(nova_n,n):>6.1f}%"
+    print(f"  {'Ended at Nova':<28} {nova_n:>6} {_pct(nova_n,n):>6.1f}%"
           f"  {nov_p50:>13.1f}ms  {nov_avg_q:>11.3f}  {nov_avg_c:>11.1f}%")
     print(f"  {'─'*80}")
     print(f"  {'Total processed':<28} {processed:>6} {'100.0':>6}%"
           f"  {tot_p50:>13.1f}ms  {avg_q:>11.3f}  {avg_composite:>11.1f}%")
     print()
-    print(f"  Lambda invocations — ODL: {stats.odl_call_count}  "
-          f"(saved {max(0, odl_n - stats.odl_call_count)} JVM boots vs serial)")
+    print("  ── Resource Consumption (Throughput) ──────────────────────────────────────────")
+    print(f"  Total docs passed through ODL:    {stats.odl_fallback_count}")
+    print(f"  Lambda invocations — ODL:         {stats.odl_call_count}")
+    
+    # Recomputed explicitly here against the full ODL volume, NOT the terminal ODL volume
+    # JVM boots saved = (Total docs sent to ODL) - (Lambda batches)
+    boots_saved = max(0, stats.odl_fallback_count - stats.odl_call_count)
+    print(f"  JVM boots saved (vs serial):      {boots_saved}  (Calculated as {stats.odl_fallback_count} - {stats.odl_call_count})")
     print()
 
     print("  ── Latency (ms) p50 / p95 ─────────────────────────────────────────")
@@ -548,11 +565,21 @@ def print_report(label: str, stats: Stats, n: int) -> None:
     print()
 
     if stats.errors:
-        print("  ── Errors (first 5) ───────────────────────────────────────────────")
-        for e in stats.errors[:5]:
+        print("  ── Errors & Missing Experience ───────────────────────────────────────────────")
+        for e in stats.errors:
+            if "MISSING EXPERIENCE" in e:
+                print(f"  ⚠  {e}")
+        print("  ── System Errors (first 5) ───────────────────────────────────────────────")
+        sys_errors = [e for e in stats.errors if "MISSING EXPERIENCE" not in e]
+        for e in sys_errors[:5]:
             print(f"  ⚠  {e[:100]}")
-        print()
-
+    print(f"{'='*80}\n")
+    
+    # Print the raw dump for independent verification
+    import json
+    print("\n  ── RAW DOCUMENT ROUTING DUMP ──────────────────────────────────────────────────")
+    for doc in stats.raw_dump:
+        print(json.dumps(doc))
     print(f"{'='*80}\n")
 
 
@@ -633,6 +660,35 @@ def run_benchmark():
 
     # ── Comparison table ───────────────────────────────────────────────────────
     # print_comparison(serial_stats, batch_stats, n)
+    
+    # ── Hard CI Regression Gate ────────────────────────────────────────────────
+    n_processed = max(1, n - len(batch_stats.errors))
+    exp_rate = batch_stats.field_counts["experience"] / n_processed
+    composite_score = batch_stats.composite_total / n_processed
+
+    failed = False
+    print("\n" + "═" * 70)
+    print("  CI REGRESSION GATE")
+    print("═" * 70)
+    
+    if exp_rate < 0.80:
+        print(f"  ❌ Experience Rate: {exp_rate:.1%} < 80.0%")
+        failed = True
+    else:
+        print(f"  ✅ Experience Rate: {exp_rate:.1%} >= 80.0%")
+        
+    if composite_score < 0.906:
+        print(f"  ❌ Composite Score: {composite_score:.3f} < 0.906")
+        failed = True
+    else:
+        print(f"  ✅ Composite Score: {composite_score:.3f} >= 0.906")
+        
+    if failed:
+        print(f"\n❌ REGRESSION DETECTED! Exiting with code 1.")
+        import sys
+        sys.exit(1)
+    else:
+        print(f"\n✅ ALL GATES PASSED! Exiting with code 0.")
 
 
 if __name__ == "__main__":
