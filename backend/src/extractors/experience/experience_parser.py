@@ -299,10 +299,16 @@ class ExperienceParser:
                 if nm and nm.start() > 50:
                     candidate = candidate[:nm.start()]
                 
-                # If the candidate actually contains date ranges, use it.
-                # Otherwise, fall back to scanning the entire document.
+                # If the candidate actually contains date ranges, try parsing it first
                 if candidate.strip() and DATE_RANGE_RE.search(candidate):
-                    text = candidate
+                    date_matches_cand = list(DATE_RANGE_RE.finditer(candidate))
+                    if date_matches_cand:
+                        cand_res = self._parse_strict(candidate, date_matches_cand)
+                        if not cand_res:
+                            cand_res = self._parse_year_only(candidate)
+                        if cand_res:
+                            return cand_res
+                    # If candidate failed, fall through to scanning the entire document
 
         if not text or not text.strip():
             return []
@@ -327,6 +333,9 @@ class ExperienceParser:
                 
             return self._parse_single_date(text)
 
+        return self._parse_strict(text, date_matches)
+
+    def _parse_strict(self, text: str, date_matches: list) -> List[Dict[str, Any]]:
         entries = []
         for i, dm in enumerate(date_matches):
             ctx_start = max(0, dm.start() - 250)

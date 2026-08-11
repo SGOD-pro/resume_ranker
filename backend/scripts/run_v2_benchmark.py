@@ -292,11 +292,18 @@ class Stats:
             self._nova_composite.append(comp)
 
         layer_used = "nova" if used_nova else ("odl" if used_odl else "pymupdf")
+        
+        # Look up original filename using our _pdf_path_map map
+        original_file = Path(_pdf_path_map.get(result.get("document_id", ""), "unknown.pdf")).name
+        
         self.raw_dump.append({
-            "doc_id": result.get("document_id", "unknown"),
+            "filename": original_file,
             "layer_used": layer_used,
-            "extraction_quality": q,
-            "composite_score": comp
+            "extraction_quality": round(q, 3),
+            "composite_score": round(comp, 3),
+            "name": bool(f_name),
+            "email": bool(f_email),
+            "phone": bool(f_phone)
         })
 
         self.latencies["pymupdf_ms"].append(pymupdf_ms)
@@ -577,10 +584,11 @@ def print_report(label: str, stats: Stats, n: int) -> None:
     
     # Print the raw dump for independent verification
     import json
-    print("\n  ── RAW DOCUMENT ROUTING DUMP ──────────────────────────────────────────────────")
-    for doc in stats.raw_dump:
-        print(json.dumps(doc))
-    print(f"{'='*80}\n")
+    print("\n  ── RAW DOCUMENT ROUTING DUMP (CSV) ──────────────────────────────────────────────────")
+    print("filename,layer_used,extraction_quality,composite_score,name_found,email_found,phone_found")
+    for d in stats.raw_dump:
+        print(f"{d['filename']},{d['layer_used']},{d['extraction_quality']},{d['composite_score']},{d['name']},{d['email']},{d['phone']}")
+    print("================================================================================\n")
 
 
 def print_comparison(serial: Stats, batch: Stats, n: int) -> None:
@@ -629,9 +637,10 @@ def run_benchmark():
         return
 
     import random
+    import time
     all_pdfs = sorted(resumes_dir.glob("*.pdf"))
     valid_pdfs = list(all_pdfs)
-    random.seed(42)
+    random.seed(int(time.time()))
     random.shuffle(valid_pdfs)
     pdfs = valid_pdfs[:200]
     n    = len(pdfs)

@@ -141,11 +141,13 @@ class StageTiming:
 
 @dataclass
 class ParseResult:
+    """Standardized output from any structural parsing branch."""
     markdown: str
     elements: list
     stage_timings: List[StageTiming]
     quality_score: float
-    hyperlinks: list
+    hyperlinks: list = field(default_factory=list)
+    pymupdf_text: str = ""
     error_reason: Optional[str] = None
 
 
@@ -178,10 +180,17 @@ class StructuralParsingService:
 
         for page in doc:
             page_qualities.append(pymupdf_layout_quality(page))
-            raw_pymupdf_text.append(page.get_text())
+            page_text = page.get_text()
+            
+            links_text = ""
             for link in page.get_links():
                 if 'uri' in link:
                     hyperlinks.append({"uri": link['uri']})
+                    uri_lower = link['uri'].lower()
+                    if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                        links_text += f" {link['uri']} "
+            
+            raw_pymupdf_text.append(page_text + links_text)
 
         # Fix: Use min() instead of average. If ANY page is multi-column (score ~0.50),
         # averaging with 1-column pages (~0.95) pulls the score above 0.70 and skips ODL,
@@ -245,6 +254,7 @@ class StructuralParsingService:
             stage_timings=timings,
             quality_score=min_quality,
             hyperlinks=hyperlinks,
+            pymupdf_text=raw_markdown,
             error_reason=error_reason,
         )
 
@@ -280,10 +290,17 @@ class StructuralParsingService:
 
                 for page in fitz_doc:
                     page_qualities.append(pymupdf_layout_quality(page))
-                    raw_pymupdf_text.append(page.get_text())
+                    page_text = page.get_text()
+                    
+                    links_text = ""
                     for link in page.get_links():
                         if 'uri' in link:
                             hyperlinks.append({"uri": link['uri']})
+                            uri_lower = link['uri'].lower()
+                            if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                                links_text += f" {link['uri']} "
+                    
+                    raw_pymupdf_text.append(page_text + links_text)
 
                 min_quality = (
                     min(page_qualities) if page_qualities else 0.0
@@ -314,6 +331,7 @@ class StructuralParsingService:
                         stage_timings=timings,
                         quality_score=min_quality,
                         hyperlinks=hyperlinks,
+                        pymupdf_text=raw_markdown,
                     ))
 
             except Exception as fitz_exc:
@@ -333,6 +351,7 @@ class StructuralParsingService:
                     stage_timings=timings,
                     quality_score=0.0,
                     hyperlinks=[],
+                    pymupdf_text="",
                     error_reason=str(fitz_exc),
                 ))
 
@@ -374,6 +393,7 @@ class StructuralParsingService:
                         stage_timings=timings,
                         quality_score=min_quality,
                         hyperlinks=hyperlinks,
+                        pymupdf_text=raw_markdown,
                     )
                 else:
                     # ODL failed for this specific doc — degrade to PyMuPDF text
@@ -394,6 +414,7 @@ class StructuralParsingService:
                         stage_timings=timings,
                         quality_score=min_quality,
                         hyperlinks=hyperlinks,
+                        pymupdf_text=raw_markdown,
                         error_reason=error_reason,
                     )
 

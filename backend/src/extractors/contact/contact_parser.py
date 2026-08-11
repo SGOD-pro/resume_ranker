@@ -397,12 +397,25 @@ class ContactParser:
             content = el.get('content', el.get('text', ''))
             if content:
                 header_contents.append(str(content))
+            
+            # Check for nested link/uri attributes that might contain the email
+            # Flatten the dict to string and use regex to find mailto/tel/@ links
+            dumped = str(el)
+            import re
+            # Extract links that look like mailto:, tel:, or emails from the dictionary string representation
+            links = re.findall(r"(?:mailto:|tel:|[\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})[^\s'\"\}\]]*", dumped)
+            for l in links:
+                # Remove common JSON/dict artifacts if any got caught
+                clean_link = l.rstrip("',\"}]")
+                if clean_link:
+                    header_contents.append(clean_link)
 
         return "\n".join(header_contents)
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
               sidebar_text: str = "", main_text: str = "",
-              hyperlinks: list = None, elements: list = None) -> Dict[str, Any]:
+              hyperlinks: list = None, elements: list = None,
+              pymupdf_text: str = "") -> Dict[str, Any]:
 
         # ── Build header text from ODL bounding-box geometry ─────────────────
         # This catches email/phone in side-column headers that appear late in
@@ -411,7 +424,7 @@ class ContactParser:
         if elements:
             header_text = self._build_header_text_from_elements(elements)
 
-        combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text]))
+        combined = "\n".join(filter(None, [full_width_text, sidebar_text, raw_text, pymupdf_text]))
 
         # Candidate text for email/phone: header zone first, then full text.
         # Appending full text ensures the fallback still works when the header
@@ -427,8 +440,12 @@ class ContactParser:
             email_phone_text = email_phone_text + "\n" + link_text
             combined = combined + "\n" + link_text
 
+        name = self._extract_name(full_width_text, raw_text, sidebar_text, main_text, elements, pymupdf_text)
+        if name == "Mohd Salman Nafees":
+            print("DEBUG: _extract_name returned Mohd Salman Nafees!")
+        
         return {
-            "name":     self._extract_name(full_width_text, raw_text, sidebar_text, main_text, elements),
+            "name":     name,
             "email":    self._extract_email(email_phone_text, hyperlinks),
             "phone":    self._extract_phone(email_phone_text),
             "linkedin": self._extract_linkedin(combined),
@@ -437,7 +454,7 @@ class ContactParser:
         }
 
     def _extract_name(self, full_width_text: str, raw_text: str,
-                       sidebar_text: str = "", main_text: str = "", elements: list = None) -> Optional[str]:
+                       sidebar_text: str = "", main_text: str = "", elements: list = None, pymupdf_text: str = "") -> Optional[str]:
         # Strategy 0: ODL JSON Heading
         if elements:
             kids = elements.get('kids', []) if isinstance(elements, dict) else elements
@@ -473,14 +490,14 @@ class ContactParser:
                     return candidate
 
         # Strategy 2: heuristic — check main_text FIRST (name is almost always
-        # the first line of main content), then sidebar, then raw_text.
+        # the first line of main content), then sidebar, then raw_text, then pymupdf_text.
         # Sidebar is checked last because two-column resumes often have skill
         # lines that look like names (e.g. "Vue Redux TypeScript").
-        for text_src in [main_text, raw_text, sidebar_text]:
+        for text_src in [main_text, raw_text, sidebar_text, pymupdf_text]:
             if not text_src:
                 continue
             lines = [l.strip() for l in text_src.split('\n') if l.strip()]
-            for line in lines[:5]:
+            for i, line in enumerate(lines[:30]):
                 clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
                 clean = re.sub(r'^#+\s*', '', clean).strip()
                 
@@ -495,41 +512,54 @@ class ContactParser:
                 # First try the full line
                 if _is_name_line(candidate):
                     return candidate
+                
+                # Check consecutive line combination
+                if i < len(lines) - 1:
+                    next_line = lines[i + 1]
+                    next_clean = re.sub(r'\[/?[A-Z_]+\]', '', next_line).strip()
+                    next_candidate = re.split(r'[,|]| - ', next_clean)[0].strip()
+                    combined_candidate = candidate + " " + next_candidate
+                    if _is_name_line(combined_candidate):
+                        return combined_candidate
+                
                 # Then try splitting name from contact info on same line
                 split = _split_name_from_contact(candidate)
                 if split != candidate and _is_name_line(split):
                     return split
 
-        # Strategy 3: scan first 10 lines and last 10 lines of raw_text (fallback)
-        lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-        search_lines = lines[:10] + (lines[-10:] if len(lines) > 10 else [])
-        for line in search_lines:
-            clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-            clean = re.sub(r'^#+\s*', '', clean).strip()
-            lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
-            if lf_match:
-                return f"{lf_match.group(2)} {lf_match.group(1)}"
-            candidate = re.split(r'[,|]| - ', clean)[0].strip()
-            
-            if _is_name_line(candidate):
-                return candidate
-            split = _split_name_from_contact(candidate)
-            if split != candidate and _is_name_line(split):
-                return split
+        # Strategy 3: scan first 30 lines and last 30 lines of raw_text and pymupdf_text (fallback)
+        for text_src in [raw_text, pymupdf_text]:
+            if not text_src:
+                continue
+            lines = [l.strip() for l in text_src.split('\n') if l.strip()]
+            search_lines = lines[:30] + (lines[-30:] if len(lines) > 30 else [])
+            for line in search_lines:
+                clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
+                clean = re.sub(r'^#+\s*', '', clean).strip()
+                lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
+                if lf_match:
+                    return f"{lf_match.group(2)} {lf_match.group(1)}"
+                candidate = re.split(r'[,|]| - ', clean)[0].strip()
+                
+                if _is_name_line(candidate):
+                    return candidate
+                split = _split_name_from_contact(candidate)
+                if split != candidate and _is_name_line(split):
+                    return split
 
-        # Strategy 4: ALL CAPS line in first 5 or last 5 lines
-        search_lines_caps = lines[:5] + (lines[-5:] if len(lines) > 5 else [])
-        for line in search_lines_caps:
-            clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-            clean = re.sub(r'^#+\s*', '', clean).strip()
-            candidate_base = re.split(r'[,|]| - ', clean)[0].strip()
-            
-            # Try split first for ALL CAPS check too
-            split = _split_name_from_contact(candidate_base)
-            for candidate in [candidate_base, split]:
-                words = candidate.split()
-                if 2 <= len(words) <= 4 and candidate.isupper() and not re.search(r'\d', candidate):
-                    return candidate.title()
+            # Strategy 4: ALL CAPS line in first 15 or last 15 lines
+            search_lines_caps = lines[:15] + (lines[-15:] if len(lines) > 15 else [])
+            for line in search_lines_caps:
+                clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
+                clean = re.sub(r'^#+\s*', '', clean).strip()
+                candidate_base = re.split(r'[,|]| - ', clean)[0].strip()
+                
+                # Try split first for ALL CAPS check too
+                split = _split_name_from_contact(candidate_base)
+                for candidate in [candidate_base, split]:
+                    words = candidate.split()
+                    if 1 <= len(words) <= 4 and candidate.isupper() and not re.search(r'\d', candidate):
+                        return candidate.title()
 
         return None
 
@@ -545,12 +575,16 @@ class ContactParser:
                     m = _EMAIL_RE.search(uri)
                     if m: return m.group(0).lower()
         
-        # Match markdown links [text](mailto:email)
-        m_md = re.search(r'\]\(mailto:([^)?\s]+)', text, re.IGNORECASE)
-        if m_md:
-            return m_md.group(1).lower()
+        # Normalization for obfuscated emails
+        text_norm = re.sub(r'(?i)\[at\]|\(at\)|<at>|{at}| at ', '@', text)
+        text_norm = re.sub(r'(?i)\[dot\]|\(dot\)|<dot>|{dot}| dot ', '.', text_norm)
 
-        m = _EMAIL_RE.search(text)
+        # Match markdown links [text](mailto:email) and extract properly
+        m_md = re.search(r'\]\(mailto:([^)?\s]+)', text_norm, re.IGNORECASE)
+        if m_md:
+            return m_md.group(1).lower().rstrip(').')
+
+        m = _EMAIL_RE.search(text_norm)
         return m.group(0).lower() if m else None
 
     def _extract_phone(self, text: str) -> Optional[str]:

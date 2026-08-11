@@ -1,0 +1,602 @@
+INFO root: Processing batch of 16 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 59567a79-cd7f-4e47-b76d-6acfd29e6b6f: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7ba64432-95e5-4ade-a146-404ee00b2356: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for c1b0d112-6cc5-49d8-bc10-03d4fda86dc2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for e24c31ed-2cf3-4000-b834-cdf4bc5302c2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 25f9caab-f617-4199-a273-4db514ff7665: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 45df651e-b718-433b-9177-82e9cd672768: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 89f98ab5-6126-448d-82d6-43e67d16cd01: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 264cd555-8813-4563-8dca-d7aac6aa847f: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 472c3f78-068b-4f99-a396-f43ddd42a93d: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 0a1b3003-7dd5-4b02-94a6-b8a1bd9337f6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 670058e3-e360-491f-b823-3c7e406ea0e1: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for e278bf49-08c6-4639-aba8-8102bb355494: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for a0438b26-1120-43a9-be9d-3f916f1755f9: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 24ff22ce-70dc-4872-88d0-683750ca46b7: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 8e55ccf8-dce0-4a55-ae47-195c155f8096: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 138932ae-5250-4654-966a-3a4f24ef3cd5: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+INFO root: Processing batch of 20 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 1303c0f5-f7f3-4af5-84f1-a763c6370c85: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 14c2ce93-29bd-4286-b658-95b199780168: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 709b3893-6c10-42a8-9500-0cb70d985970: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for ed4e91a3-7555-471e-a281-275572ddcb57: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 3eae14c3-74c2-4eb3-8b82-58efe5afe12b: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for e1c80d46-4333-4986-9640-e63319531032: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 25463be2-7f26-47aa-8062-6c7afbe79828: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 20021430-cd32-4c2a-8740-47a388c21e1a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 820d8a27-e472-4910-9a5a-796d14558f89: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 83d1ff30-85b9-45b5-b52b-3a596aa55c35: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7a575d50-7de6-47d1-9bce-aeb33a4343fe: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 87e52292-8429-47fd-a68e-680114f7ea6b: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for de58c368-d730-4e37-b739-eeadb09695ad: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for ea5472e8-c269-451d-8bad-a607365905b0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 367cf196-337d-45b1-bdb6-3dad1bdf97ec: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 248e2803-731d-4f92-b82d-5013f503a735: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 63a1d0c8-28fd-4fec-8e28-5b4c197cce31: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 3c45ece1-b7d1-4bdb-815f-24d4ba9274a4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 34bdc8d8-114e-4aa1-b19b-253357205c82: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for b0114dbf-e027-4809-af7c-b77594238beb: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+WARNING src.extraction.fallback.nova_service: Nova JSON parse error (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)). Raw response: {Floci stub response for model=apac.amazon.nova-lite-v1:0
+INFO root: Processing batch of 19 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for b2392a84-dd66-4177-b428-6f46894287d6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for b895b2ab-be1a-41c0-b659-7322fcb618fb: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fc0acdbe-4345-48e6-b2ae-462211bfa0a4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 2c735e09-2bc0-4638-a2be-c7da3945f638: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 5a71e3d3-880b-4548-9971-513495874726: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4f03c47f-f2af-440f-a9b2-e3090599be98: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 264aac36-eda2-47a9-abbc-c448c2355b03: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4dfebfa5-0970-432b-9f15-ab5125c6be41: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for c8db1cc6-b7ea-46a0-b7e6-49b04ca1e898: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 681f7121-a99d-4215-b227-9d3338de225a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for d3d2f550-e847-43ee-b497-25b613116c83: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fde488bc-f304-4da7-a0bf-39f9cf5f470b: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 408bb7bf-995e-4d96-891d-b6a9340583b0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 1959f9d3-8655-45ba-8c03-9736b55dad9d: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 29aa4585-ff7a-473d-9d8c-fc82fc4e9fd9: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fabc7661-376e-4dfd-b82e-03f860f48d46: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 33d4e6fb-0cde-4a27-9a6a-140cecbc18fa: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for f0d3b147-5327-49e8-a114-5fe1204047a5: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7ecd6e48-2a89-4255-bac2-3d9ccc57dbb0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+══════════════════════════════════════════════════════════════════════
+  PHASE 3 V2 EXTRACTION BENCHMARK — Full Field Report
+══════════════════════════════════════════════════════════════════════
+  Resumes: 200   |   Quality threshold: 0.9
+  Nova: real Bedrock converse API (no mock)
+  Batch size: 25
+
+──────────────────────────────────────────────────────────────────────────────────────────
+  QUALITY SIGNAL DIAGNOSTICS (first 10 resumes, page 1)
+  Threshold: 0.9   |   Weights: read_ord=0.40  char_dens=0.35  not_table=0.15  col_pen=0.10
+──────────────────────────────────────────────────────────────────────────────────────────
+File                  Score  ReadOrd  CharDens  NoTable   ColPen  nCols  nDraw  TextLen  ODL?
+──────────────────────────────────────────────────────────────────────────────────────────
+cv (1209).pdf         0.650    1.000     1.000     1.00     0.00      2      1     1998   YES
+cv (1106).pdf         1.000    1.000     1.000     1.00     1.00      1      6     4365    no
+cv (4646).pdf         0.850    0.998     1.000     0.00     1.00      1     33     4873   YES
+cv (1634).pdf         0.992    0.972     1.000     1.00     1.00      1     18     1782    no
+cv (647).pdf          0.790    0.939     0.789     0.00     1.00      1    249     1184   YES
+cv (2668).pdf         1.000    1.000     1.000     1.00     1.00      1     13     2252    no
+cv (4544).pdf         0.999    0.998     1.000     1.00     1.00      1     17     3633    no
+cv (749).pdf          0.835    0.950     1.000     0.00     1.00      1    259     1599   YES
+cv (3227).pdf         0.927    1.000     0.636     1.00     1.00      1      7      954    no
+cv (62).pdf           0.772    0.966     0.661     0.00     1.00      1     72      992   YES
+──────────────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────
+  [BATCH MODE] Running 200 PDFs in groups of 25…
+──────────────────────────────────────────────────────────────────────
+    [ 50/200] ODL-docs=36  ODL-calls=2  Nova=1  Err=0
+MuPDF error: library error: zlib error: invalid literal/lengths set
+
+MuPDF error: library error: FT_New_Memory_Face(EAAAAA+DejaVuSans): unknown file format
+
+INFO root: Processing batch of 14 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 1d096c33-697b-4867-addc-2e7578e063a4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 55a7de19-b39b-4955-a865-fb9771136d88: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 04695101-af0f-4fc4-88d4-da5631093e30: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6a2eeffb-5b0e-4ffc-bb89-95193570c04e: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for f98e7401-abaa-46f4-8a91-93b6c210b758: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 8f0b97fe-a7b2-417a-aeeb-33157f200658: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 60bdd7d6-698c-43af-bbc2-928dcb151ee0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 49e4f8c5-c1b9-488a-abc4-c3ba62f6ca3b: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 23b25110-ae67-48c1-9bb5-6bfd22b720f2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 8e5695a2-3045-4eb5-bc37-8d0ce52d9ca5: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for a187b674-7f82-43c4-9254-d380067abed2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6a57b160-3b2c-4990-abda-459fbe280cf0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for f7df45ee-8a34-4a01-b84b-13186121c0b7: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 9a6e4304-3543-4b1b-b65f-e31a1ec5f094: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+INFO root: Processing batch of 18 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for da60a911-82a5-4d4e-a77f-7793ef58e3c0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 44744943-96fd-4c8a-9952-ec7df0f630a2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fbf1c70a-e034-4eec-993d-ce1b854f6bad: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 02a75d17-6c9e-4fe0-9a2a-f0d06aca0849: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 5774943d-2eb9-4d22-bd1e-9ed109ce1611: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 05ecdeeb-d92f-441b-8149-b2225e7a3c36: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for f82fca99-19e9-49c2-9af5-e3ed807a1e36: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 00c09aef-814e-4e6c-b39c-c8c8474fc0b4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 8f3305f9-3853-4e29-ae31-9eb58445fdf6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fbb00466-c120-4950-900f-f89e679e911a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for dbcd3288-67b9-48d9-a4d0-9a0481fd84b3: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 68650c50-30af-4c62-a0ac-839eeb47e818: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 904145c4-9d15-409f-9c7b-7a19cad686d6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 354ebe73-05e2-4d27-b879-04ab19f58859: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for d63f47c5-5e31-4197-afdf-f6362e3dd5af: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 88e58db8-3dbc-4591-8baf-c386e1d29aa6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 18e32074-b45f-4a38-beb1-31d4fe778796: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 3e1b5d00-83a8-4525-bac2-881aeeecfd43: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+INFO root: Processing batch of 19 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7106ed2b-4ddb-4575-af8e-47df5530c606: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 66ca50e8-58af-4e09-96a0-dd8ca577f3e9: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for bc9adcd0-bc38-4d78-bf5a-d880776e401c: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 42cb411e-3140-44e8-a7c1-d25f3b13876d: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for e3688ac6-7e85-4f0e-aab2-aab3888c4bcb: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 3653bf3f-9d0a-4d54-a9b8-3f218e2b0811: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 951d09e8-a416-42de-b0b3-d3108f445bb6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for c5880aac-d754-4404-ba65-8f329ad248a3: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4d67c0cd-5328-4e58-ba15-0f87727382a4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for dc54f95f-b661-421c-a49f-3654feae0b66: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 62dd797e-201f-42d6-9df5-c013bc726a61: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 1f4ddca7-7613-4370-9588-dfe3a8e3209f: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for c4ba56d6-24a0-4b0e-89cc-7afaad4ee455: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 663ace89-6a58-4b3a-86f1-12e5665bad30: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for d35d7349-2b75-481f-87aa-0f9a7e43c050: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 599a1ce5-7765-4a1d-88a5-31bf64256d3d: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 34a789ae-d15a-4d34-b7ed-864a07f1a5f2: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 02c8211b-d5d3-4456-ae83-66baef0a74b3: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for ea759d0c-0bba-4333-9456-cbc4937983a6: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+INFO root: Processing batch of 15 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 0451077a-aaf6-4526-bf18-e8cdb6cfdc1e: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 51154d33-bf0d-453e-8a1b-1980c0907e3a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for b4e74581-17bd-41a5-bee3-f585fea5a699: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for a9111a82-1c76-46c6-ae58-410f6912001e: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 75d4150d-58d7-4999-b6ae-8bf3da47219d: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fc3bd303-1389-4079-a415-0a83e33f07e4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 52009753-0dfa-470f-b3bb-487fc3b928d4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for bdd0ab16-861b-4c4b-bdd6-0e2e9b801d4b: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 77cb68c4-1e1b-48a9-9a98-6b3b53440bed: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for daadb3e5-77ba-4431-b299-172fc0fd2d74: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 59ba8618-cd7e-4f5b-b333-69132040edf4: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for d7d87927-2ab8-4b5c-b61a-14cb4a7f4255: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 672db261-68c0-4d59-8309-9b48f993fa04: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4108fb4c-edf9-4ba3-a81b-45d6990dee53: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6152bb76-ec98-40e9-a4a0-e4f33af0b9ec: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+WARNING src.extraction.fallback.nova_service: Nova JSON parse error (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)). Raw response: {Floci stub response for model=apac.amazon.nova-lite-v1:0
+INFO root: Processing batch of 21 documents (save_images=False)
+ERROR src.extraction.odl_client: ODL parse_batch failed for entire batch: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 76, in _invoke_local
+    response = lambda_handler(event, None)
+  File "/mnt/d/WORK/resume_ranker/odl/main.py", line 76, in lambda_handler
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 230, in parse_batch
+    payload = _invoke_local(event)
+  File "/mnt/d/WORK/resume_ranker/backend/src/extraction/odl_client.py", line 88, in _invoke_local
+    raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+src.extraction.odl_client.ODLParseError: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6585e435-e946-4499-8061-394cc99aeb9a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 9d5d77a0-5c3b-4bb0-a069-99135ca3c91e: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for b8fbcfee-2065-40e5-85bd-de7f6e8236f0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6b724446-47e4-443c-99c8-a78db7caebcf: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for fbb8e378-f599-4566-bb84-17f6edefa843: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4ce4e213-6a82-4afe-b74e-6ebe79f75df0: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 6ad56497-e143-4413-ba4e-8b764e0dde20: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 0c0469aa-7754-4cdf-a1f5-9ba4a9a41991: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for efdbcc5b-efbe-428b-b694-d86fe1563ccc: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 15f86acc-7fa0-4c07-acaa-91fc461e7909: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for d1895eb1-042d-45dd-b6e0-9a53602378ef: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 96588692-b5e2-4758-beed-8414e19fc5df: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 0e5be571-9fa1-4b74-b05c-27107c618d59: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 2b9d3547-8adc-4cc3-b921-79920b0d3eb3: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 12bdfd83-3680-4766-94a4-847a7c2e6ed1: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4681ab5c-489b-4c3d-be29-ce562a98327a: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for faea87ec-3d22-4145-82b6-1e1c379ce47c: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 4a6cfa67-8b1b-42f4-9e44-b118aac7d621: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7f9b6585-8d6c-4be5-ba96-689d4d9ca1cb: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for dc2de554-ba43-4734-bc52-c937176b2482: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+ERROR src.extraction.structural_parsing_service: ODL batch partial failure for 7d2cd26e-4484-431b-b409-cf3a6464b230: ODL batch invoke failed: Local ODL bypass error: opendataloader_pdf is not installed in this environment. Deploy to Lambda or install the package manually.
+WARNING src.extraction.fallback.nova_service: Nova JSON parse error (Expecting property name enclosed in double quotes: line 1 column 2 (char 1)). Raw response: {Floci stub response for model=apac.amazon.nova-lite-v1:0
+    [100/200] ODL-docs=69  ODL-calls=4  Nova=1  Err=0
+    [150/200] ODL-docs=106  ODL-calls=6  Nova=1  Err=0
+    [200/200] ODL-docs=142  ODL-calls=8  Nova=3  Err=0
+
+================================================================================
+  === BATCH MODE (new — single JVM boot per batch) — Final Report ===
+================================================================================
+  Total resumes:      200
+  Processed OK:       200
+  Errors:             0
+  Avg quality score:  0.773  (threshold=0.9)
+  Avg composite:      90.8%
+
+  ┌── Nova Fallback Categories ──────────────────────────────────────────
+  Category A (ODL -> Nova):        3 docs
+  Category B/C (PyMuPDF -> Nova):  0 docs
+  Total Nova Fallbacks:            3 docs
+
+  ┌── Field Extraction Split (Name / Email / Phone) ───────────────────
+  PyMuPDF Docs (58): Name 100.0%, Email 62.1%, Phone 65.5%
+  ODL Docs (142):     Name 97.9%, Email 78.9%, Phone 84.5%
+
+  ── Terminal Layer Breakdown ───────────────────────────────────────────────────
+  (Shows where documents FINISHED their processing path)
+  Terminal Layer                 PDFs      %   AvgTime p50ms   AvgQuality  AvgComposite
+  ────────────────────────────────────────────────────────────────────────────────
+  Ended at PyMuPDF                 58   29.0%          126.8ms        0.959         93.0%
+  Ended at ODL                    139   69.5%            0.7ms        0.699         91.3%
+  Ended at Nova                     3    1.5%            5.6ms        0.599         23.3%
+  ────────────────────────────────────────────────────────────────────────────────
+  Total processed                 200  100.0%          396.9ms        0.773         90.8%
+
+  ── Resource Consumption (Throughput) ──────────────────────────────────────────
+  Total docs passed through ODL:    142
+  Lambda invocations — ODL:         8
+  JVM boots saved (vs serial):      134  (Calculated as 142 - 8)
+
+  ── Latency (ms) p50 / p95 ─────────────────────────────────────────
+  PyMuPDF (quality gate):    126.8  /   290.1  (all 200 docs)
+  ODL parse:                   0.7  /     3.3  (142 docs, 8 Lambda call(s))
+  Nova converse:               5.6  /   323.0  (3 docs)
+  Total E2E:                 396.9  /   485.5
+
+  ── Field Extraction (V1-compatible report) ────────────────────────
+  Field         Present   Rate %   Avg/doc
+  ────────────────────────────────────────────
+  name              197     98.5%
+  email             148     74.0%
+  phone             158     79.0%
+  skills            192     96.0%       8.8
+  experience        167     83.5%       2.5
+  education         188     94.0%       4.4
+
+  Composite score:  90.8%
+  Formula: 0.20×name + 0.25×skills + 0.25×experience + 0.20×education + 0.10×email
+
+================================================================================
+
+
+  ── RAW DOCUMENT ROUTING DUMP (CSV) ──────────────────────────────────────────────────
+filename,layer_used,extraction_quality,composite_score,name_found,email_found,phone_found
+cv (1209).pdf,odl,0.65,1.0,True,True,True
+cv (1106).pdf,pymupdf,1.0,1.0,True,True,True
+cv (4646).pdf,odl,0.85,0.9,True,False,False
+cv (1634).pdf,odl,0.464,1.0,True,True,True
+cv (647).pdf,odl,0.345,1.0,True,True,True
+cv (2668).pdf,odl,0.458,1.0,True,True,True
+cv (4544).pdf,pymupdf,0.999,0.9,True,False,False
+cv (749).pdf,odl,0.835,1.0,True,True,True
+cv (3227).pdf,odl,0.877,1.0,True,True,True
+cv (62).pdf,odl,0.772,0.75,True,True,True
+cv (1590).pdf,odl,0.877,0.75,True,True,True
+cv (4246).pdf,odl,0.893,0.9,True,False,False
+cv (965).pdf,odl,0.75,0.75,True,True,True
+cv (4965).pdf,pymupdf,0.9,0.9,True,False,False
+cv (1224).pdf,pymupdf,0.902,0.9,True,False,False
+cv (2034).pdf,odl,0.501,1.0,True,True,True
+cv (1344).pdf,pymupdf,0.987,1.0,True,True,True
+cv (2417).pdf,odl,0.849,1.0,True,True,True
+cv (1196).pdf,odl,0.455,0.75,True,True,True
+cv (1491).pdf,pymupdf,0.975,1.0,True,True,True
+cv (1676).pdf,odl,0.849,1.0,True,True,True
+cv (612).pdf,pymupdf,0.906,1.0,True,True,True
+cv (794).pdf,odl,0.802,1.0,True,True,True
+cv (2689).pdf,pymupdf,0.999,1.0,True,True,True
+cv (2326).pdf,pymupdf,1.0,1.0,True,True,True
+cv (2460).pdf,pymupdf,1.0,1.0,True,True,True
+cv (2285).pdf,odl,0.478,0.75,True,True,True
+cv (4830).pdf,pymupdf,0.95,0.9,True,False,False
+cv (4689).pdf,odl,0.85,0.9,True,False,False
+cv (1172).pdf,odl,0.798,1.0,True,True,True
+cv (866).pdf,odl,0.528,0.45,True,False,True
+cv (301).pdf,odl,0.812,1.0,True,True,True
+cv (4833).pdf,pymupdf,0.948,0.9,True,False,False
+cv (1116).pdf,odl,0.584,1.0,True,True,True
+cv (1386).pdf,odl,0.8,0.0,False,False,False
+cv (1655).pdf,nova,0.487,0.3,True,True,True
+cv (4311).pdf,odl,0.849,0.9,True,False,False
+cv (1648).pdf,odl,0.886,1.0,True,True,True
+cv (529).pdf,odl,0.794,0.75,True,True,True
+cv (1802).pdf,odl,0.644,1.0,True,True,True
+cv (939).pdf,odl,0.535,1.0,True,True,True
+cv (1173).pdf,odl,0.506,1.0,True,True,True
+cv (3115).pdf,odl,0.495,1.0,True,True,True
+cv (3177).pdf,odl,0.849,1.0,True,True,True
+cv (3148).pdf,pymupdf,0.963,1.0,True,True,True
+cv (2524).pdf,odl,0.798,1.0,True,True,True
+cv (4852).pdf,pymupdf,0.924,0.9,True,False,False
+cv (1420).pdf,odl,0.467,1.0,True,True,True
+cv (711).pdf,odl,0.519,1.0,True,True,True
+cv (1023).pdf,odl,0.492,1.0,True,True,True
+cv (1100).pdf,odl,0.85,1.0,True,True,True
+cv (4675).pdf,odl,0.849,0.9,True,False,False
+cv (567).pdf,pymupdf,0.903,1.0,True,True,True
+cv (2204).pdf,odl,0.776,0.75,True,True,True
+cv (3173).pdf,pymupdf,0.999,1.0,True,True,True
+cv (2536).pdf,odl,0.849,1.0,True,True,True
+cv (927).pdf,odl,0.444,0.2,True,False,True
+cv (4397).pdf,odl,0.85,0.9,True,False,False
+cv (1143).pdf,odl,0.496,1.0,True,True,True
+cv (4499).pdf,odl,0.849,0.9,True,False,False
+cv (1637).pdf,odl,0.388,1.0,True,True,True
+cv (4729).pdf,odl,0.85,0.9,True,False,False
+cv (622).pdf,odl,0.65,1.0,True,True,True
+cv (1081).pdf,odl,0.842,1.0,True,True,True
+cv (1682).pdf,odl,0.563,1.0,True,True,True
+cv (414).pdf,odl,0.8,1.0,True,True,True
+cv (3268).pdf,odl,0.842,1.0,True,True,True
+cv (3045).pdf,odl,0.835,1.0,True,True,True
+cv (2275).pdf,odl,0.464,1.0,True,True,True
+cv (1759).pdf,pymupdf,0.938,1.0,True,True,True
+cv (2971).pdf,pymupdf,0.974,1.0,True,True,True
+cv (4988).pdf,pymupdf,0.911,0.9,True,False,False
+cv (162).pdf,odl,0.603,1.0,True,True,True
+cv (2217).pdf,pymupdf,0.917,1.0,True,True,True
+cv (1640).pdf,odl,0.82,1.0,True,True,True
+cv (2768).pdf,pymupdf,0.908,1.0,True,True,True
+cv (2458).pdf,pymupdf,0.999,1.0,True,True,True
+cv (4884).pdf,pymupdf,0.974,0.9,True,False,False
+cv (1433).pdf,pymupdf,0.999,0.8,True,True,False
+cv (4915).pdf,pymupdf,0.928,0.65,True,False,False
+cv (4440).pdf,odl,0.85,0.9,True,False,False
+cv (1311).pdf,odl,0.808,1.0,True,True,True
+cv (4633).pdf,odl,0.85,0.9,True,False,False
+cv (2549).pdf,odl,0.567,1.0,True,True,True
+cv (1638).pdf,pymupdf,0.932,1.0,True,True,True
+cv (4765).pdf,pymupdf,1.0,0.9,True,False,False
+cv (112).pdf,odl,0.849,0.9,True,False,True
+cv (243).pdf,pymupdf,1.0,1.0,True,True,True
+cv (2498).pdf,odl,0.834,1.0,True,True,True
+cv (2213).pdf,odl,0.529,0.65,True,False,False
+cv (963).pdf,pymupdf,0.982,0.45,True,False,True
+cv (4005).pdf,odl,0.847,0.75,True,True,True
+cv (2954).pdf,pymupdf,0.941,0.55,True,True,True
+cv (1496).pdf,pymupdf,0.928,1.0,True,True,True
+cv (1346).pdf,odl,0.503,1.0,True,True,True
+cv (1645).pdf,odl,0.828,1.0,True,True,True
+cv (2815).pdf,odl,0.746,1.0,True,True,True
+cv (48).pdf,odl,0.85,1.0,True,True,True
+cv (3222).pdf,odl,0.886,1.0,True,True,True
+cv (1103).pdf,odl,0.652,1.0,True,True,True
+cv (2234).pdf,odl,0.848,1.0,True,True,True
+cv (2131).pdf,odl,0.595,1.0,True,True,True
+cv (2837).pdf,odl,0.47,1.0,True,True,True
+cv (4700).pdf,odl,0.85,0.9,True,False,False
+cv (659).pdf,odl,0.517,1.0,True,True,True
+cv (135).pdf,odl,0.852,1.0,True,True,True
+cv (1455).pdf,odl,0.457,1.0,True,True,True
+cv (880).pdf,pymupdf,0.988,0.9,True,False,True
+cv (4803).pdf,pymupdf,0.988,0.9,True,False,False
+cv (4681).pdf,odl,0.814,0.9,True,False,False
+cv (2163).pdf,odl,0.484,1.0,True,True,True
+cv (4650).pdf,pymupdf,1.0,0.9,True,False,False
+cv (4862).pdf,pymupdf,0.924,0.9,True,False,False
+cv (812).pdf,odl,0.51,0.45,True,False,True
+cv (1359).pdf,odl,0.87,1.0,True,True,True
+cv (2816).pdf,odl,0.886,1.0,True,True,True
+cv (4534).pdf,pymupdf,1.0,0.9,True,False,False
+cv (1548).pdf,pymupdf,0.947,1.0,True,True,True
+cv (2323).pdf,odl,0.486,1.0,True,True,True
+cv (4483).pdf,odl,0.85,0.9,True,False,False
+cv (391).pdf,odl,0.8,1.0,True,True,True
+cv (699).pdf,pymupdf,0.923,1.0,True,True,True
+cv (1642).pdf,odl,0.8,1.0,True,True,True
+cv (2998).pdf,odl,0.557,1.0,True,True,True
+cv (970).pdf,odl,0.8,1.0,True,True,True
+cv (1357).pdf,pymupdf,0.918,1.0,True,True,True
+cv (1596).pdf,odl,0.518,0.75,True,True,True
+cv (2376).pdf,odl,0.496,1.0,True,True,True
+cv (919).pdf,odl,0.814,0.45,True,False,True
+cv (1957).pdf,odl,0.889,1.0,True,True,True
+cv (1786).pdf,pymupdf,0.92,1.0,True,True,True
+cv (533).pdf,odl,0.844,1.0,True,True,True
+cv (2299).pdf,odl,0.502,1.0,True,True,True
+cv (1480).pdf,odl,0.475,1.0,True,True,True
+cv (4506).pdf,odl,0.85,0.9,True,False,False
+cv (973).pdf,odl,0.63,1.0,True,True,True
+cv (1620).pdf,pymupdf,1.0,1.0,True,True,True
+cv (34).pdf,odl,0.813,1.0,True,True,True
+cv (503).pdf,odl,0.862,0.65,True,False,True
+cv (23).pdf,odl,0.726,1.0,True,True,True
+cv (3224).pdf,odl,0.471,0.75,True,True,True
+cv (1669).pdf,pymupdf,0.977,1.0,True,True,True
+cv (21).pdf,odl,0.85,0.75,True,True,True
+cv (1375).pdf,pymupdf,0.901,0.75,True,True,True
+cv (3161).pdf,odl,0.859,1.0,True,True,True
+cv (1624).pdf,pymupdf,0.919,0.75,True,True,True
+cv (4484).pdf,odl,0.85,0.9,True,False,False
+cv (2087).pdf,odl,0.463,0.75,True,True,True
+cv (2754).pdf,odl,0.839,1.0,True,True,True
+cv (277).pdf,odl,0.821,1.0,True,True,True
+sales2.pdf,pymupdf,0.997,0.9,True,False,True
+cv (1690).pdf,odl,0.458,1.0,True,True,True
+cv (4807).pdf,pymupdf,0.999,0.9,True,False,False
+cv (1545).pdf,pymupdf,0.932,1.0,True,True,True
+cv (2604).pdf,odl,0.464,0.75,True,True,True
+cv (472).pdf,odl,0.767,1.0,True,True,True
+cv (1167).pdf,pymupdf,0.901,1.0,True,True,True
+cv (2305).pdf,odl,0.872,1.0,True,True,True
+cv (1911).pdf,pymupdf,0.972,1.0,True,True,True
+cv (2663).pdf,odl,0.655,1.0,True,True,True
+cv (2169).pdf,pymupdf,1.0,1.0,True,True,True
+cv (4993).pdf,odl,0.562,0.9,True,False,False
+cv (376).pdf,odl,0.489,1.0,True,True,True
+cv (2054).pdf,odl,0.463,0.75,True,True,True
+cv (22).pdf,pymupdf,0.971,1.0,True,True,True
+cv (195).pdf,odl,0.453,0.2,True,False,False
+cv (2141).pdf,pymupdf,0.961,1.0,True,True,True
+cv (4947).pdf,pymupdf,0.918,0.9,True,False,False
+cv (4612).pdf,odl,0.85,0.9,True,False,False
+cv (1922).pdf,odl,0.339,1.0,True,True,True
+cv (4319).pdf,pymupdf,1.0,0.9,True,False,False
+cv (1118).pdf,nova,0.8,0.0,False,False,False
+cv (2476).pdf,odl,0.815,1.0,True,True,True
+cv (898).pdf,odl,0.806,1.0,True,True,True
+cv (1136).pdf,odl,0.8,0.9,True,False,True
+cv (1762).pdf,odl,0.427,1.0,True,True,True
+cv (5029).pdf,pymupdf,0.912,0.9,True,False,False
+cv (1389).pdf,odl,0.47,0.75,True,True,True
+cv (788).pdf,nova,0.509,0.4,True,False,True
+cv (3063).pdf,odl,0.821,1.0,True,True,True
+cv (520).pdf,odl,0.824,1.0,True,True,True
+cv (958).pdf,odl,0.495,1.0,True,True,True
+cv (2628).pdf,odl,0.51,1.0,True,True,True
+cv (4363).pdf,pymupdf,1.0,0.9,True,False,False
+cv (1222).pdf,odl,0.8,1.0,True,True,True
+cv (1123).pdf,pymupdf,0.992,1.0,True,True,True
+cv (2829).pdf,odl,0.592,1.0,True,True,True
+cv (2193).pdf,pymupdf,1.0,1.0,True,True,True
+cv (1336).pdf,odl,0.847,1.0,True,True,True
+cv (2070).pdf,odl,0.847,1.0,True,True,True
+cv (1632).pdf,odl,0.771,1.0,True,True,True
+cv (2811).pdf,odl,0.8,1.0,True,True,True
+cv (125).pdf,odl,0.592,0.75,True,True,True
+cv (2527).pdf,odl,0.8,0.0,False,False,False
+cv (1727).pdf,odl,0.8,0.75,True,True,True
+cv (1579).pdf,odl,0.889,1.0,True,True,True
+cv (2078).pdf,odl,0.752,1.0,True,True,True
+cv (2521).pdf,odl,0.8,1.0,True,True,True
+cv (1469).pdf,odl,0.85,1.0,True,True,True
+cv (2899).pdf,odl,0.466,1.0,True,True,True
+================================================================================
+
+
+══════════════════════════════════════════════════════════════════════
+  CI REGRESSION GATE
+══════════════════════════════════════════════════════════════════════
+  ✅ Experience Rate: 83.5% >= 80.0%
+  ✅ Composite Score: 0.908 >= 0.906
+
+✅ ALL GATES PASSED! Exiting with code 0.

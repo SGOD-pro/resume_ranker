@@ -30,7 +30,10 @@ class ExtractionPipeline:
         # Step 3: Regex Parse on Clean Markdown
         import time
         t0 = time.time()
-        md_result = self.markdown_service.extract(parse_result.markdown, parse_result.hyperlinks, parse_result.elements)
+        md_result = self.markdown_service.extract(
+            parse_result.markdown, parse_result.hyperlinks, parse_result.elements,
+            pymupdf_markdown=parse_result.pymupdf_text
+        )
         t1 = time.time()
         timings.append(StageTiming(
             document_id=doc_id,
@@ -96,7 +99,8 @@ class ExtractionPipeline:
             # Step 3: Regex extract
             t0 = time.time()
             md_result = self.markdown_service.extract(
-                parse_result.markdown, parse_result.hyperlinks, parse_result.elements
+                parse_result.markdown, parse_result.hyperlinks, parse_result.elements,
+                pymupdf_markdown=parse_result.pymupdf_text
             )
             t1 = time.time()
             timings.append(StageTiming(
