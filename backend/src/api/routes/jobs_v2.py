@@ -301,6 +301,8 @@ async def _run_extraction_background(job_id: str):
         if doc.status in (DocumentStatus.PARSED, DocumentStatus.SCORED):
             succeeded += 1
             return
+
+        try:
             # Mark document as parsing
             _docs_repo.update_status(
                 doc.job_id, doc.document_id,

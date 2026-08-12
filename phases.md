@@ -1,4 +1,4 @@
-# phases.md — Resume Ranker V2
+1# phases.md — Resume Ranker V2
 > Strict implementation milestones. No phase begins until the prior is verified. Rev 4 (Fresh Build from V1).
 
 ## Phase 1: V2 Route Foundation & V1 Migration (Days 1–3)

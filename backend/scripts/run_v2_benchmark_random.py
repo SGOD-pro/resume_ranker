@@ -33,24 +33,7 @@ from unittest.mock import patch, MagicMock
 
 _current_pdf_path: List[str] = [""]
 
-def _s3_side_effect(service_name, *args, **kwargs):
-    if service_name == "s3":
-        mock_s3 = MagicMock()
-        def fake_download(Bucket, Key, Filename, **_kw):
-            import shutil
-            shutil.copy(_current_pdf_path[0], Filename)
-        mock_s3.download_file.side_effect = fake_download
-        return mock_s3
-    _s3_patch.stop()
-    try:
-        import boto3 as _boto3
-        client = _boto3.client(service_name, *args, **kwargs)
-    finally:
-        _s3_patch.start()
-    return client
-
-_s3_patch = patch("boto3.client", side_effect=_s3_side_effect)
-_s3_patch.start()
+# Removed S3 mock so we can use real AWS S3 for the benchmark.
 
 from src.extraction.extraction_pipeline import ExtractionPipeline
 from src.config.aws import get_settings
@@ -79,7 +62,7 @@ def run_benchmark():
         return
 
     random.seed(42)  # For reproducibility if desired
-    pdfs = random.sample(all_pdfs, min(60, len(all_pdfs)))
+    pdfs = random.sample(all_pdfs, min(200, len(all_pdfs)))
     n = len(pdfs)
 
     print(f"\n{'═'*80}")
@@ -104,13 +87,25 @@ def run_benchmark():
 
     job_id = f"bench-{uuid.uuid4().hex[:8]}"
 
+    import boto3
+    session = boto3.Session(profile_name="aws", region_name="ap-south-1")
+    s3_client = session.client("s3")
+
     for i, pdf_path in enumerate(pdfs, 1):
         _current_pdf_path[0] = str(pdf_path)
         doc_id = str(uuid.uuid4())
         
         t_start = time.time()
         try:
-            result = pipeline.run_pipeline(str(pdf_path), doc_id, settings.s3_bucket_name, f"jobs/{job_id}/resumes/{doc_id}.pdf")
+            s3_key = f"jobs/{job_id}/resumes/{doc_id}.pdf"
+            s3_client.upload_file(
+                str(pdf_path), 
+                settings.s3_bucket_name, 
+                s3_key,
+                ExtraArgs={'ACL': 'bucket-owner-full-control'}
+            )
+
+            result = pipeline.run_pipeline(str(pdf_path), doc_id, settings.s3_bucket_name, s3_key)
             dur = (time.time() - t_start) * 1000
             total_ms += dur
 

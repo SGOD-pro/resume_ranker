@@ -51,41 +51,16 @@ class BatchParseResult:
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _import_lambda_handler():
-    """Import odl/main.py lambda_handler for the local bypass path."""
-    try:
-        from odl.main import lambda_handler
-        return lambda_handler
-    except ImportError:
-        import os
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-        if project_root not in sys.path:
-            sys.path.append(project_root)
-        from odl.main import lambda_handler
-        return lambda_handler
+_session = None
+_lambda_client = None
 
-
-def _invoke_local(event: Dict[str, Any]) -> Dict[str, Any]:
-    """Invoke the ODL lambda handler in-process (local bypass).
-
-    Raises ODLParseError for all failure modes — never leaks ImportError,
-    ValueError, or any other raw exception past this boundary (R-20).
-    """
-    try:
-        lambda_handler = _import_lambda_handler()
-        response = lambda_handler(event, None)
-        if isinstance(response, dict) and "statusCode" in response:
-            if response["statusCode"] != 200:
-                raise ODLParseError(
-                    f"ODL returned {response['statusCode']}: {response.get('body')}"
-                )
-            body = response.get("body", "{}")
-            return json.loads(body) if isinstance(body, str) else body
-        return response
-    except ODLParseError:
-        raise
-    except Exception as exc:
-        raise ODLParseError(f"Local ODL bypass error: {exc}") from exc
+def _get_lambda_client():
+    global _session, _lambda_client
+    if _session is None:
+        # Defaulting to prod credentials since local fallback is removed
+        _session = boto3.Session(profile_name="aws", region_name="ap-south-1")
+        _lambda_client = _session.client("lambda")
+    return _lambda_client
 
 
 def _invoke_prod(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -95,7 +70,7 @@ def _invoke_prod(event: Dict[str, Any]) -> Dict[str, Any]:
     ValueError, or any other raw exception past this boundary (R-20).
     """
     try:
-        lambda_client = boto3.client("lambda", region_name="ap-south-1")
+        lambda_client = _get_lambda_client()
         response = lambda_client.invoke(
             FunctionName="odl-parser-lambda-prod",
             InvocationType="RequestResponse",
@@ -167,10 +142,8 @@ def parse(s3_bucket: str, s3_key: str) -> ODLParseResult:
     }
 
     try:
-        if settings.environment == "local":
-            payload = _invoke_local(event)
-        else:
-            payload = _invoke_prod(event)
+        # Force AWS lambda call as requested
+        payload = _invoke_prod(event)
 
         # New batch response shape: {"results": [...], "failed": [...]}
         results = payload.get("results", [])
@@ -226,10 +199,8 @@ def parse_batch(documents: List[DocDescriptor]) -> BatchParseResult:
     batch_result = BatchParseResult()
 
     try:
-        if settings.environment == "local":
-            payload = _invoke_local(event)
-        else:
-            payload = _invoke_prod(event)
+        # Force AWS lambda call as requested
+        payload = _invoke_prod(event)
 
         # Map successful results
         for item in payload.get("results", []):

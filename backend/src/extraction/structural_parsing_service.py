@@ -234,19 +234,8 @@ class StructuralParsingService:
                     )
                 )
             except ODLParseError as e:
-                logger.error("ODL parse error, falling back to PyMuPDF text: %s", e)
-                t3 = time.time()
-                error_reason = str(e)
-                timings.append(
-                    StageTiming(
-                        document_id=doc_id,
-                        stage="odl_parse",
-                        method_used="opendataloader",
-                        duration_ms=(t3 - t2) * 1000,
-                        triggered_fallback=False,
-                        error_reason=error_reason,
-                    )
-                )
+                logger.error("ODL parse error, failing without fallback: %s", e)
+                raise e
 
         return ParseResult(
             markdown=markdown,
@@ -396,26 +385,8 @@ class StructuralParsingService:
                         pymupdf_text=raw_markdown,
                     )
                 else:
-                    # ODL failed for this specific doc — degrade to PyMuPDF text
+                    # ODL failed for this specific doc — failing without fallback
                     err = batch_result.failed.get(doc.document_id)
-                    error_reason = str(err) if err else f"ODL failed for {doc.document_id}"
-                    logger.error("ODL batch partial failure for %s: %s", doc.document_id, error_reason)
-                    timings.append(StageTiming(
-                        document_id=doc.document_id,
-                        stage="odl_parse",
-                        method_used="opendataloader",
-                        duration_ms=per_doc_ms,
-                        triggered_fallback=False,
-                        error_reason=error_reason,
-                    ))
-                    pymupdf_results[odl_idx] = ParseResult(
-                        markdown=raw_markdown,
-                        elements=[],
-                        stage_timings=timings,
-                        quality_score=min_quality,
-                        hyperlinks=hyperlinks,
-                        pymupdf_text=raw_markdown,
-                        error_reason=error_reason,
-                    )
+                    raise err or ODLParseError(f"ODL failed for {doc.document_id}")
 
         return pymupdf_results
