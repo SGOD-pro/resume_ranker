@@ -161,11 +161,16 @@ class PDFPipelineV3:
                 fallback_used = True
 
         # ── Step 5: Field extraction ──────────────────────────────────────
+        # ── Semantic quality scoring ──────────────────────────────────────
+        semantic_quality_score = self._compute_semantic_quality(combined_text)
+
         if domain.domain == 'resume':
             fields = self._extract_resume_fields(
                 doc, main_sections, sidebar_sections, combined_text,
                 fallback_used=fallback_used,
                 pdf_path=pdf_path,
+                text_quality_score=text_quality_score,
+                semantic_quality_score=semantic_quality_score,
             )
         else:
             # Non-resume: return raw sections
@@ -177,14 +182,34 @@ class PDFPipelineV3:
         # ── Step 6: Warnings ──────────────────────────────────────────────
         warnings = self._generate_warnings(fields, domain.domain)
 
+        # ── Step 6.5: LLM Fallback (Nova) ──────────────────────────────────
+        has_exp = bool(fields.get('experience'))
+        has_skills = bool(fields.get('skills'))
+        llm_used = False
+        
+        if domain.domain == 'resume' and (not has_exp and not has_skills):
+            try:
+                from src.extraction.fallback.nova_service import NovaService
+                import time
+                nova = NovaService()
+                if not getattr(nova, '_dead', False):
+                    # Chunk the raw text for the LLM
+                    chunks = [combined_text[i:i+4000] for i in range(0, len(combined_text), 4000)]
+                    if chunks:
+                        t0_nova = time.time()
+                        fields = nova.resolve_chunks(chunks, fields)
+                        llm_used = True
+                        fields['_nova_time_ms'] = (time.time() - t0_nova) * 1000
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Nova LLM fallback failed: {e}")
+
         # ── Step 7: Build ExtractionResult ────────────────────────────────
         # Use actual page count from PyMuPDF (via DocumentStructure)
         page_count = doc.page_count if doc.page_count > 0 else (
             len(set(round(l.top / 800) for l in doc.classified_lines)) or 1
         )
 
-        # ── Semantic quality scoring ──────────────────────────────────────
-        semantic_quality_score = self._compute_semantic_quality(combined_text)
         # Flag for OCR if either score is very low, or if both are borderline
         mark_for_ocr = (
             text_quality_score < 0.5
@@ -263,6 +288,8 @@ class PDFPipelineV3:
         combined_text: str,
         fallback_used: bool = False,
         pdf_path: str = "",
+        text_quality_score: float = 1.0,
+        semantic_quality_score: float = 1.0,
     ) -> Dict[str, Any]:
         """
         Phase 4-10: Extract all resume fields into normalized schema.
@@ -674,6 +701,10 @@ class PDFPipelineV3:
                 self._strip_tags(doc.main_text)
             )
 
+        # ── Experience fallback 4: full text parsing ──────────────────────
+        if not experience:
+            experience = self.experience_parser.parse(combined_text)
+
         # ── Phase 7: Education (run both → score both → pick best) ─────
         edu_assembler = []
         edu_standalone = []
@@ -777,6 +808,13 @@ class PDFPipelineV3:
         if not projects and experience:
             projects = self._extract_implicit_projects(experience, skills)
 
+        # ── Project fallback 4: full text parsing ─────────────────────────
+        if not projects:
+            projects = self.project_parser.parse(
+                combined_text,
+                hyperlinks=getattr(doc, 'hyperlinks', [])
+            )
+
         # ── Summary ───────────────────────────────────────────────────────
         summary = assembler_result.get('profile')
         if not summary:
@@ -855,6 +893,10 @@ class PDFPipelineV3:
                     cert_text = (cert_text + '\n' + extra).strip() if cert_text else extra
             if cert_text:
                 certifications = self._parse_certifications_text(cert_text)
+
+        # Fallback 2: full text parsing
+        if not certifications:
+            certifications = self._parse_certifications_text(combined_text)
 
         # ── Languages ─────────────────────────────────────────────────────
         languages = assembler_result.get('languages', [])

@@ -312,7 +312,7 @@ async def _extraction_event_stream(job_id: str):
             # Mark document as extracting
             _docs_repo.update_status(
                 doc.job_id, doc.document_id,
-                DocumentStatus.EXTRACTING, expected_version=doc.version,
+                DocumentStatus.PARSING, expected_version=doc.version,
             )
 
             # Download PDF from S3 to a temp file
@@ -356,7 +356,7 @@ async def _extraction_event_stream(job_id: str):
                 if fresh_doc:
                     _docs_repo.update_status(
                         doc.job_id, doc.document_id,
-                        DocumentStatus.EXTRACTION_FAILED,
+                        DocumentStatus.PARSE_FAILED,
                         expected_version=fresh_doc.version,
                     )
             except Exception:
@@ -443,7 +443,7 @@ async def score_job(job_id: str, body: ScoreRequest):
 
     # Load all extracted documents from DynamoDB
     documents = _docs_repo.list_for_job(job_id)
-    extracted_docs = [d for d in documents if d.status == DocumentStatus.EXTRACTED]
+    extracted_docs = [d for d in documents if d.status == DocumentStatus.PARSED]
 
     if not extracted_docs:
         raise HTTPException(

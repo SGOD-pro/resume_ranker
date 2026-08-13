@@ -10,7 +10,7 @@ import logging
 import boto3
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
-from src.config.aws import get_boto3_kwargs, get_settings
+from src.config.aws import get_client, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def check_dynamodb() -> bool:
     """
     settings = get_settings()
     try:
-        client = boto3.client("dynamodb", **get_boto3_kwargs())
+        client = get_client("dynamodb")
         response = client.describe_table(TableName=settings.dynamodb_table_name)
         status = response["Table"]["TableStatus"]
         logger.info(
@@ -37,6 +37,8 @@ def check_dynamodb() -> bool:
                 "❌ DynamoDB table '%s' not found. Run: python -m src.infrastructure.scripts.create_tables",
                 settings.dynamodb_table_name,
             )
+            from src.infrastructure.scripts.create_tables import create_dynamodb_table
+            create_dynamodb_table()
         else:
             logger.error("❌ DynamoDB error: %s", e)
         return False
@@ -59,7 +61,7 @@ def check_s3() -> bool:
     """
     settings = get_settings()
     try:
-        client = boto3.client("s3", **get_boto3_kwargs())
+        client = get_client("s3")
         client.head_bucket(Bucket=settings.s3_bucket_name)
         logger.info("✅ S3 connected — bucket: %s", settings.s3_bucket_name)
         return True
@@ -70,6 +72,8 @@ def check_s3() -> bool:
                 "❌ S3 bucket '%s' not found. Run: python -m src.infrastructure.scripts.create_tables",
                 settings.s3_bucket_name,
             )
+            from src.infrastructure.scripts.create_tables import create_s3_bucket
+            create_s3_bucket()
         elif code in ("403", "AccessDenied"):
             logger.error("❌ S3 bucket '%s' exists but access denied", settings.s3_bucket_name)
         else:

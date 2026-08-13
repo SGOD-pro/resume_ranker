@@ -1,8 +1,11 @@
 from functools import lru_cache
 from typing import Optional
 
+import logging
 import boto3
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logging.getLogger("botocore.credentials").setLevel(logging.WARNING)
 
 
 class AWSSettings(BaseSettings):
@@ -12,19 +15,17 @@ class AWSSettings(BaseSettings):
         extra="ignore",
     )
 
-    AWS_ENDPOINT_URL: Optional[str] = None
-    AWS_DEFAULT_REGION: str = "us-east-1"
-    AWS_PROFILE: Optional[str] = None
+
 
     S3_BUCKET_NAME: str = "resume-ranker-dev-storage"
     DYNAMODB_TABLE_NAME: str = "ResumePlatform"
 
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = "dev"
     LOG_LEVEL: str = "DEBUG"
-    FRONTEND_URL: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
 
     def is_local(self) -> bool:
-        return self.ENVIRONMENT == "local"
+        return self.ENVIRONMENT == "dev"
 
     @property
     def environment(self) -> str:
@@ -38,45 +39,59 @@ class AWSSettings(BaseSettings):
     def dynamodb_table_name(self) -> str:
         return self.DYNAMODB_TABLE_NAME
 
+    @property
+    def frontend_url(self) -> str:
+        return self.FRONTEND_URL
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AWSSettings:
     return AWSSettings()
 
 
-_LOCAL_SERVICES = {"dynamodb", "s3", "sqs", "sns", "lambda"}
+def is_running_in_lambda() -> bool:
+    """Returns True if the code is deployed in AWS Lambda."""
+    import os
+    return "AWS_LAMBDA_FUNCTION_NAME" in os.environ
 
 
-def _get_session() -> boto3.Session:
+def _get_session_for_service(service: str) -> boto3.Session:
+    """Helper to return a properly profiled session depending on the service."""
     s = get_settings()
-    if s.is_local() and s.AWS_PROFILE:
-        return boto3.Session(profile_name=s.AWS_PROFILE, region_name=s.AWS_DEFAULT_REGION)
-    return boto3.Session(region_name=s.AWS_DEFAULT_REGION)
-
-
-def get_boto3_kwargs() -> dict:
-    s = get_settings()
-    kwargs: dict = {"region_name": s.AWS_DEFAULT_REGION}
-    if s.AWS_ENDPOINT_URL:
-        kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-    return kwargs
+    session_kwargs = {}
+    
+    if not is_running_in_lambda():
+        if service in ("bedrock-runtime", "lambda"):
+            # Cloud services MUST use real AWS credentials
+            session_kwargs["profile_name"] = "aws"
+        else:
+            # Normal resources (S3, Dynamo) use the profile tied to the environment
+            if s.ENVIRONMENT in ("dev", "local", "development"):
+                session_kwargs["profile_name"] = "local"
+            elif s.ENVIRONMENT in ("prod", "production"):
+                session_kwargs["profile_name"] = "aws"
+                
+    return boto3.Session(**session_kwargs)
 
 
 def get_client(service: str, config=None):
+    """Get a boto3 client."""
     s = get_settings()
     extra = {} if config is None else {"config": config}
-
-    if service == "bedrock-runtime":
-        if s.is_local():
-            session = boto3.Session(profile_name="aws", region_name="ap-south-1")
-        else:
-            session = boto3.Session(region_name=s.AWS_DEFAULT_REGION)
-        return session.client("bedrock-runtime", **extra)
-
     kwargs: dict = {}
-    if s.AWS_ENDPOINT_URL and service in _LOCAL_SERVICES:
-        kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
     kwargs.update(extra)
+    
+    session = _get_session_for_service(service)
+    return session.client(service, **kwargs)
 
-    return _get_session().client(service, **kwargs)
+
+def get_resource(service: str, config=None):
+    """Get a boto3 resource."""
+    s = get_settings()
+    extra = {} if config is None else {"config": config}
+    kwargs: dict = {}
+    kwargs.update(extra)
+    
+    session = _get_session_for_service(service)
+    return session.resource(service, **kwargs)
 

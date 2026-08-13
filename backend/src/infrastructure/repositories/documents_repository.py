@@ -111,7 +111,7 @@ class DocumentsRepository:
             ConditionExpression="#v = :expected_version",
             ExpressionAttributeNames={"#s": "status", "#v": "version"},
             ExpressionAttributeValues={
-                ":status": DocumentStatus.EXTRACTED.value,
+                ":status": DocumentStatus.PARSED.value,
                 ":s3key": s3_extracted_key,
                 ":quality": str(extraction_quality),
                 ":cname": candidate_name,

@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 import boto3
 
-from src.config.aws import get_boto3_kwargs, get_settings
+from src.config.aws import get_client, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class StorageService:
     """S3 storage for resumes, extraction JSON, and ranking JSON."""
 
     def __init__(self) -> None:
-        self._client = boto3.client("s3", **get_boto3_kwargs())
+        self._client = get_client("s3")
         self._bucket = get_settings().s3_bucket_name
 
     # ── Resume PDFs ───────────────────────────────────────────────────────

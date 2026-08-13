@@ -662,24 +662,54 @@ class CandidateScorer:
         )
 
         # Build matched/missing from inference results
-        # Must-have: matched if weight >= WEIGHT_INFERRED (0.75)
         matched_must = []
         missing_must = []
+        skill_sections_text = self._get_skill_sections(candidate)
+        
         for sk in jd.must_have_skills:
             w = inference_result.skill_weights.get(sk, 0.0)
             if w >= WEIGHT_INFERRED:
                 matched_must.append(sk)
             else:
-                missing_must.append(sk)
+                sk_lower = sk.lower().strip()
+                found_in_text = False
+                if len(sk_lower) >= 4:
+                    variants = _get_search_variants(sk)
+                    for variant in variants:
+                        if len(variant) >= 3 and re.search(
+                            r'\b' + re.escape(variant) + r'\b',
+                            skill_sections_text,
+                            re.IGNORECASE
+                        ):
+                            found_in_text = True
+                            break
+                if found_in_text:
+                    matched_must.append(sk)
+                else:
+                    missing_must.append(sk)
         result.matched_must_have = matched_must
         result.missing_must_have = missing_must
 
-        # Nice-to-have: any match (even related at 0.50) counts
+        # Nice-to-have: any match counts, also check text
         matched_nice = []
         for sk in jd.nice_to_have_skills:
             w = inference_result.skill_weights.get(sk, 0.0)
             if w > 0:
                 matched_nice.append(sk)
+            else:
+                sk_lower = sk.lower().strip()
+                if len(sk_lower) >= 4:
+                    variants = _get_search_variants(sk)
+                    for variant in variants:
+                        if len(variant) >= 3 and re.search(
+                            r'\b' + re.escape(variant) + r'\b',
+                            skill_sections_text,
+                            re.IGNORECASE
+                        ):
+                            matched_nice.append(sk)
+                            break
+        
+        matched_nice = list(set(matched_nice))
         result.matched_nice_to_have = matched_nice
 
         # Extra skills (candidate has but JD doesn't mention)
@@ -769,14 +799,33 @@ class CandidateScorer:
             result.education_weighted
         )
 
-        # Add bonuses on top (capped at 100)
-        total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus
+        # Missing must-have skills penalty
+        n_missing = len(result.missing_must_have)
+        must_have_penalty = 0.0
+        if n_missing == 1:
+            must_have_penalty = 0.12
+        elif n_missing == 2:
+            must_have_penalty = 0.235
+        elif n_missing == 3:
+            must_have_penalty = 0.47
+        elif n_missing > 3:
+            must_have_penalty = 1.0  # 100% reduction
 
-        # If knocked out, zero the final score but keep sub-scores for reporting
+        # Nice-to-have matched bonus (+10 points for each match)
+        nice_to_have_bonus = len(result.matched_nice_to_have) * 10.0
+
+        # Add bonuses on top
+        total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus + nice_to_have_bonus
+
+        # Apply multiplier
+        raw_final = base_score + total_bonus
+        penalized_final = raw_final * (1.0 - must_have_penalty)
+
+        # If knocked out by experience, zero the final score
         if result.knocked_out:
             result.final_score = 0.0
         else:
-            result.final_score = round(min(100.0, base_score + total_bonus), 1)
+            result.final_score = round(min(100.0, penalized_final), 1)
 
         # Anomaly detection
         result.anomalies = _detect_anomalies(candidate, total_years, jd)
@@ -845,51 +894,8 @@ class CandidateScorer:
         reasons = []
 
         # ── Must-have skills check (inference-aware) ───────────────────────
-        if jd.must_have_skills:
-            _, missing = _find_matching_skills(c_skills, jd.must_have_skills)
-            if missing:
-                # Second chance: check SKILL-BEARING SECTIONS ONLY for missing
-                # skills. We deliberately avoid full raw text here because URLs,
-                # footers, email addresses, and boilerplate often contain tech
-                # words (e.g. "node" in "linkedin.com/in/...", "react" in a
-                # disclaimer) that produce false-positive skill matches.
-                skill_sections_text = self._get_skill_sections(candidate)
-                still_missing = []
-                for sk in missing:
-                    sk_lower = sk.lower().strip()
-
-                    # Check inference engine: weight >= 0.75 satisfies must-have
-                    if inference_result:
-                        inferred_weight = inference_result.skill_weights.get(sk, 0.0)
-                        if inferred_weight >= WEIGHT_INFERRED:
-                            continue  # Satisfied via inference
-
-                    # Only allow second-chance text matches for skills >= 4 chars
-                    if len(sk_lower) >= 4:
-                        variants = _get_search_variants(sk)
-                        found_in_text = False
-                        for variant in variants:
-                            if len(variant) >= 3 and re.search(
-                                r'\b' + re.escape(variant) + r'\b',
-                                skill_sections_text
-                            ):
-                                found_in_text = True
-                                break
-                        if found_in_text:
-                            continue  # Found in skill-bearing section — valid match
-                    still_missing.append(sk)
-
-                if still_missing:
-                    reasons.append(
-                        f"Missing must-have skills: {', '.join(still_missing)}"
-                    )
-
-                logger.debug(
-                    "[KO-SKILLS] %s | missing_from_structured=%s | still_missing=%s",
-                    candidate.get('personal_info', {}).get('name', 'Unknown'),
-                    missing,
-                    still_missing if missing else [],
-                )
+        # Note: We no longer knock candidates out for missing skills here.
+        # It is instead handled as a percentage reduction in final_score.
 
         # ── Minimum years check ───────────────────────────────────────────
         if jd.min_years > 0 and total_years < jd.min_years:

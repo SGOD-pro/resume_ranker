@@ -51,15 +51,13 @@ class BatchParseResult:
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-_session = None
 _lambda_client = None
 
 def _get_lambda_client():
-    global _session, _lambda_client
-    if _session is None:
-        # Defaulting to prod credentials since local fallback is removed
-        _session = boto3.Session(profile_name="aws", region_name="ap-south-1")
-        _lambda_client = _session.client("lambda")
+    global _lambda_client
+    if _lambda_client is None:
+        from src.config.aws import get_client
+        _lambda_client = get_client("lambda")
     return _lambda_client
 
 

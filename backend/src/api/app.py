@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
     logger.info("Resume Intelligence Platform — Starting up")
     logger.info("━" * 60)
 
+    from src.config.aws import get_settings
+    settings = get_settings()
+    if settings.is_local():
+        logger.info("Local environment detected — provisioning LocalStack resources...")
+
     health = check_all()
     if all(health.values()):
         logger.info("All AWS services connected ✅")
@@ -55,7 +60,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Resume Intelligence Platform",
-        version="0.1.0",
+        version="0.2.0",
         description="API for resume extraction, scoring, and ranking.",
         lifespan=lifespan,
     )
@@ -65,7 +70,7 @@ def create_app() -> FastAPI:
 
     # Only allow localhost origins in non-production environments to avoid security 
     # vulnerabilities in production deployments.
-    if settings.environment != "production":
+    if settings.environment != "prod":
         origins.extend([
             "http://localhost:5173",
             "http://127.0.0.1:5173",
@@ -78,7 +83,7 @@ def create_app() -> FastAPI:
             if org not in origins:
                 origins.append(org)
 
-    if settings.environment == "production" and not origins:
+    if settings.environment == "prod" and not origins:
         logger.warning(
             "CORS: Running in production environment but no frontend_url is configured. "
             "CORS requests will be rejected."

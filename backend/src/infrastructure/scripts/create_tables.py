@@ -20,7 +20,7 @@ if PROJECT_ROOT not in sys.path:
 import boto3
 from botocore.exceptions import ClientError
 
-from src.config.aws import get_boto3_kwargs, get_settings
+from src.config.aws import get_client, get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def create_dynamodb_table() -> None:
     """Create the ResumePlatform DynamoDB table."""
     settings = get_settings()
-    client = boto3.client("dynamodb", **get_boto3_kwargs())
+    client = get_client("dynamodb")
 
     try:
         client.describe_table(TableName=settings.dynamodb_table_name)
@@ -65,7 +65,7 @@ def create_dynamodb_table() -> None:
 def create_s3_bucket() -> None:
     """Create the S3 bucket for resume storage."""
     settings = get_settings()
-    client = boto3.client("s3", **get_boto3_kwargs())
+    client = get_client("s3")
 
     try:
         client.head_bucket(Bucket=settings.s3_bucket_name)
@@ -78,24 +78,15 @@ def create_s3_bucket() -> None:
 
     logger.info("Creating S3 bucket: %s ...", settings.s3_bucket_name)
 
-    # us-east-1 doesn't accept LocationConstraint
     create_kwargs: dict = {"Bucket": settings.s3_bucket_name}
-    if settings.aws_default_region != "us-east-1":
-        create_kwargs["CreateBucketConfiguration"] = {
-            "LocationConstraint": settings.aws_default_region,
-        }
-
     client.create_bucket(**create_kwargs)
     logger.info("✅ S3 bucket '%s' created successfully", settings.s3_bucket_name)
 
 
 def main() -> None:
     settings = get_settings()
-    endpoint = settings.aws_endpoint_url or "AWS (production)"
     logger.info("━" * 60)
     logger.info("Phase 10 — AWS Resource Setup")
-    logger.info("Endpoint: %s", endpoint)
-    logger.info("Region:   %s", settings.aws_default_region)
     logger.info("Table:    %s", settings.dynamodb_table_name)
     logger.info("Bucket:   %s", settings.s3_bucket_name)
     logger.info("━" * 60)
