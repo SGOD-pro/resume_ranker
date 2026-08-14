@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Candidate, Signal, CandidateStatus, UploadState } from './types';
+import { useJobStore } from './job-store';
 
 type SortField = 'score' | 'name';
 
@@ -67,6 +68,27 @@ export const useCandidateStore = create<CandidateStore>((set, get) => ({
       );
     }
 
+    // Dynamic Score Recalculation
+    const weights = useJobStore.getState().job.weights;
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0) || 100;
+    
+    // Recalculate score for sorting
+    filtered = filtered.map(c => {
+      // Base score components (0-100 each)
+      const baseScore = 
+        (c.scoreBreakdown.skills * (weights.skills / totalWeight)) +
+        (c.scoreBreakdown.experience * (weights.experience / totalWeight)) +
+        (c.scoreBreakdown.keywords * (weights.keywords / totalWeight)) +
+        (c.scoreBreakdown.education * (weights.education / totalWeight));
+      
+      // We keep the exact backend penalties relative by figuring out how much the backend reduced/added to the old base score, 
+      // but for client-side recompute, a simpler direct mapping is usually sufficient for visual resorting.
+      // We will use the dynamically computed base score. If backend sends knockout, it's 0.
+      const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
+      
+      return { ...c, overallScore: dynamicScore };
+    });
+
     // Sort
     if (sortField === 'score') {
       filtered.sort((a, b) => b.overallScore - a.overallScore);
@@ -80,7 +102,22 @@ export const useCandidateStore = create<CandidateStore>((set, get) => ({
   getSelectedCandidate: () => {
     const { candidates, selectedId } = get();
     if (!selectedId) return null;
-    return candidates.find((c) => c.id === selectedId) ?? null;
+    const c = candidates.find((c) => c.id === selectedId);
+    if (!c) return null;
+
+    // Dynamic Score Recalculation
+    const weights = useJobStore.getState().job.weights;
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0) || 100;
+    
+    const baseScore = 
+      (c.scoreBreakdown.skills * (weights.skills / totalWeight)) +
+      (c.scoreBreakdown.experience * (weights.experience / totalWeight)) +
+      (c.scoreBreakdown.keywords * (weights.keywords / totalWeight)) +
+      (c.scoreBreakdown.education * (weights.education / totalWeight));
+    
+    const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
+    
+    return { ...c, overallScore: dynamicScore };
   },
 
   setCandidates: (candidates) => set({ candidates, selectedId: null }),

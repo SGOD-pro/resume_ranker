@@ -654,3 +654,51 @@ async def download_resume(job_id: str, document_id: str):
             "Content-Disposition": f'inline; filename="{filename}"',
         },
     )
+
+@router.post("/ats-check")
+async def ats_check(file: UploadFile = File(...)):
+    """
+    Standalone ATS checker.
+    Uploads a PDF, extracts layout, and runs AtsScoringService.
+    """
+    import tempfile
+    import os
+    from src.extractors.layout.layout_extractor import LayoutAwarePDFExtractor
+    from src.ranking.ats_scorer import AtsScoringService
+
+    try:
+        # Save temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            extractor = LayoutAwarePDFExtractor()
+            doc_struct = extractor.extract(tmp_path)
+            
+            scorer = AtsScoringService()
+            ats_result = scorer.score(doc_struct)
+            
+            return {
+                "score": ats_result.score,
+                "breakdown": ats_result.breakdown,
+                "flags": ats_result.flags,
+                "bounding_boxes": [
+                    {
+                        "page": bb.page,
+                        "x0": bb.x0,
+                        "y0": bb.y0,
+                        "x1": bb.x1,
+                        "y1": bb.y1,
+                        "severity": bb.severity,
+                        "reason": bb.reason
+                    }
+                    for bb in ats_result.bounding_boxes
+                ]
+            }
+        finally:
+            os.remove(tmp_path)
+    except Exception as e:
+        logger.error(f"ATS check failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

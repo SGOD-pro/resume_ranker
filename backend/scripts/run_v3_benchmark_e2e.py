@@ -55,12 +55,14 @@ def run_benchmark():
         print(f"ERROR: {resumes_dir} has no PDFs.")
         return
 
-    random.seed(42)  # Reproducible random sample
-    pdfs = random.sample(all_pdfs, min(60, len(all_pdfs)))
+    # Sample 200 PDFs for the benchmark
+    random.seed(42)
+    sample_size = min(200, len(all_pdfs))
+    pdfs = random.sample(all_pdfs, sample_size)
     n = len(pdfs)
-
+    
     print(f"\n{'═'*80}")
-    print(f"  PHASE 4 V3 EXTRACTION E2E BENCHMARK (With LLM Fallback) — {n} Resumes")
+    print(f"  PHASE 4 V3 EXTRACTION E2E BENCHMARK (With LLM Fallback) — {sample_size} Resumes")
     print(f"{'═'*80}")
 
     stats = {

@@ -3,8 +3,8 @@
 
 ## 1. Project State
 - **Architecture Version:** Rev 4 (Fresh Build from V1).
-- **Active Phase:** Phase 2 (Local Async Decoupling).
-- **Completed Phases:** Phase 1 (V2 Route Foundation & V1 Migration) gate was passed successfully via frontend E2E and code verification.
+- **Active Phase:** Phase 6 (Performance & Hardening).
+- **Completed Phases:** Phases 1, 2, 3, 4, and 5 gates were passed successfully (ATS Checker, Instant Weight Sliders, and Routing are complete).
 - **Bridge File:** `mamori.md` contains the exact V1 API, Frontend, and Extraction flow. Read it first.
 
 ## 2. Key Architectural Truths (DO NOT VIOLATE)

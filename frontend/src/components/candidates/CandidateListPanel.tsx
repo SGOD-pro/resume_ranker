@@ -8,6 +8,7 @@ import { CandidateListFooter } from './CandidateListFooter';
 import { CenterPanelLoader } from './CenterPanelLoader';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
+import { useJobStore } from '@/store/job-store';
 
 export function CandidateListPanel() {
   const allCandidates = useCandidateStore((s) => s.candidates);
@@ -16,6 +17,8 @@ export function CandidateListPanel() {
   const searchQuery = useCandidateStore((s) => s.searchQuery);
   const showKnockouts = useCandidateStore((s) => s.showKnockouts);
   const appPhase = useAppStore((s) => s.appPhase);
+
+  const jobWeights = useJobStore((s) => s.job.weights);
 
   const candidates = useMemo(() => {
     let filtered = [...allCandidates];
@@ -38,6 +41,21 @@ export function CandidateListPanel() {
       );
     }
 
+    // Dynamic Score Recalculation
+    const totalWeight = Object.values(jobWeights).reduce((a, b) => a + b, 0) || 100;
+    
+    filtered = filtered.map(c => {
+      if (!c.scoreBreakdown) return c;
+      const baseScore = 
+        (c.scoreBreakdown.skills * (jobWeights.skills / totalWeight)) +
+        (c.scoreBreakdown.experience * (jobWeights.experience / totalWeight)) +
+        (c.scoreBreakdown.keywords * (jobWeights.keywords / totalWeight)) +
+        (c.scoreBreakdown.education * (jobWeights.education / totalWeight));
+      
+      const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
+      return { ...c, overallScore: dynamicScore };
+    });
+
     if (sortField === 'score') {
       filtered.sort((a, b) => b.overallScore - a.overallScore);
     } else {
@@ -45,7 +63,7 @@ export function CandidateListPanel() {
     }
 
     return filtered;
-  }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts]);
+  }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts, jobWeights]);
 
   const showLoader = appPhase === 'extracting' || appPhase === 'scoring';
 

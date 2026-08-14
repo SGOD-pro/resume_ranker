@@ -13,4 +13,4 @@ router = APIRouter()
 @router.get("/health")
 async def health_check():
     """Return 200 OK if the backend is reachable and ready."""
-    return {"status": "ok"}
+    return {"status": "ok", "message": "Resuem ranker Backend is healthy"}

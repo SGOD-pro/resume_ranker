@@ -9,11 +9,13 @@ import { EducationSection } from './EducationSection';
 import { FlagsSection } from './FlagsSection';
 import { CandidateActions } from './CandidateActions';
 import { useCandidateStore } from '@/store/candidate-store';
+import { useJobStore } from '@/store/job-store';
 
 export function CandidateDetailPanel() {
   const selectedId = useCandidateStore((s) => s.selectedId);
-  const candidates = useCandidateStore((s) => s.candidates);
-  const candidate = selectedId ? candidates.find((c) => c.id === selectedId) ?? null : null;
+  // Subscribe to weights to force re-render when they change
+  const jobWeights = useJobStore((s) => s.job.weights);
+  const candidate = useCandidateStore((s) => s.getSelectedCandidate());
 
   if (!candidate) {
     return (
