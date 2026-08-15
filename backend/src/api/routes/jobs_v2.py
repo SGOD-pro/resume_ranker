@@ -246,8 +246,8 @@ async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: 
     # Get final document count
     all_docs = _docs_repo.list_for_job(job_id)
 
-    from src.config.aws import get_settings
-    if get_settings().environment == "local":
+    from src.config.aws import is_running_in_lambda
+    if not is_running_in_lambda():
         background_tasks.add_task(_run_extraction_background, job_id)
 
     return UploadResponse(
@@ -659,46 +659,37 @@ async def download_resume(job_id: str, document_id: str):
 async def ats_check(file: UploadFile = File(...)):
     """
     Standalone ATS checker.
-    Uploads a PDF, extracts layout, and runs AtsScoringService.
+    Uploads a PDF, runs through the V2 Extraction Pipeline, and returns a B2B ATS Report.
     """
     import tempfile
     import os
-    from src.extractors.layout.layout_extractor import LayoutAwarePDFExtractor
-    from src.ranking.ats_scorer import AtsScoringService
+    import uuid
+    from src.ats.b2b_ats_scorer import B2BAtsScorer
 
     try:
-        # Save temp file
+        content = await file.read()
+        
+        # 1. Upload to S3 for ODL to access
+        doc_id = str(uuid.uuid4())
+        job_id = "ats_check_job"
+        s3_key = _storage.upload_resume(job_id, doc_id, content, file.filename or "resume.pdf")
+        
+        # Save temp file for PyMuPDF
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
 
         try:
-            extractor = LayoutAwarePDFExtractor()
-            doc_struct = extractor.extract(tmp_path)
-            
-            scorer = AtsScoringService()
-            ats_result = scorer.score(doc_struct)
-            
-            return {
-                "score": ats_result.score,
-                "breakdown": ats_result.breakdown,
-                "flags": ats_result.flags,
-                "bounding_boxes": [
-                    {
-                        "page": bb.page,
-                        "x0": bb.x0,
-                        "y0": bb.y0,
-                        "x1": bb.x1,
-                        "y1": bb.y1,
-                        "severity": bb.severity,
-                        "reason": bb.reason
-                    }
-                    for bb in ats_result.bounding_boxes
-                ]
-            }
+            scorer = B2BAtsScorer()
+            ats_result = scorer.score(tmp_path, s3_bucket=_storage._bucket, s3_key=s3_key)
+            return ats_result
         finally:
             os.remove(tmp_path)
+            # Cleanup S3
+            try:
+                _storage._client.delete_object(Bucket=_storage._bucket, Key=s3_key)
+            except Exception:
+                pass
     except Exception as e:
         logger.error(f"ATS check failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

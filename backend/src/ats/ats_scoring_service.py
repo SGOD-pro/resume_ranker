@@ -27,6 +27,8 @@ class AtsScoringService:
         # Simple O(N^2) bbox overlap check (in a real system, use an R-tree)
         # Bbox format expected from ODL: [x0, y0, x1, y1]
         for i, el1 in enumerate(elements):
+            if getattr(el1, "get", None) is None:
+                continue
             bbox1 = el1.get("bbox")
             if not bbox1 or len(bbox1) != 4:
                 continue
@@ -40,6 +42,8 @@ class AtsScoringService:
                 
             for j in range(i + 1, total_elements):
                 el2 = elements[j]
+                if getattr(el2, "get", None) is None:
+                    continue
                 bbox2 = el2.get("bbox")
                 if not bbox2 or len(bbox2) != 4:
                     continue

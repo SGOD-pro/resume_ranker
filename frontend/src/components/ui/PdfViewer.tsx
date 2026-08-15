@@ -55,9 +55,9 @@ export function PdfViewer({ url, file, boundingBoxes = [] }: PdfViewerProps) {
   };
 
   return (
-    <div className="flex flex-col items-center bg-muted/20 p-4 rounded-md overflow-auto relative min-h-[600px] w-full border border-border">
+    <div className="flex flex-col bg-muted/20 p-4 rounded-md overflow-auto relative min-h-[600px] w-full border border-border">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 flex gap-4 items-center bg-background/90 p-2 backdrop-blur border border-border rounded-md shadow-sm mb-4">
+      <div className="sticky top-0 left-0 right-0 z-10 flex gap-4 items-center justify-center bg-background/90 p-2 backdrop-blur border border-border rounded-md shadow-sm mb-4 mx-auto w-fit">
         <button 
           onClick={() => setPageNumber(p => Math.max(1, p - 1))}
           disabled={pageNumber <= 1}
@@ -83,24 +83,26 @@ export function PdfViewer({ url, file, boundingBoxes = [] }: PdfViewerProps) {
         <button onClick={() => setScale(s => s + 0.2)} className="px-2 py-1 bg-surface-sunken rounded text-sm">+</button>
       </div>
 
-      <Document
-        file={file || url}
-        onLoadSuccess={onDocumentLoadSuccess}
-        loading={<Loader2 className="animate-spin w-8 h-8 text-muted-foreground mt-20" />}
-        error={<div className="text-destructive p-4">Failed to load PDF. Please make sure the URL is accessible.</div>}
-      >
-        <div className="relative shadow-md border border-border bg-white">
-          <Page 
-            pageNumber={pageNumber} 
-            scale={scale} 
-            renderTextLayer={true}
-            renderAnnotationLayer={true}
-            className="max-w-full"
-            loading={<div className="w-[600px] h-[800px] flex items-center justify-center bg-white" />}
-          />
-          {renderBoundingBoxes(pageNumber - 1)}
-        </div>
-      </Document>
+      <div className="mx-auto w-fit">
+        <Document
+          file={file || url}
+          onLoadSuccess={onDocumentLoadSuccess}
+          loading={<Loader2 className="animate-spin w-8 h-8 text-muted-foreground mt-20" />}
+          error={<div className="text-destructive p-4">Failed to load PDF. Please make sure the URL is accessible.</div>}
+        >
+          <div className="relative shadow-md border border-border bg-white">
+            <Page 
+              pageNumber={pageNumber} 
+              scale={scale} 
+              renderTextLayer={true}
+              renderAnnotationLayer={true}
+              className="max-w-full"
+              loading={<div className="w-[600px] h-[800px] flex items-center justify-center bg-white" />}
+            />
+            {renderBoundingBoxes(pageNumber - 1)}
+          </div>
+        </Document>
+      </div>
     </div>
   );
 }

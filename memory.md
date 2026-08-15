@@ -4,7 +4,11 @@
 ## 1. Project State
 - **Architecture Version:** Rev 4 (Fresh Build from V1).
 - **Active Phase:** Phase 6 (Performance & Hardening).
-- **Completed Phases:** Phases 1, 2, 3, 4, and 5 gates were passed successfully (ATS Checker, Instant Weight Sliders, and Routing are complete).
+- **Completed Phases:** Phases 1, 2, 3, 4, and 5 gates were passed successfully. E2E Playwright tests are passing successfully using the real AWS Lambda for ODL and real S3.
+- **Recent Progress:** 
+  - Fixed Playwright timeout issues caused by hung background extraction by ensuring the extraction pipeline triggers locally when testing with `ENVIRONMENT=prod` using real S3.
+  - Fixed ATS Scoring `AttributeError` by handling ODL elements returned as string lists from the AWS Lambda instead of dicts.
+  - Verified end-to-end functionality (dashboard, job creation, resume upload, ODL parsing, and ATS check) via E2E test.
 - **Bridge File:** `mamori.md` contains the exact V1 API, Frontend, and Extraction flow. Read it first.
 
 ## 2. Key Architectural Truths (DO NOT VIOLATE)

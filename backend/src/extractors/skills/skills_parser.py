@@ -10,7 +10,7 @@ import re, json, os
 from difflib import SequenceMatcher
 from typing import List, Set, Optional, Dict
 
-
+from src.extractors.contact.contact_parser import _OCR_NOISE_RE
 from src.config.settings import SKILLS_DICTIONARY
 
 _DICT_PATH = str(SKILLS_DICTIONARY)
@@ -208,6 +208,13 @@ class SkillsParser:
         characters, making SequenceMatcher effective.
         """
         if not text or len(text) < 3:
+            return None
+
+        # Guard: Only attempt fuzzy matching if there's actual evidence of garbling.
+        # If the word is clean and doesn't match any garbling signals, it's just a normal
+        # word not in the dictionary (e.g. "Choreography", "Biography").
+        has_garble_evidence = (not self._looks_like_skill(text)) or bool(_OCR_NOISE_RE.search(text))
+        if not has_garble_evidence:
             return None
 
         text_lower = text.lower()
