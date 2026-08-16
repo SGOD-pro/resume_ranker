@@ -116,7 +116,12 @@ export async function updateJob(
   });
 }
 
-/** Upload resumes via XMLHttpRequest (supports upload progress) */
+/** Upload resumes one file at a time so progress can be tracked per-file.
+ *
+ * onFileComplete(uploadedCount, totalCount, filename) is called after each
+ * individual file is accepted or rejected by the server — this drives the
+ * "X of Y" progress bar correctly instead of tracking raw bytes.
+ */
 export interface UploadResult {
   job_id: string;
   accepted: string[];
@@ -124,52 +129,60 @@ export interface UploadResult {
   total_accepted: number;
 }
 
-export function uploadResumes(
+function uploadSingleFile(
   jobId: string,
-  files: File[],
-  onProgress?: (loaded: number, total: number) => void,
-): Promise<UploadResult> {
+  file: File,
+): Promise<{ accepted: string[]; rejected: { filename: string; reason: string }[] }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
-
-    files.forEach((file) => formData.append('files', file));
-
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress(e.loaded, e.total);
-      }
-    });
+    formData.append('files', file);
 
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText) as UploadResult);
+          const result = JSON.parse(xhr.responseText) as UploadResult;
+          resolve({ accepted: result.accepted, rejected: result.rejected });
         } catch {
           reject(new ApiError('Failed to parse upload response', xhr.status));
         }
       } else {
         let body: unknown;
-        try {
-          body = JSON.parse(xhr.responseText);
-        } catch {
-          body = xhr.responseText;
-        }
+        try { body = JSON.parse(xhr.responseText); } catch { body = xhr.responseText; }
         reject(new ApiError(`Upload failed: ${xhr.status}`, xhr.status, body));
       }
     });
 
-    xhr.addEventListener('error', () => {
-      reject(new ApiError('Upload network error', 0));
-    });
-
-    xhr.addEventListener('abort', () => {
-      reject(new ApiError('Upload aborted', 0));
-    });
+    xhr.addEventListener('error', () => reject(new ApiError('Upload network error', 0)));
+    xhr.addEventListener('abort', () => reject(new ApiError('Upload aborted', 0)));
 
     xhr.open('POST', `${API_BASE}/api/v2/jobs/${jobId}/resumes`);
     xhr.send(formData);
   });
+}
+
+export async function uploadResumes(
+  jobId: string,
+  files: File[],
+  onFileComplete?: (uploaded: number, total: number, filename: string) => void,
+): Promise<UploadResult> {
+  const allAccepted: string[] = [];
+  const allRejected: { filename: string; reason: string }[] = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const result = await uploadSingleFile(jobId, file);
+    allAccepted.push(...result.accepted);
+    allRejected.push(...result.rejected);
+    onFileComplete?.(i + 1, files.length, file.name);
+  }
+
+  return {
+    job_id: jobId,
+    accepted: allAccepted,
+    rejected: allRejected,
+    total_accepted: allAccepted.length,
+  };
 }
 
 /** Start SSE extraction stream */

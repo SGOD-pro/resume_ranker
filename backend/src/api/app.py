@@ -24,8 +24,9 @@ async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle.
 
     On startup: verify DynamoDB and S3 are reachable.
-    Logs ✅ or ❌ for each service — does NOT block startup
-    so the health endpoint remains available for debugging.
+    Health checks run in a background thread — they do NOT block startup,
+    so the server is immediately ready to serve requests and the /health
+    endpoint is available for debugging while checks are still in progress.
     """
     # ── Startup ───────────────────────────────────────────────────────────
     logging.basicConfig(
@@ -37,17 +38,25 @@ async def lifespan(app: FastAPI):
     logger.info("Resume Intelligence Platform — Starting up")
     logger.info("━" * 60)
 
+    import asyncio
     from src.config.aws import get_settings
+
     settings = get_settings()
     if settings.is_local():
-        logger.info("Local environment detected — provisioning LocalStack resources...")
+        logger.info("Local environment detected — LocalStack mode")
 
-    health = check_all()
-    if all(health.values()):
-        logger.info("All AWS services connected ✅")
-    else:
-        failed = [k for k, v in health.items() if not v]
-        logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
+    # Run health checks in background — don't block startup
+    async def _check_health_async():
+        loop = asyncio.get_event_loop()
+        health = await loop.run_in_executor(None, check_all)
+        if all(health.values()):
+            logger.info("All AWS services connected ✅")
+        else:
+            failed = [k for k, v in health.items() if not v]
+            logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
+
+    asyncio.create_task(_check_health_async())
+    logger.info("Server ready — health checks running in background")
 
     yield
 

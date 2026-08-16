@@ -87,13 +87,19 @@ export function ResumeUploadZone() {
           toast.success('Job created');
         }
 
-        // Upload with progress tracking
+        // Upload files one at a time — onFileComplete fires after the server
+        // confirms each file, giving accurate per-file progress tracking.
         const result: UploadResult = await uploadResumes(
           currentJobId,
           files,
-          (loaded, total) => {
-            const percent = Math.round((loaded / total) * 100);
-            setUploadProgress({ loaded, total, percent });
+          (uploaded, total, filename) => {
+            const percent = Math.round((uploaded / total) * 100);
+            setUploadProgress({
+              filesUploaded: uploaded,
+              filesTotal: total,
+              percent,
+              currentFile: filename,
+            });
           },
         );
 
