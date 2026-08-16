@@ -91,9 +91,15 @@ def check_s3() -> bool:
         return False
 
 
+from concurrent.futures import ThreadPoolExecutor
+
 def check_all() -> dict:
-    """Run all connectivity checks. Returns {"dynamodb": bool, "s3": bool}."""
-    return {
-        "dynamodb": check_dynamodb(),
-        "s3": check_s3(),
-    }
+    """Run all connectivity checks in parallel. Returns {"dynamodb": bool, "s3": bool}."""
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_dynamo = executor.submit(check_dynamodb)
+        future_s3 = executor.submit(check_s3)
+        
+        return {
+            "dynamodb": future_dynamo.result(),
+            "s3": future_s3.result(),
+        }

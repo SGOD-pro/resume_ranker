@@ -1,6 +1,19 @@
 """
-jobs.py — Job lifecycle API routes (Phase 10 — DynamoDB + S3)
-================================================================
+jobs_v2.py — Job lifecycle API routes  (API version: v2)
+==========================================================
+Public API prefix: /api/v2/jobs
+
+NOTE on versioning naming:
+  - This file is "v2" because it is the second PUBLIC API version (v1 was the
+    in-memory prototype, now deleted). The frontend calls /api/v2/jobs/*.
+  - Internally, extraction uses ExtractionPipeline (see extraction_pipeline.py),
+    which orchestrates StructuralParsingService + MarkdownExtractionService.
+    That is separate from the older PDFPipelineV3 in src/core/pipeline.py, which
+    is the THIRD internal iteration of the V1 PDF parsing core (unrelated to the
+    public API version number). We intentionally kept the API version and internal
+    pipeline version numbers separate to avoid confusion when one evolves faster
+    than the other.
+
 Endpoints:
   POST   /jobs                  — create a new job
   PATCH  /jobs/{id}             — update JD config
@@ -107,17 +120,19 @@ class UploadResponse(BaseModel):
     total_accepted: int
 
 
+from src.core.lazy_proxy import LazyProxy
+
 # ── Shared service instances ─────────────────────────────────────────────────
 
-_extraction_service = ExtractionService()
-_scorer = CandidateScorer()
+_extraction_service = LazyProxy(ExtractionService)
+_scorer = LazyProxy(CandidateScorer)
 
 # ── Infrastructure singletons ────────────────────────────────────────────────
 
-_jobs_repo = JobsRepository()
-_docs_repo = DocumentsRepository()
-_scoring_repo = ScoringRepository()
-_storage = StorageService()
+_jobs_repo = LazyProxy(JobsRepository)
+_docs_repo = LazyProxy(DocumentsRepository)
+_scoring_repo = LazyProxy(ScoringRepository)
+_storage = LazyProxy(StorageService)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -524,7 +539,7 @@ async def score_job(job_id: str, body: ScoreRequest):
             return await asyncio.to_thread(_scorer.rank, jd, candidates)
 
         async def run_ats(candidate):
-            return await asyncio.to_thread(ats_service.score, candidate.get("elements", []))
+            return await asyncio.to_thread(ats_service.score, candidate.get("elements", []), candidate.get("extraction_quality", 0.0))
 
         score_task = asyncio.create_task(run_scoring())
         ats_tasks = [asyncio.create_task(run_ats(c)) for c in candidates]

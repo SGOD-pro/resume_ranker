@@ -6,8 +6,15 @@ from src.extractors.education.education_parser import EducationParser
 from src.extractors.projects.project_parser import ProjectParser
 class MarkdownExtractionService:
     """
-    Applies the V1 ported deterministic regex parsers to the clean Markdown.
-    Provides fallback compatibility with existing extractors.
+    Applies deterministic regex parsers to clean Markdown text.
+
+    NOTE: These parsers were originally written for the V1 PDF pipeline but are
+    now the canonical extraction layer for the V2 API pipeline (ExtractionPipeline).
+    They are NOT the old PDFPipelineV3 — they have been refactored and are
+    maintained here under src/extraction/ going forward.
+
+    Output is a flat dict with top-level keys: name, email, phone, location,
+    skills, experience, education, projects. This is the format the scorer expects.
     """
     def __init__(self):
         self.contact_parser = ContactParser()
@@ -59,6 +66,9 @@ class MarkdownExtractionService:
         has_skills = fields["skills"] and len(fields["skills"]) > 0
         
         if not has_exp and not has_skills:
+            missing_critical = True
+            
+        if not fields["name"]:
             missing_critical = True
             
     

@@ -12,7 +12,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.health import router as health_router
-from src.api.routes.jobs import router as jobs_router
 from src.api.routes.jobs_v2 import router as jobs_v2_router
 from src.infrastructure.health import check_all
 from src.config.aws import get_settings
@@ -99,7 +98,6 @@ def create_app() -> FastAPI:
 
     # Register route modules
     app.include_router(health_router)
-    app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
     app.include_router(jobs_v2_router, prefix="/api/v2/jobs", tags=["jobs_v2"])
 
     return app

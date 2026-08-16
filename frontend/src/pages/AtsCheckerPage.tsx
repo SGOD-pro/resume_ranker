@@ -121,14 +121,18 @@ export function AtsCheckerPage() {
                         )) : <span className="text-xs text-muted-foreground">None</span>}
                       </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-destructive mb-1">MISSED (High Risk):</p>
-                      <div className="flex flex-wrap gap-2">
-                        {(result.section_detection?.missed || []).length > 0 ? result.section_detection.missed.map((s, i) => (
-                          <span key={i} className="px-2 py-1 bg-destructive/10 text-destructive text-xs rounded-md border border-destructive/20">{s}</span>
-                        )) : <span className="text-xs text-muted-foreground">None</span>}
+                    {(result.section_detection?.missed || []).length > 0 ? (
+                      <div>
+                        <p className="text-xs font-bold text-destructive mb-1">MISSED (High Risk):</p>
+                        <div className="flex flex-wrap gap-2">
+                          {result.section_detection.missed.map((s, i) => (
+                            <span key={i} className="px-2 py-1 bg-destructive/10 text-destructive text-xs rounded-md border border-destructive/20">{s}</span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">✓ No missed sections</p>
+                    )}
                   </div>
                 </div>
 

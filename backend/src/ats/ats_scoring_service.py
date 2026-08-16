@@ -10,14 +10,17 @@ class AtsResult:
     warnings: List[str]
 
 class AtsScoringService:
-    def score(self, elements: List[Dict[str, Any]]) -> AtsResult:
+    def score(self, elements: List[Dict[str, Any]], extraction_quality: float = 0.0) -> AtsResult:
         """
         Computes an ATS compatibility score based purely on bounding box overlaps
         from the extracted elements.
         If elements are missing or overlap heavily, the score decreases.
         """
         if not elements:
-            # If no elements were extracted, it's either an image PDF or totally unparsable by ATS
+            if extraction_quality >= 0.90:
+                # PyMuPDF fast-path implies perfect reading order and no complex layout
+                return AtsResult(ats_score=100.0, warnings=[])
+            # If no elements were extracted and quality is low, it's either an image PDF or totally unparsable by ATS
             return AtsResult(ats_score=0.0, warnings=["No parsable elements found (possible image PDF)."])
             
         warnings = []

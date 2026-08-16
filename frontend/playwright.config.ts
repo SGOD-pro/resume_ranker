@@ -17,4 +17,20 @@ export default defineConfig({
       use: { ...devices['Desktop Firefox'] },
     },
   ],
+  webServer: [
+    {
+      command: 'cd ../backend && uv run uvicorn src.api.app:app --port 8000',
+      url: 'http://localhost:8000/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run dev',
+      url: 'http://localhost:5173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000,
+    }
+  ],
 });
+
+

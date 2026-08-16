@@ -22,6 +22,7 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
 
   return (
     <button
+      data-testid="candidate-row"
       onClick={() => selectCandidate(candidate.id)}
       className={cn(
         'w-full text-left border-b border-border px-sp-4 py-sp-2 transition-colors cursor-pointer',

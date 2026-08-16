@@ -83,10 +83,14 @@ export function MatchScoreSection({ candidate }: MatchScoreSectionProps) {
       </div>
 
       <div className="space-y-sp-2">
-        <ScoreBar label="Skills" value={candidate.scoreBreakdown.skills} />
-        <ScoreBar label="Experience" value={candidate.scoreBreakdown.experience} />
-        <ScoreBar label="Keywords" value={candidate.scoreBreakdown.keywords} />
-        <ScoreBar label="Education" value={candidate.scoreBreakdown.education} />
+        {candidate.scoreBreakdown && (
+          <>
+            <ScoreBar label="Skills" value={candidate.scoreBreakdown.skills} />
+            <ScoreBar label="Experience" value={candidate.scoreBreakdown.experience} />
+            <ScoreBar label="Keywords" value={candidate.scoreBreakdown.keywords} />
+            <ScoreBar label="Education" value={candidate.scoreBreakdown.education} />
+          </>
+        )}
       </div>
     </div>
   );

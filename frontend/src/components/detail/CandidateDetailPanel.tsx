@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { CandidateHeader } from './CandidateHeader';
@@ -9,10 +10,34 @@ import { EducationSection } from './EducationSection';
 import { FlagsSection } from './FlagsSection';
 import { CandidateActions } from './CandidateActions';
 import { useCandidateStore } from '@/store/candidate-store';
+import { useJobStore } from '@/store/job-store';
 
 
 export function CandidateDetailPanel() {
-  const candidate = useCandidateStore((s) => s.getSelectedCandidate());
+  // ── Use stable primitive selectors — never call computed functions as selectors.
+  // Calling s.getSelectedCandidate() as a selector returns a new object every
+  // render (due to { ...c, overallScore }) which breaks Zustand's getSnapshot
+  // cache and causes an infinite re-render loop.
+  const selectedId  = useCandidateStore((s) => s.selectedId);
+  const candidates  = useCandidateStore((s) => s.candidates);
+  const jobWeights  = useJobStore((s) => s.job.weights);
+
+  // Compute the candidate with dynamic score inside useMemo so the reference
+  // is stable and only recalculates when the selected id, list, or weights change.
+  const candidate = useMemo(() => {
+    if (!selectedId) return null;
+    const c = candidates.find((c) => c.id === selectedId);
+    if (!c) return null;
+    const totalWeight = Object.values(jobWeights).reduce((a, b) => a + b, 0) || 100;
+    const sb = c.scoreBreakdown ?? { skills: 0, experience: 0, keywords: 0, education: 0 };
+    const baseScore =
+      (sb.skills     * (jobWeights.skills     / totalWeight)) +
+      (sb.experience * (jobWeights.experience / totalWeight)) +
+      (sb.keywords   * (jobWeights.keywords   / totalWeight)) +
+      (sb.education  * (jobWeights.education  / totalWeight));
+    const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
+    return { ...c, overallScore: dynamicScore };
+  }, [selectedId, candidates, jobWeights]);
 
   if (!candidate) {
     return (

@@ -9,6 +9,26 @@ from src.config.aws import get_settings
 logger = logging.getLogger(__name__)
 
 class ExtractionPipeline:
+    """
+    V2 Extraction Pipeline — used by the /api/v2/jobs routes.
+
+    NOTE on naming:
+      This class is intentionally called "ExtractionPipeline" (no version suffix)
+      to distinguish it from the older PDFPipelineV3 in src/core/pipeline.py.
+      PDFPipelineV3 is the THIRD internal iteration of the V1 extraction core and
+      is still used by ExtractionService (src/services/extraction_service.py).
+      This pipeline is the NEW path introduced alongside the v2 API — it replaces
+      that older path for all /api/v2/jobs traffic.
+
+    Orchestration:
+      1. StructuralParsingService  — PyMuPDF quality gate + ODL fallback
+      2. MarkdownExtractionService — regex parsers (ported from V1 extractors)
+      3. NovaService               — LLM fallback for unresolved chunks
+
+    Output format (flat dict, top-level keys):
+      name, email, phone, location, skills, experience, education, projects
+      _document_id, extraction_quality, elements, stage_timings
+    """
     def __init__(self):
         self.structural_service = StructuralParsingService()
         self.markdown_service = MarkdownExtractionService()
@@ -16,10 +36,15 @@ class ExtractionPipeline:
 
     def run_pipeline(self, pdf_path: str, doc_id: str, s3_bucket: str, s3_key: str) -> Dict[str, Any]:
         """
-        Runs the V2 extraction pipeline:
-        1. PyMuPDF Quality Gate / ODL Fallback
-        2. V1 Regex Parsers on Markdown
-        3. Nova Fallback on UnresolvedChunks
+        Extract structured data from a single PDF resume.
+
+        Steps:
+          1. Structural Parse  — PyMuPDF quality gate; falls back to ODL if score < 0.90
+          2. Regex Extraction  — MarkdownExtractionService parses name/email/skills/etc.
+          3. LLM Fallback      — NovaService resolves unresolved chunks (name missing, etc.)
+
+        Returns a flat dict. The scorer reads directly from top-level keys (name, email…),
+        NOT from a nested personal_info dict (that was the old PDFPipelineV3 format).
         """
         # Step 1 & 2: Structural Parse (PyMuPDF or ODL)
         parse_result = self.structural_service.parse_pdf(pdf_path, doc_id, s3_bucket, s3_key)

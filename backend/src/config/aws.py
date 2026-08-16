@@ -81,6 +81,9 @@ def get_client(service: str, config=None):
     kwargs: dict = {}
     kwargs.update(extra)
     
+    if s.is_local() and service not in ("bedrock-runtime", "lambda"):
+        kwargs["endpoint_url"] = "http://localhost:4566"
+    
     session = _get_session_for_service(service)
     return session.client(service, **kwargs)
 
@@ -91,6 +94,9 @@ def get_resource(service: str, config=None):
     extra = {} if config is None else {"config": config}
     kwargs: dict = {}
     kwargs.update(extra)
+    
+    if s.is_local() and service not in ("bedrock-runtime", "lambda"):
+        kwargs["endpoint_url"] = "http://localhost:4566"
     
     session = _get_session_for_service(service)
     return session.resource(service, **kwargs)

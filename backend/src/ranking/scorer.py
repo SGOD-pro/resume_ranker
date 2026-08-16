@@ -581,8 +581,10 @@ class CandidateScorer:
                          all_skills: List[List[str]],
                          precomputed_idf=None) -> ScoredCandidate:
         """Score a single candidate through Phase 1 and Phase 2."""
-        pi = candidate.get('personal_info', {})
-        name = pi.get('name') or 'Unknown'
+        # V2 pipeline stores fields flat (name, email, phone at top level).
+        # V1 legacy format nested them inside personal_info. Support both.
+        pi = candidate.get('personal_info', {}) or {}
+        name = candidate.get('name') or pi.get('name') or 'Unknown'
         doc_id = candidate.get('_document_id', name)
         c_skills = candidate.get('skills', [])
         experience = candidate.get('experience', [])
@@ -596,9 +598,9 @@ class CandidateScorer:
             rank=0,
             knocked_out=False,
             knockout_reasons=[],
-            email=pi.get('email') or '',
-            phone=pi.get('phone') or '',
-            location=pi.get('location') or pi.get('address') or '',
+            email=candidate.get('email') or pi.get('email') or '',
+            phone=candidate.get('phone') or pi.get('phone') or '',
+            location=candidate.get('location') or pi.get('location') or pi.get('address') or '',
             total_exp_years=total_years,
             extraction_quality=candidate.get('extraction_quality', 0.0),
         )

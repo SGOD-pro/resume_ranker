@@ -23,16 +23,16 @@ interface JobStore {
 
 export const useJobStore = create<JobStore>((set) => ({
   job: {
-    title: '',
-    department: '',
-    description: '',
-    mustHaveSkills: [],
-    niceToHaveSkills: [],
-    minYears: 0,
-    maxYears: 10,
+    title: 'Senior Data Scientist',
+    department: 'Data Analytics',
+    description: 'We are looking for an experienced Data Scientist to lead our machine learning initiatives, build predictive models, and extract actionable insights from large datasets. The ideal candidate has a strong background in statistics, programming, and deploying models to production.',
+    mustHaveSkills: ['Python', 'Machine Learning', 'SQL', 'TensorFlow', 'Pandas'],
+    niceToHaveSkills: ['AWS', 'Docker', 'Kubernetes', 'PyTorch'],
+    minYears: 3,
+    maxYears: 8,
     educationLevel: 'bachelor',
-    educationField: '',
-    keywords: [],
+    educationField: 'Computer Science, Statistics, or related',
+    keywords: ['Predictive Modeling', 'Data Visualization', 'A/B Testing', 'NLP'],
     weights: {
       skills: 40,
       experience: 25,

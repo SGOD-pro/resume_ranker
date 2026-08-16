@@ -44,7 +44,7 @@ test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
     await page.locator('input[type="file"]').first().setInputFiles(resumePath);
 
     // 11. Wait for ATS score result
-    await page.waitForSelector('text=ATS Compatibility Score', { timeout: 30000 });
+    await page.waitForSelector('text=Parseability Score', { timeout: 30000 });
     
     // Check if the layout score appears
     const scoreText = page.locator('.text-5xl');
