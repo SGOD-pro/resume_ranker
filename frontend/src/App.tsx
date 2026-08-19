@@ -19,6 +19,7 @@ function App() {
               <Route path="/ats-checker" element={<AtsCheckerPage />} />
             </Routes>
           </div>
+          
           <Toaster />
           <BlockingErrorAlert />
         </TooltipProvider>

@@ -30,6 +30,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import tempfile
 import uuid
 from dataclasses import asdict
@@ -54,6 +55,27 @@ from src.infrastructure.repositories.scoring_repository import ScoringRepository
 from src.infrastructure.storage.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
+
+# ── Phase 6: Bounded Concurrency ──────────────────────────────────────────────
+# MAX_CONCURRENT_EXTRACTIONS caps simultaneous asyncio.to_thread calls so a
+# large upload (e.g. 500 PDFs) cannot spawn 500 OS threads and OOM the process.
+# Default of 8 matches the benchmark's existing 8-thread pattern
+# (tests/benchmark_v4/main.py).  Tune via env var without a code deploy.
+#
+# The semaphore is created lazily on the first extraction call because
+# asyncio.Semaphore must be bound to the running event loop — creating it at
+# module-import time (before uvicorn starts the loop) raises a DeprecationWarning
+# in Python 3.10+ and a RuntimeError in 3.12+.
+_MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_EXTRACTIONS", "8"))
+_extraction_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Return the module-level semaphore, creating it on first call."""
+    global _extraction_semaphore
+    if _extraction_semaphore is None:
+        _extraction_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+    return _extraction_semaphore
 
 router = APIRouter()
 
@@ -309,65 +331,75 @@ async def _run_extraction_background(job_id: str):
     _jobs_repo.update_status(job_id, JobStatus.EXTRACTING, expected_version=job.version)
 
     succeeded = 0
+    semaphore = _get_semaphore()
+    logger.info(
+        "Starting extraction for job %s — %d document(s), max concurrency: %d",
+        job_id, len(documents), _MAX_CONCURRENT,
+    )
 
     async def _extract_one(doc: DocumentItem) -> None:
         nonlocal succeeded
-        # R-14: skip already-processed documents
+        # R-14: skip already-processed documents (don't burn a semaphore slot)
         if doc.status in (DocumentStatus.PARSED, DocumentStatus.SCORED):
             succeeded += 1
             return
 
         try:
-            # Mark document as parsing
-            _docs_repo.update_status(
-                doc.job_id, doc.document_id,
-                DocumentStatus.PARSING, expected_version=doc.version,
-            )
-
-            # Download PDF from S3 to a temp file
-            pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(pdf_bytes)
-                tmp_path = tmp.name
-
-            try:
-                from src.config.aws import get_settings
-                settings = get_settings()
-                # Run extraction (CPU-bound)
-                extraction_result = await asyncio.to_thread(
-                    _extract_single_sync, 
-                    tmp_path, 
-                    doc.document_id, 
-                    settings.s3_bucket_name, 
-                    doc.s3_pdf_key
-                )
-                fields = extraction_result["fields"]
-
-                # Upload extraction JSON to S3
-                s3_extracted_key = _storage.upload_extracted_json(
-                    doc.job_id, doc.document_id, fields,
+            # Acquire semaphore BEFORE any work — caps in-flight threads to
+            # MAX_CONCURRENT_EXTRACTIONS.  The context manager guarantees release
+            # even if extraction raises, so one failing doc cannot starve others.
+            async with semaphore:
+                # Mark document as parsing
+                _docs_repo.update_status(
+                    doc.job_id, doc.document_id,
+                    DocumentStatus.PARSING, expected_version=doc.version,
                 )
 
-                # Update document in DynamoDB
-                candidate_name = fields.get("name", "") or ""
-                _docs_repo.update_extraction(
-                    job_id=doc.job_id,
-                    document_id=doc.document_id,
-                    s3_extracted_key=s3_extracted_key,
-                    extraction_quality=extraction_result.get("extraction_quality", 0.0),
-                    candidate_name=candidate_name,
-                    page_count=extraction_result.get("page_count", 0),
-                    expected_version=doc.version + 1,  # +1 because update_status already incremented
-                )
-                
-                succeeded += 1
-            finally:
-                # Clean up temp file
-                Path(tmp_path).unlink(missing_ok=True)
+                # Download PDF from S3 to a temp file
+                pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(pdf_bytes)
+                    tmp_path = tmp.name
+
+                try:
+                    from src.config.aws import get_settings
+                    settings = get_settings()
+                    # Run extraction in a thread (CPU-bound — keeps event loop free)
+                    extraction_result = await asyncio.to_thread(
+                        _extract_single_sync,
+                        tmp_path,
+                        doc.document_id,
+                        settings.s3_bucket_name,
+                        doc.s3_pdf_key
+                    )
+                    fields = extraction_result["fields"]
+
+                    # Upload extraction JSON to S3
+                    s3_extracted_key = _storage.upload_extracted_json(
+                        doc.job_id, doc.document_id, fields,
+                    )
+
+                    # Update document in DynamoDB
+                    candidate_name = fields.get("name", "") or ""
+                    _docs_repo.update_extraction(
+                        job_id=doc.job_id,
+                        document_id=doc.document_id,
+                        s3_extracted_key=s3_extracted_key,
+                        extraction_quality=extraction_result.get("extraction_quality", 0.0),
+                        candidate_name=candidate_name,
+                        page_count=extraction_result.get("page_count", 0),
+                        expected_version=doc.version + 1,  # +1 because update_status already incremented
+                    )
+
+                    succeeded += 1
+                finally:
+                    # Clean up temp file regardless of success or failure
+                    Path(tmp_path).unlink(missing_ok=True)
 
         except Exception as e:
             logger.error("Extraction failed for %s: %s", doc.filename, e, exc_info=True)
-            # Mark document as failed
+            # Best-effort: mark document as failed so the SSE stream doesn't
+            # wait for it forever.  Re-fetch to get the current version first.
             try:
                 fresh_doc = _docs_repo.get(doc.job_id, doc.document_id)
                 if fresh_doc:
@@ -379,9 +411,16 @@ async def _run_extraction_background(job_id: str):
             except Exception:
                 pass  # Best-effort status update
 
-    # Launch all extractions concurrently
+    # Launch all tasks concurrently — the semaphore inside _extract_one bounds
+    # how many actually run at once.  return_exceptions=True ensures one task
+    # failure does not cancel the gather (per-document isolation).
     tasks = [asyncio.create_task(_extract_one(doc)) for doc in documents]
     await asyncio.gather(*tasks, return_exceptions=True)
+
+    logger.info(
+        "Extraction complete for job %s — %d/%d succeeded",
+        job_id, succeeded, len(documents),
+    )
 
     # Update job status
     updated_job = _jobs_repo.get(job_id)
