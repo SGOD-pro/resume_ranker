@@ -999,7 +999,7 @@ def phase7_performance(pipe, scorer, pdfs, phase1_time, phase1_count):
 def phase8_frontend():
     try:
         from fastapi.testclient import TestClient
-        from src.api.app import app
+        from src.main import app
         client = TestClient(app)
     except ImportError:
         return {"accuracy": 0, "error": "TestClient not available", "checks": []}

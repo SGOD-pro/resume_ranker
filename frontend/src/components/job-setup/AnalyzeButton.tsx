@@ -35,9 +35,13 @@ export function AnalyzeButton() {
     isAnalyzing ||
     appPhase === 'extracting' ||
     appPhase === 'scoring' ||
-    appPhase === 'uploading';
+    appPhase === 'uploading' ||
+    !jobId;
 
   const getTooltipText = () => {
+    if (!jobId) {
+      return 'Upload resumes first to begin analysis';
+    }
     switch (appPhase) {
       case 'extracting':
         return 'Extraction in progress';

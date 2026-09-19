@@ -9,7 +9,7 @@ AWS Lambda invokes:  lambda_handler.handler(event, context)
 
 from mangum import Mangum
 
-from src.api.app import app
+from src.main import app
 
 # Mangum translates API Gateway HTTP API events ↔ ASGI (FastAPI)
 # lifespan="off" is recommended for Lambda where the container may be

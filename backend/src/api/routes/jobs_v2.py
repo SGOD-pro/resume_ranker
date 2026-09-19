@@ -309,124 +309,130 @@ def _extract_single_sync(pdf_path: str, doc_id: str, s3_bucket: str, s3_key: str
     return result
 
 
+_extraction_locks: Dict[str, asyncio.Lock] = {}
+
+
+def _get_job_lock(job_id: str) -> asyncio.Lock:
+    if job_id not in _extraction_locks:
+        _extraction_locks[job_id] = asyncio.Lock()
+    return _extraction_locks[job_id]
+
+
 async def _run_extraction_background(job_id: str):
-    """Background task to run extraction synchronously in local dev."""
-    job = _jobs_repo.get(job_id)
-    if not job:
+    """Background task to run extraction for all pending documents."""
+    lock = _get_job_lock(job_id)
+    if lock.locked():
+        # Another worker is already extracting for this job.
+        # Its while loop will process any newly added documents before exiting.
         return
 
-    # R-14: idempotency guard — do not re-process if already extracted or scored.
-    if job.status in (JobStatus.SCORED, JobStatus.EXTRACTED, JobStatus.EXTRACTING):
-        logger.info(
-            "Job %s already in status %s — skipping re-extraction (R-14)",
-            job_id, job.status,
-        )
-        return
+    async with lock:
+        semaphore = _get_semaphore()
 
-    documents = _docs_repo.list_for_job(job_id)
-    if not documents:
-        return
+        while True:
+            job = _jobs_repo.get(job_id)
+            if not job:
+                return
 
-    # Update job status to extracting
-    _jobs_repo.update_status(job_id, JobStatus.EXTRACTING, expected_version=job.version)
+            documents = _docs_repo.list_for_job(job_id)
+            if not documents:
+                return
 
-    succeeded = 0
-    semaphore = _get_semaphore()
-    logger.info(
-        "Starting extraction for job %s — %d document(s), max concurrency: %d",
-        job_id, len(documents), _MAX_CONCURRENT,
-    )
+            pending_docs = [
+                d for d in documents
+                if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+            ]
 
-    async def _extract_one(doc: DocumentItem) -> None:
-        nonlocal succeeded
-        # R-14: skip already-processed documents (don't burn a semaphore slot)
-        if doc.status in (DocumentStatus.PARSED, DocumentStatus.SCORED):
-            succeeded += 1
-            return
+            if not pending_docs:
+                has_parsed = any(d.status in (DocumentStatus.PARSED, DocumentStatus.SCORED) for d in documents)
+                fresh_job = _jobs_repo.get(job_id)
+                if fresh_job:
+                    target_status = JobStatus.EXTRACTED if has_parsed else JobStatus.CREATED
+                    if fresh_job.status != target_status and fresh_job.status != JobStatus.SCORED:
+                        try:
+                            _jobs_repo.update_status(job_id, target_status, expected_version=fresh_job.version)
+                        except Exception:
+                            pass
+                break
 
-        try:
-            # Acquire semaphore BEFORE any work — caps in-flight threads to
-            # MAX_CONCURRENT_EXTRACTIONS.  The context manager guarantees release
-            # even if extraction raises, so one failing doc cannot starve others.
-            async with semaphore:
-                # Mark document as parsing
-                _docs_repo.update_status(
-                    doc.job_id, doc.document_id,
-                    DocumentStatus.PARSING, expected_version=doc.version,
-                )
-
-                # Download PDF from S3 to a temp file
-                pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                    tmp.write(pdf_bytes)
-                    tmp_path = tmp.name
-
+            fresh_job = _jobs_repo.get(job_id)
+            if fresh_job and fresh_job.status != JobStatus.EXTRACTING and fresh_job.status != JobStatus.SCORED:
                 try:
-                    from src.config.aws import get_settings
-                    settings = get_settings()
-                    # Run extraction in a thread (CPU-bound — keeps event loop free)
-                    extraction_result = await asyncio.to_thread(
-                        _extract_single_sync,
-                        tmp_path,
-                        doc.document_id,
-                        settings.s3_bucket_name,
-                        doc.s3_pdf_key
-                    )
-                    fields = extraction_result["fields"]
+                    _jobs_repo.update_status(job_id, JobStatus.EXTRACTING, expected_version=fresh_job.version)
+                except Exception:
+                    pass
 
-                    # Upload extraction JSON to S3
-                    s3_extracted_key = _storage.upload_extracted_json(
-                        doc.job_id, doc.document_id, fields,
-                    )
+            logger.info(
+                "Extracting %d pending document(s) for job %s (max concurrency: %d)",
+                len(pending_docs), job_id, _MAX_CONCURRENT,
+            )
 
-                    # Update document in DynamoDB
-                    candidate_name = fields.get("name", "") or ""
-                    _docs_repo.update_extraction(
-                        job_id=doc.job_id,
-                        document_id=doc.document_id,
-                        s3_extracted_key=s3_extracted_key,
-                        extraction_quality=extraction_result.get("extraction_quality", 0.0),
-                        candidate_name=candidate_name,
-                        page_count=extraction_result.get("page_count", 0),
-                        expected_version=doc.version + 1,  # +1 because update_status already incremented
-                    )
+            async def _extract_one(doc: DocumentItem) -> None:
+                try:
+                    async with semaphore:
+                        fresh_doc = _docs_repo.get(doc.job_id, doc.document_id)
+                        if not fresh_doc or fresh_doc.status in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED):
+                            return
 
-                    succeeded += 1
-                finally:
-                    # Clean up temp file regardless of success or failure
-                    Path(tmp_path).unlink(missing_ok=True)
+                        try:
+                            _docs_repo.update_status(
+                                doc.job_id, doc.document_id,
+                                DocumentStatus.PARSING, expected_version=fresh_doc.version,
+                            )
+                        except Exception:
+                            pass
 
-        except Exception as e:
-            logger.error("Extraction failed for %s: %s", doc.filename, e, exc_info=True)
-            # Best-effort: mark document as failed so the SSE stream doesn't
-            # wait for it forever.  Re-fetch to get the current version first.
-            try:
-                fresh_doc = _docs_repo.get(doc.job_id, doc.document_id)
-                if fresh_doc:
-                    _docs_repo.update_status(
-                        doc.job_id, doc.document_id,
-                        DocumentStatus.PARSE_FAILED,
-                        expected_version=fresh_doc.version,
-                    )
-            except Exception:
-                pass  # Best-effort status update
+                        pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
+                        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                            tmp.write(pdf_bytes)
+                            tmp_path = tmp.name
 
-    # Launch all tasks concurrently — the semaphore inside _extract_one bounds
-    # how many actually run at once.  return_exceptions=True ensures one task
-    # failure does not cancel the gather (per-document isolation).
-    tasks = [asyncio.create_task(_extract_one(doc)) for doc in documents]
-    await asyncio.gather(*tasks, return_exceptions=True)
+                        try:
+                            from src.config.aws import get_settings
+                            settings = get_settings()
+                            extraction_result = await asyncio.to_thread(
+                                _extract_single_sync,
+                                tmp_path,
+                                doc.document_id,
+                                settings.s3_bucket_name,
+                                doc.s3_pdf_key,
+                            )
+                            fields = extraction_result.get("fields", {})
 
-    logger.info(
-        "Extraction complete for job %s — %d/%d succeeded",
-        job_id, succeeded, len(documents),
-    )
+                            s3_extracted_key = _storage.upload_extracted_json(
+                                doc.job_id, doc.document_id, fields,
+                            )
 
-    # Update job status
-    updated_job = _jobs_repo.get(job_id)
-    if updated_job:
-        new_status = JobStatus.EXTRACTED if succeeded > 0 else JobStatus.CREATED
-        _jobs_repo.update_status(job_id, new_status, expected_version=updated_job.version)
+                            candidate_name = fields.get("name", "") or ""
+                            cur_doc = _docs_repo.get(doc.job_id, doc.document_id)
+                            expected_ver = cur_doc.version if cur_doc else fresh_doc.version + 1
+                            _docs_repo.update_extraction(
+                                job_id=doc.job_id,
+                                document_id=doc.document_id,
+                                s3_extracted_key=s3_extracted_key,
+                                extraction_quality=extraction_result.get("extraction_quality", 0.0),
+                                candidate_name=candidate_name,
+                                page_count=extraction_result.get("page_count", 0),
+                                expected_version=expected_ver,
+                            )
+                        finally:
+                            Path(tmp_path).unlink(missing_ok=True)
+
+                except Exception as e:
+                    logger.error("Extraction failed for %s: %s", doc.filename, e, exc_info=True)
+                    try:
+                        cur_doc = _docs_repo.get(doc.job_id, doc.document_id)
+                        if cur_doc:
+                            _docs_repo.update_status(
+                                doc.job_id, doc.document_id,
+                                DocumentStatus.PARSE_FAILED,
+                                expected_version=cur_doc.version,
+                            )
+                    except Exception:
+                        pass
+
+            tasks = [asyncio.create_task(_extract_one(d)) for d in pending_docs]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _extraction_event_stream(job_id: str):
@@ -437,8 +443,11 @@ async def _extraction_event_stream(job_id: str):
         return
 
     seen_completed = set()
+    poll_iterations = 0
+    max_poll_iterations = 180  # 6 minutes max
 
-    while True:
+    while poll_iterations < max_poll_iterations:
+        poll_iterations += 1
         documents = _docs_repo.list_for_job(job_id)
         if not documents:
             yield f"event: error\ndata: {json.dumps({'error': 'No resumes uploaded'})}\n\n"
@@ -473,7 +482,20 @@ async def _extraction_event_stream(job_id: str):
             yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total, 'succeeded': succeeded, 'failed': failed})}\n\n"
             break
 
+        # Check if any documents need extraction and kick worker if idle
+        unprocessed = [
+            d for d in documents
+            if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+        ]
+        if unprocessed:
+            lock = _get_job_lock(job_id)
+            if not lock.locked():
+                asyncio.create_task(_run_extraction_background(job_id))
+
+        yield ": ping\n\n"
         await asyncio.sleep(2.0)
+    else:
+        yield f"event: error\ndata: {json.dumps({'error': 'Extraction timed out'})}\n\n"
 
 
 @router.get("/{job_id}/extract")
@@ -486,6 +508,16 @@ async def extract_resumes(job_id: str):
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    documents = _docs_repo.list_for_job(job_id)
+    pending_docs = [
+        d for d in documents
+        if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+    ]
+    if pending_docs:
+        lock = _get_job_lock(job_id)
+        if not lock.locked():
+            asyncio.create_task(_run_extraction_background(job_id))
 
     return StreamingResponse(
         _extraction_event_stream(job_id),

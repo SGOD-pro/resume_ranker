@@ -507,9 +507,12 @@ class CandidateScorer:
                     if pair not in _RELATED_DOMAINS:
                         jd_penalties = penalties_matrix.get(jd_domain, {})
                         penalty = jd_penalties.get(cand_domain, -50.0)
-                        # Skip candidates with severe domain mismatch (penalty <= -60)
+                        # Flag candidates with severe domain mismatch (penalty <= -60) for knockout
                         if penalty <= -60:
-                            continue
+                            candidate['_severe_domain_mismatch'] = (
+                                f"Domain mismatch: candidate background is {cand_domain} "
+                                f"(confidence {cand_conf:.0%}), but job requires {jd_domain}."
+                            )
 
             filtered_candidates.append(candidate)
 
@@ -646,6 +649,9 @@ class CandidateScorer:
         ko_reasons = self._phase1_knockout(
             jd, candidate, c_skills, total_years, inference_result
         )
+        if candidate.get('_severe_domain_mismatch'):
+            ko_reasons.append(candidate['_severe_domain_mismatch'])
+
         if ko_reasons:
             result.knocked_out = True
             result.knockout_reasons = ko_reasons

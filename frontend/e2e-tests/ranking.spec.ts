@@ -55,7 +55,7 @@ test.describe('E2E UI Test - Resume Ranking', () => {
 
     // Verify sections are present like "Match Score" and "Skills"
     await expect(page.locator('h4:has-text("Match Score")')).toBeVisible();
-    await expect(page.locator('h3:has-text("Skills Analysis")').or(page.locator('text=Skills Analysis'))).toBeVisible();
+    await expect(page.locator('h4:has-text("Skill Breakdown")').or(page.locator('text=Skill Breakdown'))).toBeVisible();
 
     // --------- SECOND JD ---------
     // Go back to the dashboard to start a new job

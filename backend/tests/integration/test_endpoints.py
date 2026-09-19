@@ -21,7 +21,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from fastapi.testclient import TestClient
-from src.api.app import app
+from src.main import app
 from src.config.settings import RESUME_DIR
 
 
