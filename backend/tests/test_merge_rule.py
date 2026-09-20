@@ -35,9 +35,7 @@ from src.extraction.fallback.nova_service import NovaService
 
 def _make_nova_bedrock_response(llm_extracted: dict) -> dict:
     """
-    Build a mock Bedrock response body that wraps `llm_extracted` inside
-    the Nova tool-call envelope.  If a field value is None, omit it so
-    the LLM *truly* returns nothing for that field (realistic null).
+    Build a mock Bedrock converse response body that wraps `llm_extracted`.
     """
     input_payload = {k: v for k, v in llm_extracted.items() if v is not None}
     return {
@@ -45,27 +43,24 @@ def _make_nova_bedrock_response(llm_extracted: dict) -> dict:
             "message": {
                 "content": [
                     {
-                        "toolUse": {
-                            "name": "extract_resume_fields",
-                            "input": input_payload,
-                        }
+                        "text": json.dumps(input_payload),
                     }
                 ]
             }
-        }
+        },
+        "usage": {"totalTokens": 42},
     }
 
 
 def _patch_nova(llm_response: dict):
     """
-    Context manager that patches boto3 so NovaService never touches real AWS.
-    `llm_response` is the raw Bedrock response body dict.
+    Context manager that patches get_client so NovaService never touches real AWS.
+    `llm_response` is the Bedrock converse response body dict.
     """
     mock_bedrock = MagicMock()
-    mock_stream = MagicMock()
-    mock_stream.read.return_value = json.dumps(llm_response).encode("utf-8")
-    mock_bedrock.invoke_model.return_value = {"body": mock_stream}
-    return patch("boto3.client", return_value=mock_bedrock)
+    mock_bedrock.converse.return_value = llm_response
+    return patch("src.config.aws.get_client", return_value=mock_bedrock)
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -293,7 +288,7 @@ class TestRealisticNullLLMResponse:
 
         # Note: resolve_chunks returns {} for empty chunks list per current impl.
         # We test the pipeline merge directly below.
-        with patch("boto3.client"):
+        with patch("src.config.aws.get_client"):
             nova = NovaService()
             result = nova.resolve_chunks(chunks=[], existing_fields=deterministic_fields)
 

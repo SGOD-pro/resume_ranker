@@ -44,9 +44,10 @@ def _new_uuid() -> str:
 class DocumentItem(BaseModel):
     """Pydantic model for a Document entity in DynamoDB."""
 
-    # ── Identity ──────────────────────────────────────────────────────────
+    # ── Identity & Tenant ──────────────────────────────────────────────────
     document_id: str = Field(default_factory=_new_uuid)
     job_id: str
+    org_id: str = "org_default"
     entity_type: str = "DOCUMENT"
 
     # ── File Metadata ─────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ class DocumentItem(BaseModel):
             "entity_type": self.entity_type,
             "document_id": self.document_id,
             "job_id": self.job_id,
+            "org_id": self.org_id,
             "filename": self.filename,
             "file_size": self.file_size,
             "content_hash": self.content_hash,
@@ -133,6 +135,7 @@ class DocumentItem(BaseModel):
         return cls(
             document_id=item["document_id"],
             job_id=item["job_id"],
+            org_id=item.get("org_id", "org_default"),
             entity_type=item.get("entity_type", "DOCUMENT"),
             filename=item.get("filename", ""),
             file_size=int(item.get("file_size", 0)),

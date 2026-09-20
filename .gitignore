@@ -1,19 +1,40 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
 
+# IDE & Editor
 .vscode
+.idea
+*.swp
+*.swo
 mcp_config.json
 
-node_modules
-uploads
-frontend/test/resumes
+# Dependencies & Environments
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
 
-resumes
+# Local data & uploads
+uploads/
+frontend/test/resumes/
+resumes/
 
 # SAM / AWS build artifacts
 backend/.aws-sam/
-.aws-sam
+.aws-sam/
 odl/*.json
-# Vercel
-.vercel/
 odl_*
 
-__pycache__
+# Vercel & Build outputs
+.vercel/
+dist/
+build/

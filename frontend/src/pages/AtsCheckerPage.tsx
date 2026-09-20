@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { PdfViewer, type BoundingBox } from '@/components/ui/PdfViewer';
-import { Loader2, UploadCloud, AlertTriangle } from 'lucide-react';
+import { Loader2, UploadCloud, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
+import { checkAts } from '@/lib/api';
 
 interface AtsCheckResponse {
   score: number;
@@ -19,6 +20,7 @@ interface AtsCheckResponse {
   keyword_preview: string[];
   date_consistency: string;
   bounding_boxes: BoundingBox[];
+  limitations_disclaimer?: string;
 }
 
 export function AtsCheckerPage() {
@@ -38,21 +40,12 @@ export function AtsCheckerPage() {
     setIsLoading(true);
     setResult(null);
 
-    const formData = new FormData();
-    formData.append('file', selected);
-
     try {
-      const res = await fetch('http://localhost:8000/api/v2/jobs/ats-check', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error('Failed to run ATS check');
-      
-      const data = await res.json();
+      const data = await checkAts(selected);
       setResult(data);
-    } catch (error) {
-      toast.error('An error occurred during ATS checking.');
+      toast.success('ATS parseability check completed.');
+    } catch (error: any) {
+      toast.error(error.message || 'An error occurred during ATS checking.');
     } finally {
       setIsLoading(false);
     }
@@ -197,6 +190,20 @@ export function AtsCheckerPage() {
                       <span className="text-sm text-muted-foreground italic">No skills extracted.</span>
                     )}
                   </div>
+                </div>
+
+                {/* Transparent Limitations & Privacy Notice */}
+                <div className="p-4 bg-muted/30 rounded-xl border border-border text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-muted-foreground">
+                    <ShieldAlert className="w-4 h-4 text-primary" />
+                    <span>ATS Health Check Transparency Policy</span>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {result.limitations_disclaimer || "Informational parser diagnostic only. Passing this test does not guarantee ATS compatibility or hiring outcomes."}
+                  </p>
+                  <p className="text-muted-foreground/80 text-[11px] leading-relaxed">
+                    Privacy notice: Uploaded resumes for this health check are retained only for ephemeral analysis and automatically purged. No profile data is shared or sold.
+                  </p>
                 </div>
 
               </div>

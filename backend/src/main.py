@@ -13,6 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.health import router as health_router
 from src.api.routes.jobs_v2 import router as jobs_v2_router
+from src.api.routes.auth import router as auth_router
+from src.api.middleware.security import SecurityHeadersMiddleware
+from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.infrastructure.health import check_all
 from src.config.aws import get_settings
 
@@ -35,7 +38,7 @@ async def lifespan(app: FastAPI):
         datefmt="%H:%M:%S",
     )
     logger.info("━" * 60)
-    logger.info("Resume Intelligence Platform — Starting up")
+    logger.info("Resume Intelligence Platform — Starting up (v2.0.0)")
     logger.info("━" * 60)
 
     import asyncio
@@ -63,13 +66,13 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ──────────────────────────────────────────────────────────
     logger.info("Shutting down...")
 
-# uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Resume Intelligence Platform",
-        version="0.2.0",
-        description="API for resume extraction, scoring, and ranking.",
+        title="SWYRA Sortlist API",
+        version="2.0.0",
+        description="Explainable candidate review workspace API.",
         lifespan=lifespan,
     )
 
@@ -97,19 +100,26 @@ def create_app() -> FastAPI:
             "CORS requests will be rejected."
         )
 
+    # Middleware order: Security Headers -> Rate Limit -> CORS
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
     # Register route modules
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(jobs_v2_router, prefix="/api/v2/jobs", tags=["jobs_v2"])
+    app.include_router(jobs_v2_router, prefix="/jobs", tags=["jobs_legacy_alias"])
 
     return app
 
 
 app = create_app()
+

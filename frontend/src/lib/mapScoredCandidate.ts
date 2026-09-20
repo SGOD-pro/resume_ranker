@@ -163,22 +163,6 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
     note: '',
   };
 
-  // ── DEBUG: Step 6 — Raw backend → mapped frontend trace ──────────────────
-  // Compare every knockout field: backend raw value vs. what enters the store.
-  // Remove or guard with an env flag before shipping to production.
-  console.group(`[KNOCKOUT DEBUG] ${name}`);
-  console.log('Backend raw fields:');
-  console.table({
-    knocked_out:        { backend: raw.knocked_out,        frontend: knockedOut },
-    matched_must_have:  { backend: JSON.stringify(raw.matched_must_have  ?? []), frontend: JSON.stringify(skillMatch.matched.slice(0, (raw.matched_must_have || []).length)) },
-    missing_must_have:  { backend: JSON.stringify(raw.missing_must_have  ?? []), frontend: JSON.stringify(skillMatch.missing) },
-    final_score:        { backend: raw.final_score,        frontend: finalScore },
-    knockout_reasons:   { backend: JSON.stringify(raw.knockout_reasons ?? []), frontend: JSON.stringify(knockoutChecks.filter(k => !k.passed).map(k => k.label)) },
-  });
-  console.log('Knockout checks (computed in mapper):');
-  knockoutChecks.forEach(k => console.log(`  ${k.passed ? '✅' : '❌'} ${k.label}: ${k.detail}`));
-  console.groupEnd();
-
   return mapped;
 }
 

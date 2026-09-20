@@ -35,12 +35,15 @@ import tempfile
 import uuid
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, status, Depends, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, field_validator
 
+from src.api.auth import AuthContext
+from src.api.dependencies.auth import get_auth_context, enforce_tenant_ownership
+from src.infrastructure.audit import audit_logger
 from src.services.extraction_service import ExtractionService
 from src.ranking.scorer import CandidateScorer
 from src.schemas.scoring import JobDescription
@@ -142,6 +145,13 @@ class UploadResponse(BaseModel):
     total_accepted: int
 
 
+class DecisionUpdateRequest(BaseModel):
+    decision: str  # "new", "reviewing", "shortlisted", "rejected", "interview", "archived"
+    reason: Optional[str] = None  # Mandatory if decision == "rejected"
+    note: Optional[str] = None
+    tags: List[str] = []
+
+
 from src.core.lazy_proxy import LazyProxy
 
 # ── Shared service instances ─────────────────────────────────────────────────
@@ -160,12 +170,13 @@ _storage = LazyProxy(StorageService)
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=CreateJobResponse)
-async def create_job(body: CreateJobRequest):
+async def create_job(body: CreateJobRequest, ctx: AuthContext = Depends(get_auth_context)):
     """Create a new screening job.
 
-    Persists to DynamoDB: PK=JOB#{id}, SK=METADATA.
+    Persists to DynamoDB: PK=JOB#{id}, SK=METADATA, scoped to tenant org_id.
     """
     job = JobItem(
+        org_id=ctx.org_id,
         title=body.title,
         department=body.department,
         description=body.description,
@@ -179,27 +190,47 @@ async def create_job(body: CreateJobRequest):
     )
 
     _jobs_repo.create(job)
-    logger.info("Created job: %s (%s)", job.job_id, body.title)
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "JOB_CREATED",
+        "job",
+        job.job_id,
+        {"title": body.title, "department": body.department},
+    )
+    logger.info("Created job: %s (%s) for org: %s", job.job_id, body.title, ctx.org_id)
 
     return CreateJobResponse(id=job.job_id, title=body.title, status="created")
 
 
 @router.patch("/{job_id}")
-async def update_job(job_id: str, body: UpdateJobRequest):
+async def update_job(job_id: str, body: UpdateJobRequest, ctx: AuthContext = Depends(get_auth_context)):
     """Update the JD config for an existing job.
 
     Merges only the supplied (non-None) fields.
+    Increments job_version for scoring lineage tracking.
     Uses optimistic locking via version counter.
     """
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
     updates = body.model_dump(exclude_none=True)
     if not updates:
         return {"id": job_id, "config": {}, "status": "unchanged"}
 
+    updates["job_version"] = getattr(job, "job_version", 1) + 1
+
     updated_job = _jobs_repo.update(job_id, updates, expected_version=job.version)
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "JOB_UPDATED",
+        "job",
+        job_id,
+        {"updated_fields": list(updates.keys()), "job_version": updates["job_version"]},
+    )
     logger.info("Job %s config updated with fields: %s", job_id, list(updates.keys()))
 
     return {
@@ -210,21 +241,31 @@ async def update_job(job_id: str, body: UpdateJobRequest):
 
 
 @router.post("/{job_id}/resumes", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
-async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
+async def upload_resumes(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    ctx: AuthContext = Depends(get_auth_context),
+):
     """Upload resume PDFs for a job.
 
     Server-side validation:
     - Only .pdf files accepted
+    - Content-type validation
+    - Magic bytes header validation (%PDF-)
     - Max 10 MB per file
+    - Max 50 pages per PDF document
     - Duplicate detection via SHA256
 
-    Files are uploaded to S3 and metadata stored in DynamoDB.
+    Files are uploaded to S3 and metadata stored in DynamoDB scoped to tenant.
     """
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
     MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_PAGES = 50
 
     accepted: List[str] = []
     rejected: List[dict] = []
@@ -247,6 +288,24 @@ async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: 
             rejected.append({"filename": f.filename, "reason": f"File too large: {size_mb}MB (max 10MB)"})
             continue
 
+        # Check magic bytes (%PDF-)
+        if not content.startswith(b"%PDF-"):
+            rejected.append({"filename": f.filename, "reason": "Corrupt or invalid PDF file (magic bytes mismatch)"})
+            continue
+
+        # Check page count and parseability
+        try:
+            import fitz
+            pdf_doc = fitz.open(stream=content, filetype="pdf")
+            page_count = pdf_doc.page_count
+            pdf_doc.close()
+            if page_count > MAX_PAGES:
+                rejected.append({"filename": f.filename, "reason": f"Document exceeds {MAX_PAGES} page limit ({page_count} pages)"})
+                continue
+        except Exception:
+            rejected.append({"filename": f.filename, "reason": "Unreadable or corrupt PDF structure"})
+            continue
+
         # ── Duplicate detection via SHA256 ────────────────────────────
         file_hash = hashlib.sha256(content).hexdigest()
         existing = _docs_repo.find_by_hash(job_id, file_hash)
@@ -265,10 +324,12 @@ async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: 
         doc = DocumentItem(
             document_id=doc_id,
             job_id=job_id,
+            org_id=ctx.org_id,
             filename=f.filename,
             file_size=len(content),
             content_hash=file_hash,
             s3_pdf_key=s3_key,
+            page_count=page_count,
         )
         _docs_repo.create(doc)
 
@@ -279,6 +340,16 @@ async def upload_resumes(job_id: str, background_tasks: BackgroundTasks, files: 
             _jobs_repo.increment_document_count(job_id, expected_version=job.version)
 
         accepted.append(f.filename)
+
+    # Record audit event
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "RESUMES_UPLOADED",
+        "job",
+        job_id,
+        {"accepted_count": len(accepted), "rejected_count": len(rejected)},
+    )
 
     # Get final document count
     all_docs = _docs_repo.list_for_job(job_id)
@@ -499,7 +570,7 @@ async def _extraction_event_stream(job_id: str):
 
 
 @router.get("/{job_id}/extract")
-async def extract_resumes(job_id: str):
+async def extract_resumes(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
     """Start extraction as a Server-Sent Events stream.
 
     Downloads PDFs from S3, runs extraction, uploads results back to S3,
@@ -508,6 +579,7 @@ async def extract_resumes(job_id: str):
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
     documents = _docs_repo.list_for_job(job_id)
     pending_docs = [
@@ -531,7 +603,7 @@ async def extract_resumes(job_id: str):
 
 
 @router.post("/{job_id}/score")
-async def score_job(job_id: str, body: ScoreRequest):
+async def score_job(job_id: str, body: ScoreRequest, ctx: AuthContext = Depends(get_auth_context)):
     """Score and rank candidates for a job.
 
     1. Loads extracted JSON from S3 for each document
@@ -543,6 +615,7 @@ async def score_job(job_id: str, body: ScoreRequest):
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
     # Load all extracted documents from DynamoDB
     documents = _docs_repo.list_for_job(job_id)
@@ -579,7 +652,7 @@ async def score_job(job_id: str, body: ScoreRequest):
     raw_weights = body.weights
     fractional_weights = {k: v / 100.0 for k, v in raw_weights.items()}
 
-    # Build the JobDescription for the scorer
+    # Construct JobDescription with criteria
     jd = JobDescription(
         title=job.title,
         department=job.department,
@@ -670,6 +743,15 @@ async def score_job(job_id: str, body: ScoreRequest):
     if fresh_job:
         _jobs_repo.update_status(job_id, JobStatus.SCORED, expected_version=fresh_job.version)
 
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "SCORING_COMPLETED",
+        "job",
+        job_id,
+        {"candidate_count": len(scored_dicts), "top_candidate": top_name},
+    )
+
     return {
         "job_id": job_id,
         "status": "scored",
@@ -680,16 +762,13 @@ async def score_job(job_id: str, body: ScoreRequest):
 
 
 @router.get("/{job_id}/results")
-async def get_results(job_id: str):
-    """Retrieve stored scoring results for a job.
-
-    Loads the latest ranking JSON from S3 via the ScoringRepository.
-    """
+async def get_results(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Retrieve stored scoring results for a job."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-    # Get the latest scoring result from DynamoDB
     latest_scoring = _scoring_repo.get_latest(job_id)
     if not latest_scoring or latest_scoring.status != ScoringStatus.COMPLETED:
         raise HTTPException(
@@ -697,7 +776,6 @@ async def get_results(job_id: str):
             detail="No scoring results available. Run analysis first."
         )
 
-    # Load the full ranking JSON from S3
     try:
         candidates = _storage.get_ranking(job_id, latest_scoring.scoring_id)
     except Exception as e:
@@ -716,11 +794,12 @@ async def get_results(job_id: str):
 
 
 @router.get("/{job_id}/resumes/{document_id}/download")
-async def download_resume(job_id: str, document_id: str):
+async def download_resume(job_id: str, document_id: str, ctx: AuthContext = Depends(get_auth_context)):
     """Download a resume PDF from S3 storage."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
     doc = _docs_repo.get(job_id, document_id)
     if not doc:
@@ -741,11 +820,227 @@ async def download_resume(job_id: str, document_id: str):
         },
     )
 
+
+# ── Retention & Deletion Endpoints ───────────────────────────────────────────
+
+@router.delete("/{job_id}", status_code=status.HTTP_200_OK)
+async def delete_job(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Cascading deletion of job and all associated documents, extractions, and scores."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    # Delete DynamoDB records
+    _jobs_repo.delete(job_id)
+
+    # Clean up S3 prefix
+    try:
+        prefix = f"jobs/{job_id}/"
+        resp = _storage._client.list_objects_v2(Bucket=_storage._bucket, Prefix=prefix)
+        if "Contents" in resp:
+            delete_objects = [{"Key": obj["Key"]} for obj in resp["Contents"]]
+            _storage._client.delete_objects(Bucket=_storage._bucket, Delete={"Objects": delete_objects})
+    except Exception as e:
+        logger.warning("Error purging S3 prefix for job %s: %s", job_id, e)
+
+    audit_logger.record(ctx.org_id, ctx.user_id, "JOB_DELETED", "job", job_id)
+    return {"status": "deleted", "message": f"Job {job_id} and all related data deleted."}
+
+
+@router.delete("/{job_id}/resumes/{document_id}", status_code=status.HTTP_200_OK)
+async def delete_resume(job_id: str, document_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Delete a single candidate document and its extracted data."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    doc = _docs_repo.get(job_id, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    _docs_repo.delete(job_id, document_id)
+
+    # Delete S3 objects
+    try:
+        _storage._client.delete_object(Bucket=_storage._bucket, Key=doc.s3_pdf_key)
+        if doc.s3_extracted_key:
+            _storage._client.delete_object(Bucket=_storage._bucket, Key=doc.s3_extracted_key)
+    except Exception as e:
+        logger.warning("Error deleting S3 keys for document %s: %s", document_id, e)
+
+    audit_logger.record(ctx.org_id, ctx.user_id, "DOCUMENT_DELETED", "document", document_id, {"job_id": job_id})
+    return {"status": "deleted", "message": f"Document {document_id} deleted."}
+
+
+# ── Decision, CSV Export, Comparison, and Audit Endpoints ────────────────────
+
+@router.patch("/{job_id}/candidates/{document_id}/decision")
+async def update_candidate_decision(
+    job_id: str,
+    document_id: str,
+    body: DecisionUpdateRequest,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Update human recruiter decision state.
+
+    Decision states: new | reviewing | shortlisted | rejected | interview | archived
+    Rejections REQUIRE an evidence-backed reason.
+    """
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    decision_norm = body.decision.strip().lower()
+    valid_decisions = ("new", "reviewing", "shortlisted", "rejected", "interview", "archived")
+    if decision_norm not in valid_decisions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid decision state. Must be one of: {', '.join(valid_decisions)}",
+        )
+
+    # Mandatory reason rule
+    if decision_norm == "rejected":
+        if not body.reason or not body.reason.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Non-negotiable policy: Rejections require a documented, evidence-backed reason.",
+            )
+
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "DECISION_UPDATED",
+        "candidate",
+        document_id,
+        {
+            "job_id": job_id,
+            "decision": decision_norm,
+            "reason": body.reason,
+            "note": body.note,
+        },
+    )
+
+    return {
+        "job_id": job_id,
+        "document_id": document_id,
+        "decision": decision_norm,
+        "reason": body.reason,
+        "note": body.note,
+        "status": "updated",
+    }
+
+
+@router.get("/{job_id}/export/csv")
+async def export_job_csv(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Export candidate rankings for a job in standard CSV format."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    latest_scoring = _scoring_repo.get_latest(job_id)
+    candidates = []
+    if latest_scoring and latest_scoring.status == ScoringStatus.COMPLETED:
+        try:
+            candidates = _storage.get_ranking(job_id, latest_scoring.scoring_id)
+        except Exception:
+            candidates = []
+
+    # Format CSV rows
+    import io
+    import csv
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Rank", "Name", "Email", "Phone", "Match Score", "Signal",
+        "Skills Score", "Experience Score", "Keywords Score", "Education Score",
+        "Knocked Out", "Knockout Reasons", "Candidate Domain"
+    ])
+
+    for i, c in enumerate(candidates):
+        score = c.get("final_score", 0.0)
+        signal = "Knockout" if c.get("knocked_out") else ("Strong" if score >= 75 else ("Good" if score >= 50 else "Fair"))
+        writer.writerow([
+            c.get("rank", i + 1),
+            c.get("name", "Unknown"),
+            c.get("email", ""),
+            c.get("phone", ""),
+            f"{score:.1f}",
+            signal,
+            f"{c.get('skill_score', 0.0):.1f}",
+            f"{c.get('experience_score', 0.0):.1f}",
+            f"{c.get('keyword_score', 0.0):.1f}",
+            f"{c.get('education_score', 0.0):.1f}",
+            "YES" if c.get("knocked_out") else "NO",
+            "; ".join(c.get("knockout_reasons", [])),
+            c.get("candidate_domain", ""),
+        ])
+
+    csv_data = output.getvalue()
+    audit_logger.record(ctx.org_id, ctx.user_id, "CSV_EXPORTED", "job", job_id)
+
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="sortlist_job_{job_id[:8]}_export.csv"',
+        },
+    )
+
+
+@router.get("/{job_id}/compare")
+async def compare_candidates(
+    job_id: str,
+    ids: str = Query(..., description="Comma-separated list of 2 to 4 document IDs"),
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Compare 2 to 4 selected candidates side-by-side."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    doc_ids = [d.strip() for d in ids.split(",") if d.strip()]
+    if len(doc_ids) < 2 or len(doc_ids) > 4:
+        raise HTTPException(status_code=400, detail="Candidate comparison requires 2 to 4 candidate IDs.")
+
+    latest_scoring = _scoring_repo.get_latest(job_id)
+    if not latest_scoring:
+        raise HTTPException(status_code=400, detail="Job has not been scored yet.")
+
+    candidates = _storage.get_ranking(job_id, latest_scoring.scoring_id)
+    cand_map = {c.get("document_id"): c for c in candidates}
+
+    selected = [cand_map[did] for did in doc_ids if did in cand_map]
+    return {
+        "job_id": job_id,
+        "count": len(selected),
+        "candidates": selected,
+    }
+
+
+@router.get("/{job_id}/audit")
+async def get_job_audit_log(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Retrieve audit log events for this job."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    events = audit_logger.query(org_id=ctx.org_id, resource_id=job_id)
+    return {"job_id": job_id, "events": events}
+
+
 @router.post("/ats-check")
 async def ats_check(file: UploadFile = File(...)):
-    """
-    Standalone ATS checker.
+    """Standalone ATS checker.
+
     Uploads a PDF, runs through the V2 Extraction Pipeline, and returns a B2B ATS Report.
+    Ephemeral: deletes uploaded document data after processing.
     """
     import tempfile
     import os
@@ -754,12 +1049,16 @@ async def ats_check(file: UploadFile = File(...)):
 
     try:
         content = await file.read()
-        
+
+        # Check magic bytes (%PDF-)
+        if not content.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="Invalid PDF file: magic bytes mismatch")
+
         # 1. Upload to S3 for ODL to access
         doc_id = str(uuid.uuid4())
         job_id = "ats_check_job"
         s3_key = _storage.upload_resume(job_id, doc_id, content, file.filename or "resume.pdf")
-        
+
         # Save temp file for PyMuPDF
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(content)
@@ -770,12 +1069,15 @@ async def ats_check(file: UploadFile = File(...)):
             ats_result = scorer.score(tmp_path, s3_bucket=_storage._bucket, s3_key=s3_key)
             return ats_result
         finally:
-            os.remove(tmp_path)
-            # Cleanup S3
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            # Ephemeral retention: cleanup S3 immediately
             try:
                 _storage._client.delete_object(Bucket=_storage._bucket, Key=s3_key)
             except Exception:
                 pass
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"ATS check failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

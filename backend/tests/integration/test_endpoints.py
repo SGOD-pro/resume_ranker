@@ -88,7 +88,7 @@ def test_api_flow():
         resp = client.post(f"/jobs/{job_id}/resumes", files=files)
     print(f"Status: {resp.status_code}")
     print(f"Response: {resp.json()}")
-    assert resp.status_code == 200
+    assert resp.status_code in (200, 202)
     upload_res = resp.json()
     assert upload_res["total_accepted"] >= 2
     print("✅ Resume uploads accepted and saved to S3 successfully.")

@@ -36,8 +36,9 @@ def _new_uuid() -> str:
 class JobItem(BaseModel):
     """Pydantic model for a Job entity in DynamoDB."""
 
-    # ── Identity ──────────────────────────────────────────────────────────
+    # ── Identity & Tenant ──────────────────────────────────────────────────
     job_id: str = Field(default_factory=_new_uuid)
+    org_id: str = "org_default"
     entity_type: str = "JOB"
 
     # ── Job Description Config ────────────────────────────────────────────
@@ -64,6 +65,7 @@ class JobItem(BaseModel):
 
     # ── Versioning ────────────────────────────────────────────────────────
     version: int = 1
+    job_version: int = 1
     created_at: str = Field(default_factory=_utcnow_iso)
     updated_at: str = Field(default_factory=_utcnow_iso)
 
@@ -87,6 +89,7 @@ class JobItem(BaseModel):
             "SK": self.sk,
             "entity_type": self.entity_type,
             "job_id": self.job_id,
+            "org_id": self.org_id,
             "title": self.title,
             "department": self.department,
             "description": self.description,
@@ -101,6 +104,7 @@ class JobItem(BaseModel):
             "status": self.status.value,
             "document_count": self.document_count,
             "version": self.version,
+            "job_version": self.job_version,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -114,6 +118,7 @@ class JobItem(BaseModel):
         weights = {k: float(v) for k, v in raw_weights.items()}
         return cls(
             job_id=item["job_id"],
+            org_id=item.get("org_id", "org_default"),
             entity_type=item.get("entity_type", "JOB"),
             title=item.get("title", ""),
             department=item.get("department", ""),
@@ -129,6 +134,8 @@ class JobItem(BaseModel):
             status=JobStatus(item.get("status", "created")),
             document_count=int(item.get("document_count", 0)),
             version=int(item.get("version", 1)),
+            job_version=int(item.get("job_version", 1)),
             created_at=item.get("created_at", ""),
             updated_at=item.get("updated_at", ""),
         )
+

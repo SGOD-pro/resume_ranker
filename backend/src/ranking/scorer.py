@@ -225,34 +225,16 @@ _PRESTIGIOUS_COMPANIES = {
 
 def _prestige_bonus(candidate: Dict[str, Any]) -> Tuple[float, List[str]]:
     """
-    Bonus for working at prestigious/top-tier companies.
-    Returns (bonus 0-4.0, list of matched prestigious companies).
+    DISABLED (v2 Fairness Policy — SCORING-POLICY.md §Prohibited Inputs)
+    ────────────────────────────────────────────────────────────────────
+    Employer prestige MUST NOT influence candidate ranking.
+    All employers are treated equally. This function is retained as
+    legacy-compatible dead code and always returns (0.0, []).
+
+    Previous behavior awarded +2.0 per match from ~100 hardcoded
+    elite companies (FAANG, MBB consulting, etc.), capped at +4.0.
     """
-    experience = candidate.get('experience', [])
-    if not experience:
-        return 0.0, []
-
-    matched = []
-
-    for exp in experience:
-        company = (exp.get('company') or '').lower()
-        if not company:
-            continue
-        for prestige in _PRESTIGIOUS_COMPANIES:
-            # Only match against the structured company name (not raw text)
-            # to avoid false positives from URLs like "linkedin.com/in/..."
-            if prestige in company and len(prestige) >= 3:
-                display_name = prestige.title()
-                if display_name not in matched:
-                    matched.append(display_name)
-                break  # One match per experience entry
-
-    if not matched:
-        return 0.0, []
-
-    # Bonus: 2.0 per prestigious company, max 4.0
-    bonus = min(4.0, len(matched) * 2.0)
-    return round(bonus, 1), matched
+    return 0.0, []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -373,12 +355,10 @@ def _cert_bonus(candidate: Dict[str, Any],
 
         relevant.append(cert.get('name') or cert_name.title())
 
-        # Check if from prestigious issuer
-        is_prestigious = any(iss in cert_full for iss in _PRESTIGIOUS_CERT_ISSUERS)
-        if is_prestigious:
-            bonus += 0.25  # Higher weight for prestigious certs
-        else:
-            bonus += 0.15  # Base weight for relevant certs
+        # v2 Fairness Policy: All relevant certs get equal weight.
+        # Prestigious issuer bonus REMOVED (university/employer prestige
+        # must not influence ranking per SCORING-POLICY.md).
+        bonus += 0.15  # Base weight for any relevant cert
 
     # ── Hackathon detection ───────────────────────────────────────────────
     hackathon_found = any(kw in raw_text for kw in _HACKATHON_KEYWORDS)
@@ -422,20 +402,10 @@ def _detect_anomalies(candidate: Dict[str, Any],
     if jd.max_years < 99 and total_years > jd.max_years * 1.5:
         flags.append(f"OVERQUALIFIED: {total_years}yr exp vs {jd.max_years}yr max")
 
-    # Employment gap: check for gaps > 6 months between jobs
-    dates = []
-    for exp in experience:
-        start = _parse_date(exp.get('start'))
-        end = _parse_date(exp.get('end'))
-        if start and end:
-            dates.append((start, end))
-    if len(dates) >= 2:
-        dates.sort(key=lambda x: x[0])
-        for i in range(len(dates) - 1):
-            gap = (dates[i + 1][0] - dates[i][1]).days
-            if gap > 180:
-                flags.append(f"GAP: {gap // 30}mo gap between jobs")
-                break
+    # Employment gap detection: DISABLED (v2 Fairness Policy)
+    # Career gaps must not be flagged as they penalize caregivers,
+    # medical leave, parental leave, and other legitimate breaks.
+    # See SCORING-POLICY.md §Prohibited Inputs.
 
     # Low extraction quality
     quality = candidate.get('extraction_quality', 1.0)
@@ -902,8 +872,24 @@ class CandidateScorer:
         reasons = []
 
         # ── Must-have skills check (inference-aware) ───────────────────────
-        # Note: We no longer knock candidates out for missing skills here.
-        # It is instead handled as a percentage reduction in final_score.
+        if jd.must_have_skills:
+            skill_sections_text = self._get_skill_sections(candidate)
+            missing = []
+            for sk in jd.must_have_skills:
+                w = inference_result.skill_weights.get(sk, 0.0) if inference_result else 0.0
+                if w >= WEIGHT_INFERRED:
+                    continue
+                sk_lower = sk.lower().strip()
+                found = False
+                if len(sk_lower) >= 3:
+                    for variant in _get_search_variants(sk):
+                        if len(variant) >= 3 and re.search(r'\b' + re.escape(variant) + r'\b', skill_sections_text, re.IGNORECASE):
+                            found = True
+                            break
+                if not found:
+                    missing.append(sk)
+            if missing:
+                reasons.append(f"Missing required must-have skills: {', '.join(missing)}")
 
         # ── Minimum years check ───────────────────────────────────────────
         if jd.min_years > 0 and total_years < jd.min_years:

@@ -5,7 +5,7 @@
  * No raw fetch() calls in components — ever.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // ── Internal fetch wrapper ──────────────────────────────────────────────────
 
@@ -265,4 +265,53 @@ export async function scoreJob(
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** Run B2B ATS Health Check on a resume PDF */
+export async function checkAts(file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_BASE}/api/v2/jobs/ats-check`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let errorMsg = 'Failed to run ATS check';
+    try {
+      const err = await res.json();
+      errorMsg = err.detail || errorMsg;
+    } catch {
+      // ignore json parse error
+    }
+    throw new ApiError(errorMsg, res.status);
+  }
+  return res.json();
+}
+
+/** Update human decision for candidate (P1 workflow) */
+export async function updateCandidateDecision(
+  jobId: string,
+  documentId: string,
+  payload: { decision: string; reason?: string; note?: string; tags?: string[] },
+): Promise<any> {
+  return apiFetch(`/api/v2/jobs/${jobId}/candidates/${documentId}/decision`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Export candidate rankings as CSV */
+export async function exportCandidatesCsv(jobId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v2/jobs/${jobId}/export/csv`, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/csv',
+    },
+  });
+  if (!res.ok) {
+    throw new ApiError(`CSV Export failed: ${res.statusText}`, res.status);
+  }
+  return res.text();
 }

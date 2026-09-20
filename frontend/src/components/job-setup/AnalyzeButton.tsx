@@ -173,23 +173,6 @@ export function AnalyzeButton() {
       try {
         const response = await scoreJob(jobId, { weights: job.weights });
 
-        // ── STEP 1 DEBUG: Raw backend response before any frontend mapping ──
-        // Logs knockout fields exactly as the backend returned them.
-        console.group('[SCORE API] Raw backend response');
-        console.log('Total candidates:', response.total_candidates);
-        response.candidates.forEach((c: Record<string, unknown>, i: number) => {
-          console.group(`[${i + 1}] ${c.name ?? 'Unknown'}`);
-          console.table({
-            knocked_out:       c.knocked_out,
-            final_score:       c.final_score,
-            matched_must_have: JSON.stringify(c.matched_must_have ?? []),
-            missing_must_have: JSON.stringify(c.missing_must_have ?? []),
-            knockout_reasons:  JSON.stringify(c.knockout_reasons ?? []),
-          });
-          console.groupEnd();
-        });
-        console.groupEnd();
-
         // ── STEP 5: Use setCandidates (full replacement, never append) ──────
         const mapped = mapScoredCandidates(response.candidates);
         setCandidates(mapped);
