@@ -31,9 +31,13 @@ function deriveSignal(finalScore: number, knockedOut: boolean): Signal {
 /** Map a single backend ScoredCandidate dict to the frontend Candidate shape */
 export function mapScoredCandidate(raw: any, index: number): Candidate {
   const id = raw.document_id || `candidate-${index}`;
-  const name = raw.name || 'Unknown';
-  const finalScore = typeof raw.final_score === 'number' ? raw.final_score : 0;
-  const knockedOut = Boolean(raw.knocked_out);
+  const rawName = raw.name;
+  const identityStatus = raw.identity_status || (rawName && rawName !== 'Unknown' ? 'VERIFIED' : 'UNRESOLVED');
+  const isUnresolvedName = !rawName || rawName === 'Unknown' || identityStatus === 'UNRESOLVED';
+  const name = isUnresolvedName ? 'Name needs review' : rawName;
+  const finalScore = typeof raw.final_score === 'number' ? raw.final_score : (typeof raw.relevance_score === 'number' ? raw.relevance_score : 0);
+  const relevanceScore = typeof raw.relevance_score === 'number' ? raw.relevance_score : finalScore;
+  const knockedOut = Boolean(raw.knocked_out) || raw.eligibility_status === 'DOES_NOT_MEET_CRITERIA';
 
   // Score breakdown
   const scoreBreakdown: ScoreBreakdown = {
@@ -150,6 +154,18 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
     phone: raw.phone || '',
     pdfUrl,
     overallScore: finalScore,
+    relevanceScore,
+    eligibilityStatus: raw.eligibility_status || (knockedOut ? 'DOES_NOT_MEET_CRITERIA' : (isUnresolvedName ? 'REVIEW_REQUIRED' : 'ELIGIBLE')),
+    humanDecision: raw.human_decision || 'NEW',
+    identityStatus,
+    identityConfidence: typeof raw.identity_confidence === 'number' ? raw.identity_confidence : (isUnresolvedName ? 0.0 : 1.0),
+    identityProvenance: raw.identity_provenance || raw.identity || {},
+    factorLedger: raw.factor_ledger || [],
+    scoreVersion: raw.score_version || '2.2.0',
+    policyVersion: raw.policy_version || '2026.1',
+    jobVersion: raw.job_version || 1,
+    atsScore: typeof raw.ats_score === 'number' ? raw.ats_score : undefined,
+    atsWarnings: raw.ats_warnings || [],
     signal: deriveSignal(finalScore, knockedOut),
     scoreBreakdown,
     skillMatch,

@@ -5,7 +5,7 @@ Schemas for job descriptions and scored candidate results.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 
 
 @dataclass
@@ -27,23 +27,42 @@ class JobDescription:
         "keywords": 0.20,
         "education": 0.15,
     })
+    job_version: int = 1
 
 
 @dataclass
 class ScoredCandidate:
     """Result for a single candidate after scoring."""
-    name: str
+    name: Optional[str]
     document_id: str
-    final_score: float              # 0.0–100.0
-    percentile: float               # 0.0–100.0 (computed in Phase 3)
-    rank: int                       # 1-based rank
-    knocked_out: bool
-    knockout_reasons: List[str]
+    final_score: float              # 0.0–100.0 (synonym for relevance_score for backwards compatibility)
+    relevance_score: float = 0.0    # 0.0–100.0 policy-compliant candidate relevance
+    percentile: float = 0.0         # 0.0–100.0 (computed in Phase 3)
+    rank: int = 0                   # 1-based rank
+    knocked_out: bool = False
+    knockout_reasons: List[str] = field(default_factory=list)
+
+    # Decision separation (Rule 3)
+    eligibility_status: str = "ELIGIBLE"  # "ELIGIBLE" | "REVIEW_REQUIRED" | "DOES_NOT_MEET_CRITERIA"
+    human_decision: str = "NEW"           # "NEW" | "REVIEWING" | "SHORTLISTED" | "REJECTED" | "INTERVIEW" | "ARCHIVED"
+
+    # Identity resolution metadata
+    identity_status: str = "VERIFIED"     # "VERIFIED" | "PLAUSIBLE" | "UNRESOLVED"
+    identity_confidence: float = 1.0
+    identity_provenance: Dict[str, Any] = field(default_factory=dict)
+
+    # Version lineage & audit ledger (Rule 6)
+    score_version: str = "2.2.0"
+    policy_version: str = "2026.1"
+    job_version: int = 1
+    normalized_weights: Dict[str, float] = field(default_factory=dict)
+    factor_ledger: List[Dict[str, Any]] = field(default_factory=list)
 
     email: str = ""
     phone: str = ""
     location: str = ""
     pdf_url: str = ""
+
 
     # Phase 2 sub-scores (each 0.0–100.0 before weight)
     skill_score: float = 0.0

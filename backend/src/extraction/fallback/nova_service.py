@@ -232,15 +232,56 @@ class NovaService:
         """
         merged: Dict[str, Any] = {}
 
-        # Scalar fields
-        for key in ("name", "email", "phone"):
+        # ── Name resolution & validation (Rule 7) ─────────────────────────────
+        det_name = existing.get("name")
+        if det_name:
+            # R-08: Deterministic verified identity is NEVER overwritten
+            merged["name"] = det_name
+        elif extracted.get("name"):
+            # R-09: Validate LLM returned candidate before accepting
+            from src.extractors.contact.identity_resolver import (
+                CandidateIdentityResolver,
+                IdentityStatus,
+                IdentitySource,
+            )
+            resolver = CandidateIdentityResolver()
+            raw_llm_name = str(extracted["name"]).strip()
+            cleaned, clean_err = resolver._clean_and_validate(raw_llm_name)
+            is_valid, neg_err = (False, clean_err) if not cleaned else resolver._evaluate_negative_evidence(cleaned)
+
+            if is_valid and cleaned:
+                norm_name = resolver._normalize_name(cleaned)
+                merged["name"] = norm_name
+                merged["identity"] = {
+                    "display_name": norm_name,
+                    "normalized_name": norm_name,
+                    "confidence": 0.65,
+                    "status": IdentityStatus.PLAUSIBLE.value,
+                    "source": IdentitySource.LLM_INFILL.value,
+                    "evidence_text": raw_llm_name,
+                    "warnings": ["Resolved via Nova LLM fallback"],
+                }
+            else:
+                logger.warning("Nova LLM proposed invalid name %r (%s): rejected", raw_llm_name, neg_err or clean_err)
+                merged["name"] = None
+                existing_identity = existing.get("identity") or {}
+                existing_identity["warnings"] = existing_identity.get("warnings", []) + [
+                    f"Nova LLM proposed candidate {raw_llm_name!r} failed identity validation: {neg_err or clean_err}"
+                ]
+                merged["identity"] = existing_identity
+        else:
+            merged["name"] = None
+
+        # Scalar contact fields
+        for key in ("email", "phone"):
             det_val = existing.get(key)
-            if det_val:                                  # R-08: deterministic wins
+            if det_val:
                 merged[key] = det_val
-            elif extracted.get(key):                     # R-09: LLM fills the gap
+            elif extracted.get(key):
                 merged[key] = extracted[key]
             else:
-                merged[key] = det_val                   # stays None
+                merged[key] = det_val
+
 
         # Array fields
         for key in ("skills", "experience", "education"):

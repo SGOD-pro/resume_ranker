@@ -267,8 +267,10 @@ export async function scoreJob(
   });
 }
 
+import type { AtsCheckResponse } from '@/store/types';
+
 /** Run B2B ATS Health Check on a resume PDF */
-export async function checkAts(file: File): Promise<any> {
+export async function checkAts(file: File): Promise<AtsCheckResponse> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -295,7 +297,7 @@ export async function updateCandidateDecision(
   jobId: string,
   documentId: string,
   payload: { decision: string; reason?: string; note?: string; tags?: string[] },
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   return apiFetch(`/api/v2/jobs/${jobId}/candidates/${documentId}/decision`, {
     method: 'PATCH',
     body: JSON.stringify(payload),

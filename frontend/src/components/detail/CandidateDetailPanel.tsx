@@ -3,6 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { CandidateHeader } from './CandidateHeader';
 import { MatchScoreSection } from './MatchScoreSection';
+import { AtsHealthSection } from './AtsHealthSection';
 import { SkillBreakdown } from './SkillBreakdown';
 import { KnockoutChecks } from './KnockoutChecks';
 import { ExperienceTimeline } from './ExperienceTimeline';
@@ -15,9 +16,6 @@ import { useJobStore } from '@/store/job-store';
 
 export function CandidateDetailPanel() {
   // ── Use stable primitive selectors — never call computed functions as selectors.
-  // Calling s.getSelectedCandidate() as a selector returns a new object every
-  // render (due to { ...c, overallScore }) which breaks Zustand's getSnapshot
-  // cache and causes an infinite re-render loop.
   const selectedId  = useCandidateStore((s) => s.selectedId);
   const candidates  = useCandidateStore((s) => s.candidates);
   const jobWeights  = useJobStore((s) => s.job.weights);
@@ -35,7 +33,8 @@ export function CandidateDetailPanel() {
       (sb.experience * (jobWeights.experience / totalWeight)) +
       (sb.keywords   * (jobWeights.keywords   / totalWeight)) +
       (sb.education  * (jobWeights.education  / totalWeight));
-    const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
+    // v2.2: Do not zero score on knockout; retain calculated relevance score for explainability
+    const dynamicScore = Math.round(baseScore * 10) / 10;
     return { ...c, overallScore: dynamicScore };
   }, [selectedId, candidates, jobWeights]);
 
@@ -62,6 +61,10 @@ export function CandidateDetailPanel() {
         <Separator className="bg-border h-[3px] my-sp-4" />
 
         <MatchScoreSection candidate={candidate} />
+
+        <Separator className="bg-border h-[3px] my-sp-4" />
+
+        <AtsHealthSection candidate={candidate} />
 
         <Separator className="bg-border h-[3px] my-sp-4" />
 

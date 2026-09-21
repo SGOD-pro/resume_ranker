@@ -44,13 +44,16 @@ class MarkdownExtractionService:
         
         fields = {
             "name": contact.get("name"),
+            "identity": contact.get("identity"),
             "email": contact.get("email"),
             "phone": contact.get("phone"),
+            "location": contact.get("location"),
             "skills": skills,
             "experience": experience,
             "education": education,
             "projects": projects,
         }
+
         
         flags = []
         if not fields["email"] or not fields["phone"]:

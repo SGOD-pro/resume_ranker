@@ -360,27 +360,10 @@ def _cert_bonus(candidate: Dict[str, Any],
         # must not influence ranking per SCORING-POLICY.md).
         bonus += 0.15  # Base weight for any relevant cert
 
-    # ── Hackathon detection ───────────────────────────────────────────────
-    hackathon_found = any(kw in raw_text for kw in _HACKATHON_KEYWORDS)
-    hackathon_win = hackathon_found and any(kw in raw_text for kw in _WIN_KEYWORDS)
-
-    # Also check cert names for hackathon mentions
-    for cert in certs:
-        cert_name = (cert.get('name') or '').lower()
-        if any(kw in cert_name for kw in _HACKATHON_KEYWORDS):
-            hackathon_found = True
-            if any(kw in cert_name for kw in _WIN_KEYWORDS):
-                hackathon_win = True
-
-    if hackathon_win:
-        bonus += 1.0
-        relevant.append("🏆 Hackathon Winner")
-    elif hackathon_found:
-        bonus += 0.5
-        relevant.append("🎯 Hackathon Participant")
-
+    # Hackathon bonus REMOVED (not job-relevant unless explicitly required by JD)
     bonus = min(5.0, bonus)  # Cap at 5.0
     return round(bonus, 1), relevant
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -496,19 +479,25 @@ class CandidateScorer:
             results.append(result)
 
         # ── Phase 3: Rank & Explain ───────────────────────────────────────
-        # Sort by final_score descending (knocked-out go to bottom)
-        results.sort(key=lambda r: (not r.knocked_out, r.final_score), reverse=True)
+        # Sort by eligibility criteria first (eligible/review before knockout), then final_score descending
+        results.sort(
+            key=lambda r: (
+                r.eligibility_status != "DOES_NOT_MEET_CRITERIA",
+                r.final_score
+            ),
+            reverse=True
+        )
 
         # Assign ranks
         for i, r in enumerate(results):
             r.rank = i + 1
 
-        # Compute percentiles (among non-knocked-out)
-        active = [r for r in results if not r.knocked_out]
+        # Compute percentiles (among active non-knocked-out candidates)
+        active = [r for r in results if r.eligibility_status != "DOES_NOT_MEET_CRITERIA"]
         if active:
             max_score = active[0].final_score if active else 1.0
             for r in results:
-                if r.knocked_out:
+                if r.eligibility_status == "DOES_NOT_MEET_CRITERIA":
                     r.percentile = 0.0
                 elif max_score > 0:
                     r.percentile = round((r.final_score / max_score) * 100.0, 1)
@@ -557,8 +546,10 @@ class CandidateScorer:
         # V2 pipeline stores fields flat (name, email, phone at top level).
         # V1 legacy format nested them inside personal_info. Support both.
         pi = candidate.get('personal_info', {}) or {}
-        name = candidate.get('name') or pi.get('name') or 'Unknown'
-        doc_id = candidate.get('_document_id', name)
+        name = candidate.get('name') or pi.get('name')
+        if name is not None and not str(name).strip():
+            name = None
+        doc_id = candidate.get('_document_id') or (name if name else 'Unknown')
         c_skills = candidate.get('skills', [])
         experience = candidate.get('experience', [])
         total_years = _compute_total_experience_years(experience)
@@ -789,21 +780,120 @@ class CandidateScorer:
         elif n_missing > 3:
             must_have_penalty = 1.0  # 100% reduction
 
-        # Nice-to-have matched bonus (+10 points for each match)
-        nice_to_have_bonus = len(result.matched_nice_to_have) * 10.0
+        # Nice-to-have matched bonus: Bounded marginal bonus (+1.0 per match, capped at +5.0)
+        # Replacing v1 unbounded +10.0 bonus which distorted rankings
+        nice_to_have_bonus = min(5.0, len(result.matched_nice_to_have) * 1.0)
 
-        # Add bonuses on top
+        # Add bonuses on top (prestige_bonus is 0.0 per v2 fairness policy)
         total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus + nice_to_have_bonus
 
         # Apply multiplier
         raw_final = base_score + total_bonus
         penalized_final = raw_final * (1.0 - must_have_penalty)
 
-        # If knocked out by experience, zero the final score
+        # Relevance score (0.0 - 100.0)
+        relevance = round(min(100.0, max(0.0, penalized_final)), 1)
+        result.relevance_score = relevance
+        # v2.2: Do NOT zero final_score on knockout. Retain the calculated relevance
+        # score so reviewers can inspect sub-scores and criteria evidence.
+        result.final_score = relevance
+
+        # Identity resolution metadata
+        identity_info = candidate.get('identity') or candidate.get('identity_provenance') or {}
+        identity_status = candidate.get('identity_status') or identity_info.get('status')
+        if not identity_status:
+            identity_status = "VERIFIED" if (name and name != "Unknown") else "UNRESOLVED"
+        identity_conf = float(candidate.get('identity_confidence') or identity_info.get('confidence') or (1.0 if (name and name != "Unknown") else 0.0))
+
+        # Decision separation & Eligibility Status (v2.2)
         if result.knocked_out:
-            result.final_score = 0.0
+            result.eligibility_status = "DOES_NOT_MEET_CRITERIA"
+        elif (
+            result.extraction_quality < 0.5
+            or identity_status == "UNRESOLVED"
+            or result.name is None
+        ):
+            result.eligibility_status = "REVIEW_REQUIRED"
         else:
-            result.final_score = round(min(100.0, penalized_final), 1)
+            result.eligibility_status = "ELIGIBLE"
+
+        result.human_decision = candidate.get('human_decision') or "NEW"
+        result.identity_status = identity_status
+        result.identity_confidence = identity_conf
+        result.identity_provenance = identity_info
+
+        # Lineage and policy metadata
+        result.score_version = "2.2.0"
+        result.policy_version = "2026.1"
+        result.job_version = getattr(jd, "job_version", 1)
+        result.normalized_weights = {
+            "skills": round(skill_w, 4),
+            "experience": round(exp_w, 4),
+            "keywords": round(kw_w, 4),
+            "education": round(edu_w, 4),
+        }
+
+        # Factor Ledger (auditable contribution breakdown)
+        conf = result.extraction_quality if result.extraction_quality > 0 else 1.0
+        result.factor_ledger = [
+            {
+                "factor": "skills",
+                "contribution": round(result.skill_weighted, 2),
+                "source": "skills, experience, projects",
+                "confidence": conf,
+                "rule": "bm25_with_domain_penalty",
+            },
+            {
+                "factor": "experience",
+                "contribution": round(result.experience_weighted, 2),
+                "source": "experience",
+                "confidence": conf,
+                "rule": "title_years_recency_blend",
+            },
+            {
+                "factor": "keywords",
+                "contribution": round(result.keyword_weighted, 2),
+                "source": "full_text",
+                "confidence": 1.0,
+                "rule": "keyword_presence_ratio",
+            },
+            {
+                "factor": "education",
+                "contribution": round(result.education_weighted, 2),
+                "source": "education",
+                "confidence": conf,
+                "rule": "degree_and_field_cosine",
+            },
+            {
+                "factor": "project_bonus",
+                "contribution": round(result.project_bonus, 2),
+                "source": "projects",
+                "confidence": 1.0,
+                "rule": "jd_skills_in_projects_max_5",
+            },
+            {
+                "factor": "cert_bonus",
+                "contribution": round(result.cert_bonus, 2),
+                "source": "certifications",
+                "confidence": 1.0,
+                "rule": "relevant_certifications_equal_weight_max_5",
+            },
+            {
+                "factor": "nice_to_have_bonus",
+                "contribution": round(nice_to_have_bonus, 2),
+                "source": "skills",
+                "confidence": 1.0,
+                "rule": "bounded_marginal_bonus_max_5",
+            },
+        ]
+        if must_have_penalty > 0:
+            result.factor_ledger.append({
+                "factor": "must_have_penalty",
+                "contribution": -round(raw_final * must_have_penalty, 2),
+                "source": "must_have_skills",
+                "confidence": 1.0,
+                "rule": f"missing_{n_missing}_skills_reduction_{int(must_have_penalty * 100)}pct",
+            })
 
         # Anomaly detection
         result.anomalies = _detect_anomalies(candidate, total_years, jd)
@@ -961,15 +1051,16 @@ def print_rankings(results: List[ScoredCandidate], jd: JobDescription):
     print(f"{'='*72}")
 
     for r in results:
+        disp_name = r.name or "Unresolved Name"
         if r.knocked_out:
-            print(f"\n  ❌ #{r.rank:2d}  {r.name:25s}  KNOCKED OUT")
+            print(f"\n  ❌ #{r.rank:2d}  {disp_name:25s}  KNOCKED OUT")
             for reason in r.knockout_reasons:
                 print(f"       → {reason}")
         else:
             bar_len = int(r.final_score / 5)
             bar = '█' * bar_len + '░' * (20 - bar_len)
             medal = '🏆' if r.rank == 1 else ('🥈' if r.rank == 2 else ('🥉' if r.rank == 3 else '  '))
-            print(f"\n  {medal} #{r.rank:2d}  {r.name:25s}  {r.final_score:5.1f}%  {bar}")
+            print(f"\n  {medal} #{r.rank:2d}  {disp_name:25s}  {r.final_score:5.1f}%  {bar}")
             print(f"       Skills: {r.skill_score:.0f}×{jd.weights.get('skills',0.4):.0%}="
                   f"{r.skill_weighted:.1f}  |  Exp: {r.experience_score:.0f}×{jd.weights.get('experience',0.25):.0%}="
                   f"{r.experience_weighted:.1f}  |  KW: {r.keyword_score:.0f}×{jd.weights.get('keywords',0.2):.0%}="
@@ -1012,6 +1103,7 @@ def print_rankings(results: List[ScoredCandidate], jd: JobDescription):
     ko = [r for r in results if r.knocked_out]
     print(f"  ACTIVE: {len(active)} | KNOCKED OUT: {len(ko)}")
     if active:
-        print(f"  TOP: {active[0].name} ({active[0].final_score:.1f}%)")
+        top_name = active[0].name or "Unresolved Name"
+        print(f"  TOP: {top_name} ({active[0].final_score:.1f}%)")
         print(f"  AVG: {sum(r.final_score for r in active)/len(active):.1f}%")
     print(f"{'='*72}\n")

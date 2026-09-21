@@ -85,6 +85,20 @@ class ExtractionPipeline:
             ))
 
         # Add metadata for scoring
+        structure_ms = sum(
+            t.duration_ms for t in timings
+            if t.stage in ("pymupdf_quality_gate", "odl_batch", "odl_single", "structural_parse")
+        )
+        regex_ms = (t1 - t0) * 1000
+        nova_ms = ((t3 - t2) * 1000) if unresolved_chunks else 0.0
+
+        timing_map = {
+            "structure_ms": round(structure_ms, 2),
+            "deterministic_ms": round(regex_ms, 2),
+            "nova_ms": round(nova_ms, 2),
+            "total_ms": round(structure_ms + regex_ms + nova_ms, 2),
+        }
+        fields["_timings"] = timing_map
         fields["_document_id"] = doc_id
         fields["extraction_quality"] = parse_result.quality_score
         fields["elements"] = parse_result.elements
@@ -152,6 +166,20 @@ class ExtractionPipeline:
                     triggered_fallback=True,
                 ))
 
+            structure_ms = sum(
+                t.duration_ms for t in timings
+                if t.stage in ("pymupdf_quality_gate", "odl_batch", "odl_single", "structural_parse")
+            )
+            regex_ms = (t1 - t0) * 1000
+            nova_ms = ((t3 - t2) * 1000) if unresolved_chunks else 0.0
+
+            timing_map = {
+                "structure_ms": round(structure_ms, 2),
+                "deterministic_ms": round(regex_ms, 2),
+                "nova_ms": round(nova_ms, 2),
+                "total_ms": round(structure_ms + regex_ms + nova_ms, 2),
+            }
+            fields["_timings"] = timing_map
             fields["_document_id"] = doc_id
             fields["extraction_quality"] = parse_result.quality_score
             fields["elements"] = parse_result.elements

@@ -1,0 +1,225 @@
+[
+  {
+    "id": "CASE_01_STANDARD_HEADER",
+    "description": "Standard two-word name in header band with contact anchors",
+    "inputs": {
+      "tagged_name": null,
+      "visual_header_lines": [
+        {"text": "Sarah Jenkins", "font_size": 18.0, "is_bold": true, "page": 1}
+      ],
+      "adjacent_lines": ["sarah.jenkins@example.com", "+1-555-0199"],
+      "text_lines": ["Sarah Jenkins", "sarah.jenkins@example.com", "San Francisco, CA"],
+      "email": "sarah.jenkins@example.com",
+      "phone": "+1-555-0199"
+    },
+    "expected": {
+      "display_name": "Sarah Jenkins",
+      "status": "VERIFIED",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_02_ALL_CAPS_HERO",
+    "description": "All-caps name in hero font typography",
+    "inputs": {
+      "tagged_name": "MARCUS VANCE",
+      "visual_header_lines": [
+        {"text": "MARCUS VANCE", "font_size": 20.0, "is_bold": true, "page": 1}
+      ],
+      "adjacent_lines": ["marcus@vance.io"],
+      "text_lines": ["MARCUS VANCE", "Staff Software Engineer"],
+      "email": "marcus@vance.io",
+      "phone": null
+    },
+    "expected": {
+      "display_name": "Marcus Vance",
+      "status": "VERIFIED",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_03_INVERTED_LAST_FIRST",
+    "description": "Inverted name format Lastname, Firstname",
+    "inputs": {
+      "tagged_name": "Patel, Priya",
+      "visual_header_lines": [],
+      "adjacent_lines": ["priya.patel@tech.org"],
+      "text_lines": ["Patel, Priya", "priya.patel@tech.org"],
+      "email": "priya.patel@tech.org",
+      "phone": null
+    },
+    "expected": {
+      "display_name": "Priya Patel",
+      "status": "VERIFIED",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_04_TWO_COLUMN_SIDEBAR",
+    "description": "Multi-column resume with contact details in sidebar and name in main header",
+    "inputs": {
+      "tagged_name": null,
+      "visual_header_lines": [
+        {"text": "David O'Connor", "font_size": 16.0, "is_bold": true, "page": 1}
+      ],
+      "odl_headings": [
+        {"text": "David O'Connor", "font_size": 16.0, "page": 1}
+      ],
+      "adjacent_lines": ["doconnor@example.com"],
+      "text_lines": ["David O'Connor", "Lead DevOps Specialist"],
+      "email": "doconnor@example.com",
+      "phone": "+44 20 7946 0912"
+    },
+    "expected": {
+      "display_name": "David O'Connor",
+      "status": "VERIFIED",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_05_CONTACT_ADJACENT_NEIGHBOR",
+    "description": "Header email with candidate name on immediately neighboring line",
+    "inputs": {
+      "tagged_name": null,
+      "visual_header_lines": [],
+      "adjacent_lines": ["Elena Rostova", "Senior Data Scientist"],
+      "text_lines": ["Elena Rostova", "elena@datascience.net", "Berlin, Germany"],
+      "email": "elena@datascience.net",
+      "phone": null
+    },
+    "expected": {
+      "display_name": "Elena Rostova",
+      "status": "PLAUSIBLE",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_06_SUBSPACE_DEFECT_REJECTION",
+    "description": "Real-world defect phrase 'Insights possible sub-space.' MUST be rejected",
+    "inputs": {
+      "tagged_name": null,
+      "visual_header_lines": [],
+      "adjacent_lines": [],
+      "text_lines": [
+        "Insights possible sub-space.",
+        "Experienced in Python and high performance linear algebra."
+      ],
+      "email": null,
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  },
+  {
+    "id": "CASE_07_JOB_TITLE_NEGATIVE",
+    "description": "Prominent job title line must NEVER become candidate identity",
+    "inputs": {
+      "tagged_name": "Senior Full Stack Engineer",
+      "visual_header_lines": [
+        {"text": "Senior Full Stack Engineer", "font_size": 16.0, "is_bold": true, "page": 1}
+      ],
+      "adjacent_lines": ["engineer@work.com"],
+      "text_lines": ["Senior Full Stack Engineer", "engineer@work.com"],
+      "email": "engineer@work.com",
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  },
+  {
+    "id": "CASE_08_SKILL_PHRASE_NEGATIVE",
+    "description": "Technology or skill listing line must NEVER become candidate identity",
+    "inputs": {
+      "tagged_name": "Python React Docker Kubernetes",
+      "visual_header_lines": [],
+      "adjacent_lines": [],
+      "text_lines": ["Python React Docker Kubernetes", "AWS Cloud Certified"],
+      "email": null,
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  },
+  {
+    "id": "CASE_09_SUMMARY_PHRASE_NEGATIVE",
+    "description": "Action verbs or summary sentence fragment must NEVER become candidate identity",
+    "inputs": {
+      "tagged_name": "Motivated Towards Learning",
+      "visual_header_lines": [],
+      "adjacent_lines": [],
+      "text_lines": [
+        "Motivated towards learning and enhancing application performance.",
+        "Computer Science Graduate 2024"
+      ],
+      "email": null,
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  },
+  {
+    "id": "CASE_10_INTERNATIONAL_LATIN_NAME",
+    "description": "Valid international Latin-script name with noble particle",
+    "inputs": {
+      "tagged_name": "Vincent van Gogh",
+      "visual_header_lines": [
+        {"text": "Vincent van Gogh", "font_size": 18.0, "is_bold": true, "page": 1}
+      ],
+      "adjacent_lines": ["vincent@vangogh.nl"],
+      "text_lines": ["Vincent van Gogh", "vincent@vangogh.nl", "Amsterdam"],
+      "email": "vincent@vangogh.nl",
+      "phone": null
+    },
+    "expected": {
+      "display_name": "Vincent van Gogh",
+      "status": "VERIFIED",
+      "is_valid_name": true
+    }
+  },
+  {
+    "id": "CASE_11_OCR_NOISE_GARBLED",
+    "description": "Garbled OCR / scanned encoding noise must return UNRESOLVED",
+    "inputs": {
+      "tagged_name": "Qualification Â (cid:12) •",
+      "visual_header_lines": [],
+      "adjacent_lines": [],
+      "text_lines": ["Qualification Â (cid:12) •", "Unknown Text"],
+      "email": null,
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  },
+  {
+    "id": "CASE_12_EMPTY_AND_NO_EVIDENCE",
+    "description": "Scanned or no-text document returns UNRESOLVED with null display name",
+    "inputs": {
+      "tagged_name": null,
+      "visual_header_lines": [],
+      "adjacent_lines": [],
+      "text_lines": [],
+      "email": null,
+      "phone": null
+    },
+    "expected": {
+      "display_name": null,
+      "status": "UNRESOLVED",
+      "is_valid_name": false
+    }
+  }
+]

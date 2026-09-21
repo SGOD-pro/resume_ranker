@@ -45,6 +45,44 @@ export interface ScoreBreakdown {
   education: number;
 }
 
+export interface IdentityProvenance {
+  source?: string;
+  page?: number;
+  bounding_box?: number[];
+  evidence_text?: string;
+  candidate_rejections?: Array<string | { text?: string; reason?: string }>;
+  [key: string]: unknown;
+}
+
+export interface BoundingBox {
+  page: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  severity: 'warning' | 'severe';
+  reason: string;
+}
+
+export interface AtsCheckResponse {
+  score: number;
+  breakdown: Record<string, number>;
+  layout_flags: string[];
+  font_health: string;
+  contact_info_visibility: {
+    email: boolean;
+    phone: boolean;
+  };
+  section_detection: {
+    found: string[];
+    missed: string[];
+  };
+  keyword_preview: string[];
+  date_consistency: string;
+  bounding_boxes: BoundingBox[];
+  limitations_disclaimer?: string;
+}
+
 export interface Candidate {
   id: string;
   rank: number;
@@ -55,6 +93,18 @@ export interface Candidate {
   phone: string;
   pdfUrl: string;
   overallScore: number;
+  relevanceScore?: number;
+  eligibilityStatus?: 'ELIGIBLE' | 'REVIEW_REQUIRED' | 'DOES_NOT_MEET_CRITERIA' | string;
+  humanDecision?: string;
+  identityStatus?: 'VERIFIED' | 'PLAUSIBLE' | 'UNRESOLVED' | string;
+  identityConfidence?: number;
+  identityProvenance?: IdentityProvenance;
+  factorLedger?: Record<string, unknown>[];
+  scoreVersion?: string;
+  policyVersion?: string;
+  jobVersion?: number;
+  atsScore?: number;
+  atsWarnings?: string[];
   signal: Signal;
   scoreBreakdown: ScoreBreakdown;
   skillMatch: SkillMatch;

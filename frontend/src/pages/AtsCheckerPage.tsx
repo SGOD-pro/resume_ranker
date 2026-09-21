@@ -1,27 +1,9 @@
 import { useState } from 'react';
-import { PdfViewer, type BoundingBox } from '@/components/ui/PdfViewer';
+import { PdfViewer } from '@/components/ui/PdfViewer';
 import { Loader2, UploadCloud, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { checkAts } from '@/lib/api';
-
-interface AtsCheckResponse {
-  score: number;
-  breakdown: Record<string, number>;
-  layout_flags: string[];
-  font_health: string;
-  contact_info_visibility: {
-    email: boolean;
-    phone: boolean;
-  };
-  section_detection: {
-    found: string[];
-    missed: string[];
-  };
-  keyword_preview: string[];
-  date_consistency: string;
-  bounding_boxes: BoundingBox[];
-  limitations_disclaimer?: string;
-}
+import type { AtsCheckResponse } from '@/store/types';
 
 export function AtsCheckerPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -44,8 +26,9 @@ export function AtsCheckerPage() {
       const data = await checkAts(selected);
       setResult(data);
       toast.success('ATS parseability check completed.');
-    } catch (error: any) {
-      toast.error(error.message || 'An error occurred during ATS checking.');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'An error occurred during ATS checking.';
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }

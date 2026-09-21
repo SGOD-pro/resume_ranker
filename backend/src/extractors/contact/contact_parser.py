@@ -316,13 +316,24 @@ def _is_name_line(line: str) -> bool:
     return True
 
 
+from src.extractors.contact.identity_resolver import (
+    CandidateIdentityResolver,
+    CandidateIdentityResult,
+    IdentityStatus,
+)
+
+
 class ContactParser:
     """
-    Extract contact fields from resume text.
-    Accepts full_width_text (tagged header), raw_text, sidebar_text.
+    Extract contact fields from resume text using layout tags, geometry,
+    and deterministic CandidateIdentityResolver.
     """
 
+    def __init__(self):
+        self.identity_resolver = CandidateIdentityResolver()
+
     # ── ODL coordinate constants ──────────────────────────────────────────────
+
     # ODL uses PDF coordinate space: origin (0,0) at BOTTOM-LEFT.
     # bounding_box = [x0, y0, x1, y1] where:
     #   y0 (index 1) = bottom edge of element
@@ -440,28 +451,67 @@ class ContactParser:
             email_phone_text = email_phone_text + "\n" + link_text
             combined = combined + "\n" + link_text
 
-        name = self._extract_name(full_width_text, raw_text, sidebar_text, main_text, elements, pymupdf_text)
-        if name == "Mohd Salman Nafees":
-            print("DEBUG: _extract_name returned Mohd Salman Nafees!")
-        
+        email = self._extract_email(email_phone_text, hyperlinks)
+        phone = self._extract_phone(email_phone_text)
+        linkedin = self._extract_linkedin(combined)
+        github = self._extract_github(combined)
+        location = self._extract_location(combined, sidebar_text, main_text)
+
+        identity_result = self._resolve_identity(
+            full_width_text=full_width_text,
+            raw_text=raw_text,
+            sidebar_text=sidebar_text,
+            main_text=main_text,
+            elements=elements,
+            pymupdf_text=pymupdf_text,
+            email=email,
+            phone=phone,
+        )
+
         return {
-            "name":     name,
-            "email":    self._extract_email(email_phone_text, hyperlinks),
-            "phone":    self._extract_phone(email_phone_text),
-            "linkedin": self._extract_linkedin(combined),
-            "github":   self._extract_github(combined),
-            "location": self._extract_location(combined, sidebar_text, main_text),
+            "name":     identity_result.display_name,
+            "identity": identity_result.to_dict(),
+            "email":    email,
+            "phone":    phone,
+            "linkedin": linkedin,
+            "github":   github,
+            "location": location,
         }
 
-    def _extract_name(self, full_width_text: str, raw_text: str,
-                       sidebar_text: str = "", main_text: str = "", elements: list = None, pymupdf_text: str = "") -> Optional[str]:
-        # Strategy 0: ODL JSON Heading
+    def _resolve_identity(
+        self,
+        full_width_text: str = "",
+        raw_text: str = "",
+        sidebar_text: str = "",
+        main_text: str = "",
+        elements: list = None,
+        pymupdf_text: str = "",
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+    ) -> CandidateIdentityResult:
+        """Arbitrate candidate identity via CandidateIdentityResolver."""
+        # 1. Explicit [NAME] tag from layout extractor
+        tagged_name = None
+        for text_src in [full_width_text, sidebar_text, raw_text]:
+            if not text_src:
+                continue
+            m = re.search(r'\[NAME\](.*?)\[/NAME\]', text_src, re.DOTALL)
+            if m:
+                cand = m.group(1).strip()
+                if cand:
+                    tagged_name = cand
+                    break
+
+        # 2. ODL Headings
+        odl_headings = []
         if elements:
             kids = elements.get('kids', []) if isinstance(elements, dict) else elements
+
             def _flatten(node_list):
                 flat = []
                 for node in node_list:
-                    if not isinstance(node, dict): continue
+                    if not isinstance(node, dict):
+                        continue
                     flat.append(node)
                     for k, v in node.items():
                         if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
@@ -471,97 +521,66 @@ class ContactParser:
             for el in _flatten(kids):
                 if not isinstance(el, dict):
                     continue
-                # Top elements with large fonts or explicit heading tags
-                if el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'):
+                if el.get('type') == 'heading' or str(el.get('pdfua_tag', '')).startswith('H'):
                     c = str(el.get('content', '')).strip()
                     if c:
-                        c = re.split(r'[,|]| - ', c)[0].strip()
-                        if _is_name_line(c):
-                            return c
-        # Strategy 1: [NAME] tag from layout_extractor (most reliable)
-        for text_src in [full_width_text, sidebar_text, raw_text]:
-            m = re.search(r'\[NAME\](.*?)\[/NAME\]', text_src, re.DOTALL)
-            if m:
-                candidate = m.group(1).strip()
-                if candidate and len(candidate.split()) >= 1:
-                    # Strip title suffix: "MICHELLE LOPEZ, Fashion Designer" → "MICHELLE LOPEZ"
-                    if ',' in candidate:
-                        candidate = candidate.split(',')[0].strip()
-                    return candidate
+                        odl_headings.append({
+                            "text": c,
+                            "bounding_box": el.get('bounding box') or el.get('bounding_box'),
+                            "page": el.get('page number') or el.get('page_number', 1),
+                        })
 
-        # Strategy 2: heuristic — check main_text FIRST (name is almost always
-        # the first line of main content), then sidebar, then raw_text, then pymupdf_text.
-        # Sidebar is checked last because two-column resumes often have skill
-        # lines that look like names (e.g. "Vue Redux TypeScript").
-        for text_src in [main_text, raw_text, sidebar_text, pymupdf_text]:
-            if not text_src:
-                continue
-            lines = [l.strip() for l in text_src.split('\n') if l.strip()]
-            for i, line in enumerate(lines[:30]):
-                clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-                clean = re.sub(r'^#+\s*', '', clean).strip()
-                
-                # Check for "Lastname, Firstname" format (2 pure words)
-                lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
-                if lf_match:
-                    return f"{lf_match.group(2)} {lf_match.group(1)}"
-                    
-                # Truncate titles/noise if comma, pipe, or dash present
-                candidate = re.split(r'[,|]| - ', clean)[0].strip()
-                
-                # First try the full line
-                if _is_name_line(candidate):
-                    return candidate
-                
-                # Check consecutive line combination
-                if i < len(lines) - 1:
-                    next_line = lines[i + 1]
-                    next_clean = re.sub(r'\[/?[A-Z_]+\]', '', next_line).strip()
-                    next_candidate = re.split(r'[,|]| - ', next_clean)[0].strip()
-                    combined_candidate = candidate + " " + next_candidate
-                    if _is_name_line(combined_candidate):
-                        return combined_candidate
-                
-                # Then try splitting name from contact info on same line
-                split = _split_name_from_contact(candidate)
-                if split != candidate and _is_name_line(split):
-                    return split
+        # 3. Adjacent lines to contact anchor
+        adjacent_lines = []
+        all_lines = [l.strip() for l in (full_width_text + "\n" + main_text + "\n" + raw_text).split('\n') if l.strip()]
+        contact_anchor = email or phone
+        if contact_anchor:
+            for idx, line in enumerate(all_lines):
+                if contact_anchor in line:
+                    start_idx = max(0, idx - 2)
+                    end_idx = min(len(all_lines), idx + 3)
+                    for j in range(start_idx, end_idx):
+                        if j != idx and all_lines[j]:
+                            adjacent_lines.append(all_lines[j])
+                    break
 
-        # Strategy 3: scan first 30 lines and last 30 lines of raw_text and pymupdf_text (fallback)
-        for text_src in [raw_text, pymupdf_text]:
-            if not text_src:
-                continue
-            lines = [l.strip() for l in text_src.split('\n') if l.strip()]
-            search_lines = lines[:30] + (lines[-30:] if len(lines) > 30 else [])
-            for line in search_lines:
-                clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-                clean = re.sub(r'^#+\s*', '', clean).strip()
-                lf_match = re.match(r'^([A-Z][a-z]+),\s*([A-Z][a-z]+)$', clean)
-                if lf_match:
-                    return f"{lf_match.group(2)} {lf_match.group(1)}"
-                candidate = re.split(r'[,|]| - ', clean)[0].strip()
-                
-                if _is_name_line(candidate):
-                    return candidate
-                split = _split_name_from_contact(candidate)
-                if split != candidate and _is_name_line(split):
-                    return split
+        # 4. Text lines for fallback
+        text_lines = []
+        for src in [main_text, full_width_text, pymupdf_text, raw_text]:
+            if src:
+                for l in src.split('\n')[:15]:
+                    stripped = l.strip()
+                    if stripped and stripped not in text_lines:
+                        text_lines.append(stripped)
 
-            # Strategy 4: ALL CAPS line in first 15 or last 15 lines
-            search_lines_caps = lines[:15] + (lines[-15:] if len(lines) > 15 else [])
-            for line in search_lines_caps:
-                clean = re.sub(r'\[/?[A-Z_]+\]', '', line).strip()
-                clean = re.sub(r'^#+\s*', '', clean).strip()
-                candidate_base = re.split(r'[,|]| - ', clean)[0].strip()
-                
-                # Try split first for ALL CAPS check too
-                split = _split_name_from_contact(candidate_base)
-                for candidate in [candidate_base, split]:
-                    words = candidate.split()
-                    if 1 <= len(words) <= 4 and candidate.isupper() and not re.search(r'\d', candidate):
-                        return candidate.title()
+        return self.identity_resolver.resolve(
+            tagged_name=tagged_name,
+            odl_headings=odl_headings,
+            adjacent_lines=adjacent_lines,
+            text_lines=text_lines,
+            email=email,
+            phone=phone,
+        )
 
-        return None
+    def _extract_name(
+        self,
+        full_width_text: str,
+        raw_text: str,
+        sidebar_text: str = "",
+        main_text: str = "",
+        elements: list = None,
+        pymupdf_text: str = "",
+    ) -> Optional[str]:
+        """Backward-compatible helper returning display_name string or None."""
+        res = self._resolve_identity(
+            full_width_text=full_width_text,
+            raw_text=raw_text,
+            sidebar_text=sidebar_text,
+            main_text=main_text,
+            elements=elements,
+            pymupdf_text=pymupdf_text,
+        )
+        return res.display_name
 
     def _extract_email(self, text: str, hyperlinks: list = None) -> Optional[str]:
         if hyperlinks:

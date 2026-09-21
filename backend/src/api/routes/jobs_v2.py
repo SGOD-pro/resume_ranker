@@ -453,7 +453,12 @@ async def _run_extraction_background(job_id: str):
                         except Exception:
                             pass
 
+                        import time
+                        t_dl_0 = time.time()
                         pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
+                        t_dl_1 = time.time()
+                        dl_ms = round((t_dl_1 - t_dl_0) * 1000, 2)
+
                         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                             tmp.write(pdf_bytes)
                             tmp_path = tmp.name
@@ -469,6 +474,10 @@ async def _run_extraction_background(job_id: str):
                                 doc.s3_pdf_key,
                             )
                             fields = extraction_result.get("fields", {})
+                            if "_timings" not in fields:
+                                fields["_timings"] = {}
+                            fields["_timings"]["download_ms"] = dl_ms
+                            fields["_timings"]["total_ms"] = round(fields["_timings"].get("total_ms", 0.0) + dl_ms, 2)
 
                             s3_extracted_key = _storage.upload_extracted_json(
                                 doc.job_id, doc.document_id, fields,
@@ -1033,6 +1042,103 @@ async def get_job_audit_log(job_id: str, ctx: AuthContext = Depends(get_auth_con
 
     events = audit_logger.query(org_id=ctx.org_id, resource_id=job_id)
     return {"job_id": job_id, "events": events}
+
+
+@router.get("/{job_id}/extraction-metrics")
+async def get_extraction_metrics(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
+    """Retrieve aggregate and per-document extraction metrics and timings for a job."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    docs = _docs_repo.list_for_job(job_id)
+    total_docs = len(docs)
+    extracted_docs = [d for d in docs if d.status == DocumentStatus.PARSED]
+    failed_docs = [d for d in docs if d.status == DocumentStatus.PARSE_FAILED]
+    pending_docs = [d for d in docs if d.status in (DocumentStatus.PENDING, DocumentStatus.PARSING)]
+
+    doc_metrics = []
+    qualities = []
+    id_counts = {"VERIFIED": 0, "PLAUSIBLE": 0, "UNRESOLVED": 0}
+    timing_totals = {
+        "download_ms": 0.0,
+        "structure_ms": 0.0,
+        "deterministic_ms": 0.0,
+        "nova_ms": 0.0,
+        "total_ms": 0.0,
+    }
+    timing_counts = {k: 0 for k in timing_totals}
+
+    for d in docs:
+        item = {
+            "document_id": d.document_id,
+            "filename": d.filename,
+            "status": d.status.value if hasattr(d.status, "value") else str(d.status),
+            "extraction_quality": d.extraction_quality or 0.0,
+            "candidate_name": d.candidate_name or None,
+            "page_count": d.page_count or 0,
+            "identity_status": "UNRESOLVED",
+            "timings": {},
+        }
+
+        if d.extraction_quality is not None and d.status == DocumentStatus.PARSED:
+            qualities.append(float(d.extraction_quality))
+
+        if d.status == DocumentStatus.PARSED and d.s3_extracted_key:
+            try:
+                fields = _storage.get_extracted_json(job_id, d.document_id)
+                ident = fields.get("identity") or {}
+                id_status = ident.get("status")
+                if not id_status:
+                    id_status = "VERIFIED" if fields.get("name") else "UNRESOLVED"
+                item["identity_status"] = id_status
+                if id_status in id_counts:
+                    id_counts[id_status] += 1
+                else:
+                    id_counts["UNRESOLVED"] += 1
+
+                t_data = fields.get("_timings") or {}
+                item["timings"] = t_data
+                for k, v in t_data.items():
+                    if k in timing_totals and isinstance(v, (int, float)):
+                        timing_totals[k] += float(v)
+                        timing_counts[k] += 1
+            except Exception as exc:
+                logger.warning("Failed to fetch extraction JSON for doc %s metrics: %s", d.document_id, exc)
+                item["identity_status"] = "VERIFIED" if d.candidate_name else "UNRESOLVED"
+                id_counts[item["identity_status"]] += 1
+        elif d.status == DocumentStatus.PARSED:
+            item["identity_status"] = "VERIFIED" if d.candidate_name else "UNRESOLVED"
+            id_counts[item["identity_status"]] += 1
+
+        doc_metrics.append(item)
+
+    avg_quality = round(sum(qualities) / len(qualities), 3) if qualities else 0.0
+    extracted_n = len(extracted_docs)
+    unresolved_rate = round(id_counts["UNRESOLVED"] / max(1, extracted_n), 3) if extracted_n > 0 else 0.0
+
+    avg_timings = {
+        k: round(timing_totals[k] / max(1, timing_counts[k]), 2)
+        for k in timing_totals
+    }
+
+    return {
+        "job_id": job_id,
+        "total_documents": total_docs,
+        "extracted_count": len(extracted_docs),
+        "failed_count": len(failed_docs),
+        "pending_count": len(pending_docs),
+        "avg_quality_score": avg_quality,
+        "identity_metrics": {
+            "verified_count": id_counts["VERIFIED"],
+            "plausible_count": id_counts["PLAUSIBLE"],
+            "unresolved_count": id_counts["UNRESOLVED"],
+            "unresolved_rate": unresolved_rate,
+        },
+        "timings_summary": avg_timings,
+        "documents": doc_metrics,
+    }
 
 
 @router.post("/ats-check")
