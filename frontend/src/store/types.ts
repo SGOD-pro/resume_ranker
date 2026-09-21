@@ -143,3 +143,24 @@ export interface UploadState {
   processingFiles: number;
   isUploading: boolean;
 }
+
+export type JobStatus =
+  | 'CREATED'
+  | 'UPLOADING'
+  | 'FAST_PARSING'
+  | 'FALLBACK_PROCESSING'
+  | 'FINAL_RANKING'
+  | 'READY'
+  | 'READY_WITH_WARNINGS'
+  | 'FAILED';
+
+export type UploadSessionStatus =
+  | 'UPLOADING'
+  | 'FAST_PARSING'
+  | 'FALLBACK_PROCESSING'
+  | 'FINAL_RANKING'
+  | 'READY'
+  | 'READY_WITH_WARNINGS'
+  | 'FAILED'
+  | 'EXPIRED';
+

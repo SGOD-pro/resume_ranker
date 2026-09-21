@@ -124,65 +124,218 @@ export async function updateJob(
  */
 export interface UploadResult {
   job_id: string;
+  session_id?: string;
   accepted: string[];
   rejected: { filename: string; reason: string }[];
   total_accepted: number;
 }
 
-function uploadSingleFile(
+export interface UploadSessionFileSpec {
+  filename: string;
+  file_size: number;
+  content_type?: string;
+}
+
+export interface DocumentPresignedUrlInfo {
+  document_id: string;
+  filename: string;
+  s3_key: string;
+  presigned_url: string;
+}
+
+export interface CreateUploadSessionResponse {
+  session_id: string;
+  job_id: string;
+  job_version: number;
+  expected_document_count: number;
+  documents: DocumentPresignedUrlInfo[];
+}
+
+export interface CompleteDocumentUploadResponse {
+  document_id: string;
+  session_id: string;
+  job_id: string;
+  status: string;
+}
+
+export interface FinalizeUploadSessionResponse {
+  session_id: string;
+  job_id: string;
+  status: string;
+  message: string;
+}
+
+export interface UploadSessionProgressResponse {
+  session_id: string;
+  job_id: string;
+  job_version: number;
+  status: string;
+  expected_document_count: number;
+  uploaded_document_count: number;
+  fast_parsed_count: number;
+  terminal_count: number;
+  documents: Array<{
+    document_id: string;
+    filename: string;
+    status: string;
+    candidate_name?: string;
+    identity_status?: string;
+    extraction_quality?: string;
+    fallback_reason?: string;
+    error_reason?: string;
+  }>;
+}
+
+/** Create a durable upload session with presigned S3 PUT URLs */
+export async function createUploadSession(
   jobId: string,
-  file: File,
-): Promise<{ accepted: string[]; rejected: { filename: string; reason: string }[] }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const formData = new FormData();
-    formData.append('files', file);
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const result = JSON.parse(xhr.responseText) as UploadResult;
-          resolve({ accepted: result.accepted, rejected: result.rejected });
-        } catch {
-          reject(new ApiError('Failed to parse upload response', xhr.status));
-        }
-      } else {
-        let body: unknown;
-        try { body = JSON.parse(xhr.responseText); } catch { body = xhr.responseText; }
-        reject(new ApiError(`Upload failed: ${xhr.status}`, xhr.status, body));
-      }
-    });
-
-    xhr.addEventListener('error', () => reject(new ApiError('Upload network error', 0)));
-    xhr.addEventListener('abort', () => reject(new ApiError('Upload aborted', 0)));
-
-    xhr.open('POST', `${API_BASE}/api/v2/jobs/${jobId}/resumes`);
-    xhr.send(formData);
+  files: UploadSessionFileSpec[],
+): Promise<CreateUploadSessionResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/upload-sessions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      document_count: files.length,
+      files,
+    }),
   });
 }
 
+/** Notify backend that an individual document finished uploading to S3 */
+export async function completeDocumentUpload(
+  jobId: string,
+  sessionId: string,
+  documentId: string,
+): Promise<CompleteDocumentUploadResponse> {
+  return apiFetch(
+    `/api/v2/jobs/${jobId}/upload-sessions/${sessionId}/documents/${documentId}/complete`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/** Finalize the upload session barrier */
+export async function finalizeUploadSession(
+  jobId: string,
+  sessionId: string,
+): Promise<FinalizeUploadSessionResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/upload-sessions/${sessionId}/finalize`, {
+    method: 'POST',
+  });
+}
+
+/** Poll upload session progress */
+export async function getUploadSession(
+  jobId: string,
+  sessionId: string,
+): Promise<UploadSessionProgressResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/upload-sessions/${sessionId}`);
+}
+
+/**
+ * Direct browser-to-S3 upload with bounded client concurrency of 4.
+ * Uses presigned PUT URLs, notifies backend upon each document completion,
+ * and sets the finalization barrier.
+ */
+export async function uploadFilesDirectToS3(
+  jobId: string,
+  files: File[],
+  onProgress?: (uploaded: number, total: number, filename: string) => void,
+): Promise<UploadResult> {
+  if (files.length === 0) {
+    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0 };
+  }
+
+  // 1. Request presigned PUT URLs for the batch
+  const fileSpecs: UploadSessionFileSpec[] = files.map((f) => ({
+    filename: f.name,
+    file_size: f.size,
+    content_type: f.type || 'application/pdf',
+  }));
+
+  const sessionRes = await createUploadSession(jobId, fileSpecs);
+  const { session_id, documents } = sessionRes;
+
+  const docMap = new Map<string, DocumentPresignedUrlInfo>();
+  documents.forEach((d) => docMap.set(d.filename, d));
+
+  const accepted: string[] = [];
+  const rejected: { filename: string; reason: string }[] = [];
+  let completedCount = 0;
+
+  // 2. Upload directly to S3 with bounded concurrency of 4
+  const CONCURRENCY = 4;
+  let nextIndex = 0;
+
+  const uploadWorker = async () => {
+    while (nextIndex < files.length) {
+      const idx = nextIndex++;
+      const file = files[idx];
+      const docInfo = docMap.get(file.name);
+
+      if (!docInfo) {
+        rejected.push({ filename: file.name, reason: 'Session document info missing' });
+        completedCount++;
+        onProgress?.(completedCount, files.length, file.name);
+        continue;
+      }
+
+      try {
+        const putRes = await fetch(docInfo.presigned_url, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': 'application/pdf',
+          },
+        });
+
+        if (!putRes.ok) {
+          throw new Error(`S3 upload failed with HTTP ${putRes.status}`);
+        }
+
+        await completeDocumentUpload(jobId, session_id, docInfo.document_id);
+        accepted.push(file.name);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Upload failed';
+        rejected.push({ filename: file.name, reason: msg });
+      } finally {
+        completedCount++;
+        onProgress?.(completedCount, files.length, file.name);
+      }
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, files.length) }, () =>
+    uploadWorker(),
+  );
+  await Promise.all(workers);
+
+  // 3. Finalize upload session barrier
+  try {
+    await finalizeUploadSession(jobId, session_id);
+  } catch (err) {
+    console.error('Failed to finalize upload session:', err);
+  }
+
+  return {
+    job_id: jobId,
+    session_id,
+    accepted,
+    rejected,
+    total_accepted: accepted.length,
+  };
+}
+
+/**
+ * Upload resumes using direct S3 presigned URLs.
+ * Maintains compatibility with existing callers.
+ */
 export async function uploadResumes(
   jobId: string,
   files: File[],
   onFileComplete?: (uploaded: number, total: number, filename: string) => void,
 ): Promise<UploadResult> {
-  const allAccepted: string[] = [];
-  const allRejected: { filename: string; reason: string }[] = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const result = await uploadSingleFile(jobId, file);
-    allAccepted.push(...result.accepted);
-    allRejected.push(...result.rejected);
-    onFileComplete?.(i + 1, files.length, file.name);
-  }
-
-  return {
-    job_id: jobId,
-    accepted: allAccepted,
-    rejected: allRejected,
-    total_accepted: allAccepted.length,
-  };
+  return uploadFilesDirectToS3(jobId, files, onFileComplete);
 }
 
 /** Start SSE extraction stream */

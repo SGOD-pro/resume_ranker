@@ -38,20 +38,107 @@ All endpoints except `/health` and `/api/v2/ats-check` require authentication.
 
 - `DELETE /api/v2/jobs/{job_id}` — Delete job and all associated data
 
-### Documents
-- `POST /api/v2/jobs/{job_id}/resumes` — Upload PDFs
-  - Content-Type: multipart/form-data
+### Documents & Upload Sessions
+
+#### 1. Create Upload Session (Direct S3 Flow)
+- `POST /api/v2/jobs/{job_id}/upload-sessions`
+  - Body:
+    ```json
+    {
+      "files": [
+        {
+          "filename": "candidate.pdf",
+          "file_size": 1048576,
+          "content_hash": "a1b2c3d4e5..."
+        }
+      ]
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "session_id": "session-uuid",
+      "job_id": "job-uuid",
+      "job_version": 1,
+      "status": "UPLOADING",
+      "documents": [
+        {
+          "document_id": "doc-uuid",
+          "filename": "candidate.pdf",
+          "presigned_put_url": "https://s3.amazonaws.com/bucket/key?AWSAccessKeyId=...",
+          "s3_pdf_key": "resumes/doc-uuid.pdf",
+          "expires_in": 900
+        }
+      ]
+    }
+    ```
+
+#### 2. Complete Document Upload
+- `POST /api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{document_id}/complete`
+  - Acknowledges that the browser successfully PUT the file to S3.
+  - Response:
+    ```json
+    {
+      "status": "success",
+      "document_id": "doc-uuid",
+      "document_status": "UPLOADED"
+    }
+    ```
+
+#### 3. Finalize Upload Session
+- `POST /api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize`
+  - Closes the upload session and enqueues all confirmed documents into the SQS `fast-parse` work queue.
+  - Response:
+    ```json
+    {
+      "session_id": "session-uuid",
+      "status": "FAST_PARSING",
+      "total_queued": 40
+    }
+    ```
+
+#### 4. Get Upload Session Status
+- `GET /api/v2/jobs/{job_id}/upload-sessions/{session_id}`
+  - Returns current session status, barrier progress, and document list.
+  - Response:
+    ```json
+    {
+      "session_id": "session-uuid",
+      "job_id": "job-uuid",
+      "status": "READY",
+      "expected_count": 40,
+      "uploaded_count": 40,
+      "processed_count": 40,
+      "failed_count": 0,
+      "job_version": 1,
+      "created_at": "2026-09-21T12:00:00Z",
+      "updated_at": "2026-09-21T12:01:15Z"
+    }
+    ```
+
+#### 5. Stream Session Progress (SSE)
+- `GET /api/v2/jobs/{job_id}/upload-sessions/{session_id}/events`
+  - Content-Type: `text/event-stream`
+  - Streams durable DynamoDB lifecycle changes and document parsing progress.
+  - Events:
+    - `progress`: `{ document_id, status, candidate_name, processed, total }`
+    - `complete`: `{ session_id, status: "READY" | "READY_WITH_WARNINGS" | "FAILED", total_succeeded, total_failed }`
+
+#### 6. Upload Resumes (Legacy Multipart Compatibility Wrapper)
+- `POST /api/v2/jobs/{job_id}/resumes` — Upload PDFs directly via multipart/form-data
+  - Content-Type: `multipart/form-data`
+  - Internal: Stores PDF directly to S3 and enqueues to SQS `fast-parse`.
   - Validation: PDF only, 10MB max, SHA-256 dedup
   - Response: `{ job_id, accepted[], rejected[], total_accepted }`
 
-- `GET /api/v2/jobs/{job_id}/extract` — SSE extraction progress
-  - Content-Type: text/event-stream
-  - Events: `progress { document_id, status, candidate_name }`, `complete { total, succeeded, failed }`, `error { message }`
-
-- `GET /api/v2/jobs/{job_id}/resumes/{document_id}/download` — Download resume PDF
+#### 7. Download Resume PDF
+- `GET /api/v2/jobs/{job_id}/resumes/{document_id}/download`
   - Response: `application/pdf` stream
 
-- `DELETE /api/v2/jobs/{job_id}/resumes/{document_id}` — Delete specific resume
+#### 8. Delete Resume
+- `DELETE /api/v2/jobs/{job_id}/resumes/{document_id}`
+  - Removes document from DynamoDB and S3.
+
 
 ### Scoring
 - `POST /api/v2/jobs/{job_id}/score` — Score and rank candidates

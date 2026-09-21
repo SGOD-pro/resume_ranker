@@ -32,7 +32,8 @@ resumes/
 backend/.aws-sam/
 .aws-sam/
 odl/*.json
-odl_*
+/odl_*
+!backend/src/pipeline/odl_batch_worker.py
 
 # Vercel & Build outputs
 .vercel/

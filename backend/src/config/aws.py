@@ -24,6 +24,33 @@ class AWSSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # SQS Queue URLs & DLQs
+    SQS_FAST_PARSE_QUEUE_URL: str = ""
+    SQS_FAST_PARSE_DLQ_URL: str = ""
+    SQS_ODL_BATCH_QUEUE_URL: str = ""
+    SQS_ODL_BATCH_DLQ_URL: str = ""
+    SQS_NOVA_QUEUE_URL: str = ""
+    SQS_NOVA_DLQ_URL: str = ""
+    SQS_FINAL_RANK_QUEUE_URL: str = ""
+    SQS_FINAL_RANK_DLQ_URL: str = ""
+
+    # Queue execution mode (False = use deterministic LocalQueueAdapter)
+    USE_REAL_SQS: bool = False
+
+    # Upload session guardrails & limits
+    MAX_DOCS_PER_SESSION: int = 100
+    MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+    MAX_PAGE_COUNT: int = 50
+    MAX_BATCH_BYTES: int = 200 * 1024 * 1024  # 200 MB
+    MAX_ACTIVE_SESSIONS_PER_ORG: int = 5
+    CLIENT_UPLOAD_CONCURRENCY: int = 4
+    PRESIGNED_URL_EXPIRY_SECONDS: int = 900  # 15 minutes
+
+    # Worker concurrency and batch settings
+    ODL_BATCH_SIZE: int = 10
+    ODL_WORKER_CONCURRENCY: int = 2
+    NOVA_WORKER_CONCURRENCY: int = 2
+
     def is_local(self) -> bool:
         return self.ENVIRONMENT == "dev"
 

@@ -50,6 +50,18 @@ Fields: job_id, org_id, title, department, description,
         document_count, version, created_at, updated_at
 ```
 
+#### Upload Session (v2.2 Durable Pipeline)
+```
+PK: JOB#{job_id}
+SK: SESSION#{session_id}
+Fields: session_id, job_id, org_id, entity_type ("UPLOAD_SESSION"),
+        job_version (pinned integer),
+        expected_document_count, uploaded_document_count,
+        status (UploadSessionStatus enum),
+        error_message, version, expires_at,
+        created_at, updated_at
+```
+
 #### Document
 ```
 PK: JOB#{job_id}
@@ -97,6 +109,16 @@ Fields: document_id, job_id, org_id, reviewer_id,
 ### Status Enums
 
 ```python
+class UploadSessionStatus(str, Enum):
+    UPLOADING = "UPLOADING"
+    FAST_PARSING = "FAST_PARSING"
+    FALLBACK_PROCESSING = "FALLBACK_PROCESSING"
+    FINAL_RANKING = "FINAL_RANKING"
+    READY = "READY"
+    READY_WITH_WARNINGS = "READY_WITH_WARNINGS"
+    FAILED = "FAILED"
+    EXPIRED = "EXPIRED"
+
 class JobStatus(str, Enum):
     CREATED = "created"
     DOCUMENTS_UPLOADED = "documents_uploaded"
@@ -107,6 +129,22 @@ class JobStatus(str, Enum):
     ARCHIVED = "archived"
 
 class DocumentStatus(str, Enum):
+    # Pipeline lifecycle states (v2.2)
+    UPLOAD_INITIALIZED = "UPLOAD_INITIALIZED"
+    UPLOADED = "UPLOADED"
+    FAST_PARSE_QUEUED = "FAST_PARSE_QUEUED"
+    FAST_PARSING = "FAST_PARSING"
+    NEEDS_ODL = "NEEDS_ODL"
+    ODL_QUEUED = "ODL_QUEUED"
+    ODL_PARSING = "ODL_PARSING"
+    NEEDS_NOVA = "NEEDS_NOVA"
+    NOVA_QUEUED = "NOVA_QUEUED"
+    NOVA_PARSING = "NOVA_PARSING"
+    STRUCTURED_PARSED = "STRUCTURED_PARSED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    FAILED = "FAILED"
+
+    # Legacy compatibility aliases
     PENDING = "pending"
     PARSING = "parsing"
     PARSED = "parsed"

@@ -59,12 +59,39 @@ async def lifespan(app: FastAPI):
             logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
 
     asyncio.create_task(_check_health_async())
+
+    # Start queue background worker daemon
+    daemon = None
+    try:
+        from src.pipeline.worker_runner import get_worker_daemon
+        daemon = get_worker_daemon()
+        daemon.start()
+        logger.info("BackgroundWorkerDaemon started ✅")
+    except Exception as e:
+        logger.warning("Failed to start BackgroundWorkerDaemon: %s", e)
+
+    # Configure S3 CORS for direct browser PUTs
+    try:
+        from src.infrastructure.storage.storage_service import StorageService
+        cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        if settings.frontend_url:
+            cors_origins.extend([o.strip() for o in settings.frontend_url.split(",") if o.strip()])
+        StorageService().configure_s3_cors(cors_origins)
+    except Exception as e:
+        logger.warning("Could not configure S3 CORS: %s", e)
+
     logger.info("Server ready — health checks running in background")
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────
     logger.info("Shutting down...")
+    if daemon:
+        try:
+            daemon.stop()
+            logger.info("BackgroundWorkerDaemon stopped ✅")
+        except Exception as e:
+            logger.warning("Error stopping BackgroundWorkerDaemon: %s", e)
 
 
 def create_app() -> FastAPI:

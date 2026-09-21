@@ -15,22 +15,55 @@ from pydantic import BaseModel, Field
 
 
 class DocumentStatus(str, Enum):
-    """Document extraction lifecycle states.
-
-    Phase 2 state machine: PENDING → PARSING → PARSED → SCORED
-    See phases.md for gate criteria.
-    """
+    """Document extraction lifecycle states."""
+    # Phase 2 legacy
     PENDING = "pending"
     PARSING = "parsing"
     PARSED = "parsed"
     SCORED = "scored"
     PARSE_FAILED = "parse_failed"
 
-    # ── V1 backwards-compat aliases (mapped in from_dynamodb_item) ────
-    UPLOADED = "uploaded"           # V1 alias → treated as PENDING
-    EXTRACTING = "extracting"      # V1 alias → treated as PARSING
-    EXTRACTED = "extracted"        # V1 alias → treated as PARSED
-    EXTRACTION_FAILED = "extraction_failed"  # V1 alias → treated as PARSE_FAILED
+    # Durable pipeline states (v2.2)
+    UPLOAD_INITIALIZED = "UPLOAD_INITIALIZED"
+    UPLOADED = "UPLOADED"
+    FAST_PARSE_QUEUED = "FAST_PARSE_QUEUED"
+    FAST_PARSING = "FAST_PARSING"
+    NEEDS_ODL = "NEEDS_ODL"
+    ODL_QUEUED = "ODL_QUEUED"
+    ODL_PARSING = "ODL_PARSING"
+    NEEDS_NOVA = "NEEDS_NOVA"
+    NOVA_QUEUED = "NOVA_QUEUED"
+    NOVA_PARSING = "NOVA_PARSING"
+    STRUCTURED_PARSED = "STRUCTURED_PARSED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    FAILED = "FAILED"
+
+    # ── V1 backwards-compat aliases ────
+    EXTRACTING = "extracting"
+    EXTRACTED = "extracted"
+    EXTRACTION_FAILED = "extraction_failed"
+
+    def is_terminal_fast_parse(self) -> bool:
+        return self in (
+            DocumentStatus.STRUCTURED_PARSED,
+            DocumentStatus.NEEDS_ODL,
+            DocumentStatus.REVIEW_REQUIRED,
+            DocumentStatus.FAILED,
+            DocumentStatus.PARSED,
+            DocumentStatus.PARSE_FAILED,
+            DocumentStatus.SCORED,
+        )
+
+    def is_terminal_extraction(self) -> bool:
+        return self in (
+            DocumentStatus.STRUCTURED_PARSED,
+            DocumentStatus.REVIEW_REQUIRED,
+            DocumentStatus.FAILED,
+            DocumentStatus.PARSED,
+            DocumentStatus.PARSE_FAILED,
+            DocumentStatus.SCORED,
+        )
+
 
 
 def _utcnow_iso() -> str:
@@ -47,6 +80,7 @@ class DocumentItem(BaseModel):
     # ── Identity & Tenant ──────────────────────────────────────────────────
     document_id: str = Field(default_factory=_new_uuid)
     job_id: str
+    session_id: Optional[str] = None
     org_id: str = "org_default"
     entity_type: str = "DOCUMENT"
 
@@ -63,6 +97,10 @@ class DocumentItem(BaseModel):
     extraction_quality: Optional[float] = None      # 0.0–1.0
     page_count: Optional[int] = None
     candidate_name: Optional[str] = None            # Extracted name
+    identity_status: Optional[str] = None           # CONFIRMED, PROVISIONAL, UNRESOLVED
+    identity_confidence: Optional[float] = None
+    fallback_reason: Optional[str] = None
+    error_reason: Optional[str] = None
     parser_version: Optional[str] = None            # Extraction pipeline version
     pipeline_version: str = "v3"
 
@@ -103,6 +141,16 @@ class DocumentItem(BaseModel):
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        if self.session_id is not None:
+            item["session_id"] = self.session_id
+        if self.identity_status is not None:
+            item["identity_status"] = self.identity_status
+        if self.identity_confidence is not None:
+            item["identity_confidence"] = str(self.identity_confidence)
+        if self.fallback_reason is not None:
+            item["fallback_reason"] = self.fallback_reason
+        if self.error_reason is not None:
+            item["error_reason"] = self.error_reason
         # Optional fields — only include if not None (DynamoDB doesn't like None)
         if self.s3_extracted_key is not None:
             item["s3_extracted_key"] = self.s3_extracted_key
@@ -120,6 +168,7 @@ class DocumentItem(BaseModel):
     def from_dynamodb_item(cls, item: Dict[str, Any]) -> "DocumentItem":
         """Deserialize from a DynamoDB item dict."""
         eq = item.get("extraction_quality")
+        ic = item.get("identity_confidence")
         
         # Map V1 backwards-compatibility statuses to Phase 2
         raw_status = item.get("status", "pending")
@@ -131,10 +180,16 @@ class DocumentItem(BaseModel):
             raw_status = "parsed"
         elif raw_status == "extraction_failed":
             raw_status = "parse_failed"
+
+        try:
+            status_obj = DocumentStatus(raw_status)
+        except ValueError:
+            status_obj = DocumentStatus.PENDING
             
         return cls(
             document_id=item["document_id"],
             job_id=item["job_id"],
+            session_id=item.get("session_id"),
             org_id=item.get("org_id", "org_default"),
             entity_type=item.get("entity_type", "DOCUMENT"),
             filename=item.get("filename", ""),
@@ -145,9 +200,13 @@ class DocumentItem(BaseModel):
             extraction_quality=float(eq) if eq is not None else None,
             page_count=int(item["page_count"]) if item.get("page_count") is not None else None,
             candidate_name=item.get("candidate_name"),
+            identity_status=item.get("identity_status"),
+            identity_confidence=float(ic) if ic is not None else None,
+            fallback_reason=item.get("fallback_reason"),
+            error_reason=item.get("error_reason"),
             parser_version=item.get("parser_version"),
             pipeline_version=item.get("pipeline_version", "v3"),
-            status=DocumentStatus(raw_status),
+            status=status_obj,
             version=int(item.get("version", 1)),
             created_at=item.get("created_at", ""),
             updated_at=item.get("updated_at", ""),

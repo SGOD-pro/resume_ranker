@@ -56,17 +56,74 @@ class StorageService:
         logger.info("Uploaded resume: s3://%s/%s (%d bytes)", self._bucket, s3_key, len(file_content))
         return s3_key
 
-    def get_resume(self, job_id: str, document_id: str) -> bytes:
+    def generate_presigned_put_url(
+        self,
+        s3_key: str,
+        content_type: str = "application/pdf",
+        expires_in: int = 900,
+    ) -> str:
+        """Generate a presigned PUT URL for direct browser-to-S3 upload."""
+        params = {
+            "Bucket": self._bucket,
+            "Key": s3_key,
+            "ContentType": content_type,
+        }
+        url = self._client.generate_presigned_url(
+            ClientMethod="put_object",
+            Params=params,
+            ExpiresIn=expires_in,
+        )
+        return url
+
+    def head_object(self, s3_key: str) -> Dict[str, Any]:
+        """Retrieve S3 object metadata via HEAD request."""
+        return self._client.head_object(Bucket=self._bucket, Key=s3_key)
+
+    def get_object_byte_range(self, s3_key: str, start: int = 0, length: int = 1024) -> bytes:
+        """Read a slice of bytes from an S3 object (e.g. for magic bytes check)."""
+        end = start + length - 1
+        resp = self._client.get_object(
+            Bucket=self._bucket,
+            Key=s3_key,
+            Range=f"bytes={start}-{end}",
+        )
+        return resp["Body"].read()
+
+    def get_resume(self, job_id: str, document_id: str, s3_key: str | None = None) -> bytes:
         """Download a resume PDF from S3.
 
         Returns:
             Raw PDF bytes.
         """
-        s3_key = f"jobs/{job_id}/resumes/{document_id}.pdf"
-        response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
+        key = s3_key or f"jobs/{job_id}/resumes/{document_id}.pdf"
+        response = self._client.get_object(Bucket=self._bucket, Key=key)
         data = response["Body"].read()
-        logger.info("Downloaded resume: s3://%s/%s (%d bytes)", self._bucket, s3_key, len(data))
+        logger.info("Downloaded resume: s3://%s/%s (%d bytes)", self._bucket, key, len(data))
         return data
+
+    def configure_s3_cors(self, allowed_origins: list[str]) -> None:
+        """Configure S3 CORS rules for direct browser uploads."""
+        if not allowed_origins:
+            return
+        cors_configuration = {
+            "CORSRules": [
+                {
+                    "AllowedHeaders": ["*"],
+                    "AllowedMethods": ["PUT", "HEAD", "GET"],
+                    "AllowedOrigins": allowed_origins,
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 3000,
+                }
+            ]
+        }
+        try:
+            self._client.put_bucket_cors(
+                Bucket=self._bucket,
+                CORSConfiguration=cors_configuration,
+            )
+            logger.info("Configured S3 CORS for origins: %s", allowed_origins)
+        except Exception as e:
+            logger.warning("Could not set S3 CORS (may lack permissions or local mock): %s", e)
 
     # ── Extraction JSON ───────────────────────────────────────────────────
 

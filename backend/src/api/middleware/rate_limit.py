@@ -1,9 +1,15 @@
 """
 middleware/rate_limit.py — Sliding Window Rate Limiting Middleware
 ===================================================================
-Applies request rate limiting on resource-intensive endpoints:
-- Resume uploads (/api/v2/jobs/{id}/resumes): max 15 requests/min per IP
+Applies request rate limiting on sensitive public & auth endpoints:
 - ATS check (/api/v2/jobs/ats-check, /api/v2/ats-check): max 10 requests/min per IP
+- Auth login (/api/v2/auth/login): max 20 requests/min per IP
+- Auth register (/api/v2/auth/register): max 10 requests/min per IP
+
+NOTE: Resume uploads (/resumes, /upload-sessions) are EXEMPT from generic IP-based
+request rate limiting to allow legitimate bulk uploads (e.g. 40+ PDFs). Protection
+for uploads is enforced at the organization layer via upload session quotas,
+bounded concurrency, file size, and page limits.
 """
 
 import logging
@@ -19,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 # Route pattern -> (max_requests, window_seconds)
 RATE_LIMIT_RULES = [
-    ("/resumes", 15, 60),
     ("/ats-check", 10, 60),
+    ("/auth/login", 20, 60),
+    ("/auth/register", 10, 60),
 ]
 
 

@@ -145,6 +145,58 @@ class UploadResponse(BaseModel):
     total_accepted: int
 
 
+class UploadSessionFileSpec(BaseModel):
+    filename: str
+    file_size: int = 0
+    content_type: str = "application/pdf"
+
+
+class CreateUploadSessionRequest(BaseModel):
+    document_count: int
+    files: List[UploadSessionFileSpec]
+
+
+class DocumentPresignedUrlInfo(BaseModel):
+    document_id: str
+    filename: str
+    s3_key: str
+    presigned_url: str
+
+
+class CreateUploadSessionResponse(BaseModel):
+    session_id: str
+    job_id: str
+    job_version: int
+    expected_document_count: int
+    documents: List[DocumentPresignedUrlInfo]
+
+
+class CompleteDocumentUploadResponse(BaseModel):
+    document_id: str
+    session_id: str
+    job_id: str
+    status: str
+
+
+class FinalizeUploadSessionResponse(BaseModel):
+    session_id: str
+    job_id: str
+    status: str
+    message: str
+
+
+class UploadSessionProgressResponse(BaseModel):
+    session_id: str
+    job_id: str
+    job_version: int
+    status: str
+    expected_document_count: int
+    uploaded_document_count: int
+    fast_parsed_count: int
+    terminal_count: int
+    documents: List[Dict[str, Any]]
+
+
 class DecisionUpdateRequest(BaseModel):
     decision: str  # "new", "reviewing", "shortlisted", "rejected", "interview", "archived"
     reason: Optional[str] = None  # Mandatory if decision == "rejected"
@@ -153,6 +205,11 @@ class DecisionUpdateRequest(BaseModel):
 
 
 from src.core.lazy_proxy import LazyProxy
+from src.config.aws import get_settings
+from src.infrastructure.models.upload_session import UploadSessionItem, UploadSessionStatus
+from src.infrastructure.repositories.upload_sessions_repository import UploadSessionsRepository
+from src.infrastructure.queue.queue_manager import enqueue_fast_parse, get_queue_adapter
+from src.pipeline.coordinator import check_and_progress_session
 
 # ── Shared service instances ─────────────────────────────────────────────────
 
@@ -163,6 +220,7 @@ _scorer = LazyProxy(CandidateScorer)
 
 _jobs_repo = LazyProxy(JobsRepository)
 _docs_repo = LazyProxy(DocumentsRepository)
+_sessions_repo = LazyProxy(UploadSessionsRepository)
 _scoring_repo = LazyProxy(ScoringRepository)
 _storage = LazyProxy(StorageService)
 
@@ -243,57 +301,71 @@ async def update_job(job_id: str, body: UpdateJobRequest, ctx: AuthContext = Dep
 @router.post("/{job_id}/resumes", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_resumes(
     job_id: str,
-    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     ctx: AuthContext = Depends(get_auth_context),
 ):
-    """Upload resume PDFs for a job.
+    """Upload resume PDFs for a job (Compatibility wrapper using durable pipeline).
 
-    Server-side validation:
-    - Only .pdf files accepted
-    - Content-type validation
-    - Magic bytes header validation (%PDF-)
-    - Max 10 MB per file
-    - Max 50 pages per PDF document
-    - Duplicate detection via SHA256
-
-    Files are uploaded to S3 and metadata stored in DynamoDB scoped to tenant.
+    Directly ingests PDFs, creates an upload session, uploads to S3, creates
+    DocumentItem records, enqueues to FAST_PARSE_QUEUE, and finalizes the session.
     """
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-    MAX_SIZE = 10 * 1024 * 1024  # 10 MB
-    MAX_PAGES = 50
+    settings = get_settings()
+    MAX_SIZE = settings.MAX_FILE_SIZE_BYTES
+    MAX_PAGES = settings.MAX_PAGE_COUNT
+
+    # Check org active upload sessions quota
+    active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
+    if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
+                "retry_after_seconds": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
+
+    session_id = str(uuid.uuid4())
+    job_version = getattr(job, "job_version", 1)
+    session = UploadSessionItem(
+        session_id=session_id,
+        job_id=job_id,
+        org_id=ctx.org_id,
+        job_version=job_version,
+        expected_document_count=len(files),
+        uploaded_document_count=0,
+        status=UploadSessionStatus.UPLOADING,
+    )
+    _sessions_repo.create(session)
 
     accepted: List[str] = []
     rejected: List[dict] = []
 
     for f in files:
-        # Check extension
         if not f.filename or not f.filename.lower().endswith(".pdf"):
             rejected.append({"filename": f.filename or "unknown", "reason": "Not a PDF file"})
             continue
 
-        # Check content type
         if f.content_type and f.content_type != "application/pdf":
             rejected.append({"filename": f.filename, "reason": f"Invalid content type: {f.content_type}"})
             continue
 
-        # Check size (read content)
         content = await f.read()
         if len(content) > MAX_SIZE:
             size_mb = round(len(content) / (1024 * 1024), 1)
             rejected.append({"filename": f.filename, "reason": f"File too large: {size_mb}MB (max 10MB)"})
             continue
 
-        # Check magic bytes (%PDF-)
         if not content.startswith(b"%PDF-"):
             rejected.append({"filename": f.filename, "reason": "Corrupt or invalid PDF file (magic bytes mismatch)"})
             continue
 
-        # Check page count and parseability
         try:
             import fitz
             pdf_doc = fitz.open(stream=content, filetype="pdf")
@@ -306,7 +378,6 @@ async def upload_resumes(
             rejected.append({"filename": f.filename, "reason": "Unreadable or corrupt PDF structure"})
             continue
 
-        # ── Duplicate detection via SHA256 ────────────────────────────
         file_hash = hashlib.sha256(content).hexdigest()
         existing = _docs_repo.find_by_hash(job_id, file_hash)
         if existing:
@@ -316,48 +387,68 @@ async def upload_resumes(
             })
             continue
 
-        # ── Generate document ID and upload to S3 ─────────────────────
         doc_id = str(uuid.uuid4())
         s3_key = _storage.upload_resume(job_id, doc_id, content, f.filename)
 
-        # ── Create document record in DynamoDB ────────────────────────
         doc = DocumentItem(
             document_id=doc_id,
             job_id=job_id,
+            session_id=session_id,
             org_id=ctx.org_id,
             filename=f.filename,
             file_size=len(content),
             content_hash=file_hash,
             s3_pdf_key=s3_key,
             page_count=page_count,
+            status=DocumentStatus.UPLOADED,
         )
         _docs_repo.create(doc)
 
-        # ── Increment job document count ──────────────────────────────
-        # Re-read job to get latest version for optimistic lock
-        job = _jobs_repo.get(job_id)
-        if job:
-            _jobs_repo.increment_document_count(job_id, expected_version=job.version)
+        fresh_job = _jobs_repo.get(job_id)
+        if fresh_job:
+            _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
 
+        fresh_sess = _sessions_repo.get(job_id, session_id)
+        if fresh_sess:
+            _sessions_repo.increment_uploaded_count(job_id, session_id, expected_version=fresh_sess.version)
+
+        enqueue_fast_parse(
+            job_id=job_id,
+            session_id=session_id,
+            document_id=doc_id,
+            org_id=ctx.org_id,
+            job_version=job_version,
+            s3_key=s3_key,
+            content_hash=file_hash,
+        )
         accepted.append(f.filename)
 
-    # Record audit event
     audit_logger.record(
         ctx.org_id,
         ctx.user_id,
         "RESUMES_UPLOADED",
         "job",
         job_id,
-        {"accepted_count": len(accepted), "rejected_count": len(rejected)},
+        {"accepted_count": len(accepted), "rejected_count": len(rejected), "session_id": session_id},
     )
 
-    # Get final document count
+    # Finalize the compatibility session
+    fresh_sess = _sessions_repo.get(job_id, session_id)
+    if fresh_sess:
+        _sessions_repo.update_status(
+            job_id,
+            session_id,
+            UploadSessionStatus.FAST_PARSING,
+            expected_version=fresh_sess.version,
+        )
+    check_and_progress_session(job_id, session_id)
+
+    # In local development or test mode, drain queues synchronously so tests pass reliably
+    if not settings.USE_REAL_SQS:
+        from src.pipeline.worker_runner import drain_all_queues_sync
+        await asyncio.to_thread(drain_all_queues_sync, 10)
+
     all_docs = _docs_repo.list_for_job(job_id)
-
-    from src.config.aws import is_running_in_lambda
-    if not is_running_in_lambda():
-        background_tasks.add_task(_run_extraction_background, job_id)
-
     return UploadResponse(
         job_id=job_id,
         accepted=accepted,
@@ -366,153 +457,357 @@ async def upload_resumes(
     )
 
 
-def _extract_single_sync(pdf_path: str, doc_id: str, s3_bucket: str, s3_key: str) -> Dict[str, Any]:
-    """Run extraction for a single PDF (CPU-bound, called via to_thread)."""
-    from src.extraction.extraction_pipeline import ExtractionPipeline
-    pipeline = ExtractionPipeline()
-    result = pipeline.run_pipeline(pdf_path, doc_id, s3_bucket, s3_key)
-    
-    if result.get("error_reason"):
-        # Log it but proceed with the degraded PyMuPDF Markdown
-        import logging
-        logging.getLogger(__name__).warning(f"Extraction fell back to degraded PyMuPDF due to: {result['error_reason']}")
-        
-    return result
+# ── Target Architecture: Direct Presigned S3 Upload Session API ────────────────
 
 
-_extraction_locks: Dict[str, asyncio.Lock] = {}
+@router.post(
+    "/{job_id}/upload-sessions",
+    response_model=CreateUploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_upload_session(
+    job_id: str,
+    body: CreateUploadSessionRequest,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Create a durable upload session and return presigned S3 PUT URLs.
 
+    Enforces upload-safe guardrails:
+    - Organization ownership and authenticated access
+    - Max active upload sessions per organization quota (HTTP 429 on breach)
+    - Max documents per upload session limit
+    - Max batch bytes and individual file size limits
+    - Pinned immutable job_version for reproducible scoring lineage
+    """
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-def _get_job_lock(job_id: str) -> asyncio.Lock:
-    if job_id not in _extraction_locks:
-        _extraction_locks[job_id] = asyncio.Lock()
-    return _extraction_locks[job_id]
+    settings = get_settings()
 
+    # Guard 1: Concurrency / Quota
+    active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
+    if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
+                "retry_after_seconds": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
 
-async def _run_extraction_background(job_id: str):
-    """Background task to run extraction for all pending documents."""
-    lock = _get_job_lock(job_id)
-    if lock.locked():
-        # Another worker is already extracting for this job.
-        # Its while loop will process any newly added documents before exiting.
-        return
+    # Guard 2: Document count limit
+    if body.document_count > settings.MAX_DOCS_PER_SESSION or len(body.files) > settings.MAX_DOCS_PER_SESSION:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SESSION_DOCUMENT_LIMIT_EXCEEDED",
+                "message": f"Requested document count exceeds maximum limit of {settings.MAX_DOCS_PER_SESSION}.",
+            },
+        )
 
-    async with lock:
-        semaphore = _get_semaphore()
+    # Guard 3: Batch bytes & file sizes
+    total_bytes = sum(f.file_size for f in body.files)
+    if total_bytes > settings.MAX_BATCH_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SESSION_BATCH_SIZE_EXCEEDED",
+                "message": f"Total batch size exceeds maximum allowed of {settings.MAX_BATCH_BYTES / (1024*1024):.0f}MB.",
+            },
+        )
 
-        while True:
-            job = _jobs_repo.get(job_id)
-            if not job:
-                return
-
-            documents = _docs_repo.list_for_job(job_id)
-            if not documents:
-                return
-
-            pending_docs = [
-                d for d in documents
-                if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
-            ]
-
-            if not pending_docs:
-                has_parsed = any(d.status in (DocumentStatus.PARSED, DocumentStatus.SCORED) for d in documents)
-                fresh_job = _jobs_repo.get(job_id)
-                if fresh_job:
-                    target_status = JobStatus.EXTRACTED if has_parsed else JobStatus.CREATED
-                    if fresh_job.status != target_status and fresh_job.status != JobStatus.SCORED:
-                        try:
-                            _jobs_repo.update_status(job_id, target_status, expected_version=fresh_job.version)
-                        except Exception:
-                            pass
-                break
-
-            fresh_job = _jobs_repo.get(job_id)
-            if fresh_job and fresh_job.status != JobStatus.EXTRACTING and fresh_job.status != JobStatus.SCORED:
-                try:
-                    _jobs_repo.update_status(job_id, JobStatus.EXTRACTING, expected_version=fresh_job.version)
-                except Exception:
-                    pass
-
-            logger.info(
-                "Extracting %d pending document(s) for job %s (max concurrency: %d)",
-                len(pending_docs), job_id, _MAX_CONCURRENT,
+    for f in body.files:
+        if f.file_size > settings.MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "FILE_SIZE_LIMIT_EXCEEDED",
+                    "message": f"File '{f.filename}' exceeds maximum file size of {settings.MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB.",
+                },
             )
 
-            async def _extract_one(doc: DocumentItem) -> None:
-                try:
-                    async with semaphore:
-                        fresh_doc = _docs_repo.get(doc.job_id, doc.document_id)
-                        if not fresh_doc or fresh_doc.status in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED):
-                            return
+    session_id = str(uuid.uuid4())
+    job_version = getattr(job, "job_version", 1)
 
-                        try:
-                            _docs_repo.update_status(
-                                doc.job_id, doc.document_id,
-                                DocumentStatus.PARSING, expected_version=fresh_doc.version,
-                            )
-                        except Exception:
-                            pass
+    session = UploadSessionItem(
+        session_id=session_id,
+        job_id=job_id,
+        org_id=ctx.org_id,
+        job_version=job_version,
+        expected_document_count=len(body.files),
+        uploaded_document_count=0,
+        status=UploadSessionStatus.UPLOADING,
+    )
+    _sessions_repo.create(session)
 
-                        import time
-                        t_dl_0 = time.time()
-                        pdf_bytes = _storage.get_resume(doc.job_id, doc.document_id)
-                        t_dl_1 = time.time()
-                        dl_ms = round((t_dl_1 - t_dl_0) * 1000, 2)
+    doc_infos: List[DocumentPresignedUrlInfo] = []
+    for f in body.files:
+        doc_id = str(uuid.uuid4())
+        s3_key = f"{ctx.org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
+        presigned_url = _storage.generate_presigned_put_url(
+            s3_key=s3_key,
+            content_type=f.content_type or "application/pdf",
+            expires_in=settings.PRESIGNED_URL_EXPIRY_SECONDS,
+        )
 
-                        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                            tmp.write(pdf_bytes)
-                            tmp_path = tmp.name
+        doc_item = DocumentItem(
+            document_id=doc_id,
+            job_id=job_id,
+            session_id=session_id,
+            org_id=ctx.org_id,
+            filename=f.filename,
+            file_size=f.file_size,
+            s3_pdf_key=s3_key,
+            status=DocumentStatus.UPLOAD_INITIALIZED,
+        )
+        _docs_repo.create(doc_item)
 
-                        try:
-                            from src.config.aws import get_settings
-                            settings = get_settings()
-                            extraction_result = await asyncio.to_thread(
-                                _extract_single_sync,
-                                tmp_path,
-                                doc.document_id,
-                                settings.s3_bucket_name,
-                                doc.s3_pdf_key,
-                            )
-                            fields = extraction_result.get("fields", {})
-                            if "_timings" not in fields:
-                                fields["_timings"] = {}
-                            fields["_timings"]["download_ms"] = dl_ms
-                            fields["_timings"]["total_ms"] = round(fields["_timings"].get("total_ms", 0.0) + dl_ms, 2)
+        doc_infos.append(
+            DocumentPresignedUrlInfo(
+                document_id=doc_id,
+                filename=f.filename,
+                s3_key=s3_key,
+                presigned_url=presigned_url,
+            )
+        )
 
-                            s3_extracted_key = _storage.upload_extracted_json(
-                                doc.job_id, doc.document_id, fields,
-                            )
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "UPLOAD_SESSION_CREATED",
+        "job",
+        job_id,
+        {"session_id": session_id, "expected_document_count": len(body.files)},
+    )
 
-                            candidate_name = fields.get("name", "") or ""
-                            cur_doc = _docs_repo.get(doc.job_id, doc.document_id)
-                            expected_ver = cur_doc.version if cur_doc else fresh_doc.version + 1
-                            _docs_repo.update_extraction(
-                                job_id=doc.job_id,
-                                document_id=doc.document_id,
-                                s3_extracted_key=s3_extracted_key,
-                                extraction_quality=extraction_result.get("extraction_quality", 0.0),
-                                candidate_name=candidate_name,
-                                page_count=extraction_result.get("page_count", 0),
-                                expected_version=expected_ver,
-                            )
-                        finally:
-                            Path(tmp_path).unlink(missing_ok=True)
+    return CreateUploadSessionResponse(
+        session_id=session_id,
+        job_id=job_id,
+        job_version=job_version,
+        expected_document_count=len(body.files),
+        documents=doc_infos,
+    )
 
-                except Exception as e:
-                    logger.error("Extraction failed for %s: %s", doc.filename, e, exc_info=True)
-                    try:
-                        cur_doc = _docs_repo.get(doc.job_id, doc.document_id)
-                        if cur_doc:
-                            _docs_repo.update_status(
-                                doc.job_id, doc.document_id,
-                                DocumentStatus.PARSE_FAILED,
-                                expected_version=cur_doc.version,
-                            )
-                    except Exception:
-                        pass
 
-            tasks = [asyncio.create_task(_extract_one(d)) for d in pending_docs]
-            await asyncio.gather(*tasks, return_exceptions=True)
+@router.post(
+    "/{job_id}/upload-sessions/{session_id}/documents/{document_id}/complete",
+    response_model=CompleteDocumentUploadResponse,
+)
+async def complete_document_upload(
+    job_id: str,
+    session_id: str,
+    document_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Verify S3 upload completion, validate PDF integrity, and enqueue for fast-parse."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    session = _sessions_repo.get(job_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    doc = _docs_repo.get(job_id, document_id)
+    if not doc or doc.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Document not found for session")
+
+    # Idempotency: If already UPLOADED or past that state, return success immediately
+    if doc.status not in (DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING):
+        return CompleteDocumentUploadResponse(
+            document_id=document_id,
+            session_id=session_id,
+            job_id=job_id,
+            status=doc.status.value,
+        )
+
+    settings = get_settings()
+
+    # 1. HEAD request to verify object exists and check size
+    try:
+        head = _storage.head_object(doc.s3_pdf_key)
+    except Exception as e:
+        logger.error("HEAD verification failed for s3://%s: %s", doc.s3_pdf_key, e)
+        raise HTTPException(status_code=400, detail="S3 object not found or incomplete upload")
+
+    actual_size = head.get("ContentLength", 0)
+    if actual_size > settings.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Uploaded file exceeds 10MB limit")
+
+    # 2. Verify PDF magic bytes (%PDF-) via Range read
+    try:
+        magic_bytes = _storage.get_object_byte_range(doc.s3_pdf_key, 0, 10)
+        if not magic_bytes.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="Corrupted file: invalid PDF header (magic bytes mismatch)")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=400, detail="Failed to verify PDF header bytes")
+
+    # 3. Compute SHA256 hash for deduplication
+    pdf_bytes = _storage.get_resume(job_id, document_id, s3_key=doc.s3_pdf_key)
+    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    existing = _docs_repo.find_by_hash(job_id, file_hash)
+    if existing and existing.document_id != document_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Duplicate of '{existing.filename}' (SHA-256 match)",
+        )
+
+    # 4. Check page count
+    try:
+        import fitz
+        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page_count = len(pdf_doc)
+        pdf_doc.close()
+        if page_count > settings.MAX_PAGE_COUNT:
+            raise HTTPException(status_code=400, detail=f"Document exceeds {settings.MAX_PAGE_COUNT} page limit ({page_count} pages)")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=400, detail="Corrupt or unreadable PDF structure")
+
+    # 5. Update DocumentItem in DynamoDB to UPLOADED
+    updated = _docs_repo.update_status_conditional(
+        job_id=job_id,
+        document_id=document_id,
+        new_status=DocumentStatus.UPLOADED,
+        allowed_current_statuses=[DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING],
+        extra_updates={
+            "file_size": actual_size,
+            "content_hash": file_hash,
+            "page_count": page_count,
+        },
+    )
+    if updated:
+        fresh_sess = _sessions_repo.get(job_id, session_id)
+        if fresh_sess:
+            _sessions_repo.increment_uploaded_count(job_id, session_id, expected_version=fresh_sess.version)
+
+        fresh_job = _jobs_repo.get(job_id)
+        if fresh_job:
+            _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
+
+        # Enqueue small message to FAST_PARSE_QUEUE
+        enqueue_fast_parse(
+            job_id=job_id,
+            session_id=session_id,
+            document_id=document_id,
+            org_id=ctx.org_id,
+            job_version=session.job_version,
+            s3_key=doc.s3_pdf_key,
+            content_hash=file_hash,
+        )
+
+    return CompleteDocumentUploadResponse(
+        document_id=document_id,
+        session_id=session_id,
+        job_id=job_id,
+        status="UPLOADED",
+    )
+
+
+@router.post(
+    "/{job_id}/upload-sessions/{session_id}/finalize",
+    response_model=FinalizeUploadSessionResponse,
+)
+async def finalize_upload_session(
+    job_id: str,
+    session_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Finalize upload session to establish the explicit fast-parse barrier."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    session = _sessions_repo.get(job_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    # Idempotent finalization
+    if session.status == UploadSessionStatus.UPLOADING:
+        _sessions_repo.update_status(
+            job_id,
+            session_id,
+            UploadSessionStatus.FAST_PARSING,
+            expected_version=session.version,
+        )
+        fresh_job = _jobs_repo.get(job_id)
+        if fresh_job and fresh_job.status == JobStatus.CREATED:
+            _jobs_repo.update_status(job_id, JobStatus.FAST_PARSING, expected_version=fresh_job.version)
+
+    check_and_progress_session(job_id, session_id)
+
+    # In local dev/test mode without real SQS daemon, drain pending queue items
+    settings = get_settings()
+    if not settings.USE_REAL_SQS:
+        from src.pipeline.worker_runner import drain_all_queues_sync
+        await asyncio.to_thread(drain_all_queues_sync, 10)
+
+    return FinalizeUploadSessionResponse(
+        session_id=session_id,
+        job_id=job_id,
+        status="FAST_PARSING",
+        message="Upload session finalized. Processing pipeline barrier active.",
+    )
+
+
+@router.get(
+    "/{job_id}/upload-sessions/{session_id}",
+    response_model=UploadSessionProgressResponse,
+)
+async def get_upload_session(
+    job_id: str,
+    session_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Retrieve upload session state, progress counts, and per-document diagnostics."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    session = _sessions_repo.get(job_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    docs = _docs_repo.list_for_session(job_id, session_id)
+    fast_parsed = sum(1 for d in docs if d.status.is_terminal_fast_parse())
+    terminal = sum(1 for d in docs if d.status.is_terminal_extraction())
+
+    doc_list = [
+        {
+            "document_id": d.document_id,
+            "filename": d.filename,
+            "status": d.status.value,
+            "candidate_name": d.candidate_name,
+            "identity_status": d.identity_status,
+            "extraction_quality": d.extraction_quality,
+            "fallback_reason": d.fallback_reason,
+            "error_reason": d.error_reason,
+        }
+        for d in docs
+    ]
+
+    return UploadSessionProgressResponse(
+        session_id=session_id,
+        job_id=job_id,
+        job_version=session.job_version,
+        status=session.status.value,
+        expected_document_count=session.expected_document_count,
+        uploaded_document_count=session.uploaded_document_count,
+        fast_parsed_count=fast_parsed,
+        terminal_count=terminal,
+        documents=doc_list,
+    )
 
 
 async def _extraction_event_stream(job_id: str):
@@ -539,10 +834,13 @@ async def _extraction_event_stream(job_id: str):
         failed = 0
 
         for doc in documents:
-            is_completed = doc.status in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+            is_completed = (
+                doc.status.is_terminal_extraction()
+                or doc.status in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
+            )
             if is_completed:
                 completed_docs += 1
-                if doc.status == DocumentStatus.PARSE_FAILED:
+                if doc.status in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED):
                     failed += 1
                 else:
                     succeeded += 1
@@ -554,51 +852,41 @@ async def _extraction_event_stream(job_id: str):
                         "current": len(seen_completed),
                         "total": total,
                         "filename": doc.filename,
-                        "status": "failed" if doc.status == DocumentStatus.PARSE_FAILED else "extracted",
+                        "candidate_name": doc.candidate_name,
+                        "identity_status": doc.identity_status,
+                        "status": "failed" if doc.status in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED) else "extracted",
                     })
                     yield f"event: progress\ndata: {event_data}\n\n"
 
-        if completed_docs == total:
+        if completed_docs == total and total > 0:
             yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total, 'succeeded': succeeded, 'failed': failed})}\n\n"
             break
 
-        # Check if any documents need extraction and kick worker if idle
-        unprocessed = [
-            d for d in documents
-            if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
-        ]
-        if unprocessed:
-            lock = _get_job_lock(job_id)
-            if not lock.locked():
-                asyncio.create_task(_run_extraction_background(job_id))
+        # In local/test mode without SQS daemon, ensure queue progress
+        from src.config.aws import get_settings
+        if not get_settings().USE_REAL_SQS:
+            from src.pipeline.worker_runner import drain_all_queues_sync
+            await asyncio.to_thread(drain_all_queues_sync, 2)
 
         yield ": ping\n\n"
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.0)
     else:
         yield f"event: error\ndata: {json.dumps({'error': 'Extraction timed out'})}\n\n"
 
 
 @router.get("/{job_id}/extract")
 async def extract_resumes(job_id: str, ctx: AuthContext = Depends(get_auth_context)):
-    """Start extraction as a Server-Sent Events stream.
-
-    Downloads PDFs from S3, runs extraction, uploads results back to S3,
-    and updates DynamoDB metadata.
-    """
+    """Start extraction as a Server-Sent Events stream. Resumable from durable state."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-    documents = _docs_repo.list_for_job(job_id)
-    pending_docs = [
-        d for d in documents
-        if d.status not in (DocumentStatus.PARSED, DocumentStatus.PARSE_FAILED, DocumentStatus.SCORED)
-    ]
-    if pending_docs:
-        lock = _get_job_lock(job_id)
-        if not lock.locked():
-            asyncio.create_task(_run_extraction_background(job_id))
+    # In local/test mode without SQS daemon, trigger worker drain
+    from src.config.aws import get_settings
+    if not get_settings().USE_REAL_SQS:
+        from src.pipeline.worker_runner import drain_all_queues_sync
+        await asyncio.to_thread(drain_all_queues_sync, 5)
 
     return StreamingResponse(
         _extraction_event_stream(job_id),
@@ -628,7 +916,15 @@ async def score_job(job_id: str, body: ScoreRequest, ctx: AuthContext = Depends(
 
     # Load all extracted documents from DynamoDB
     documents = _docs_repo.list_for_job(job_id)
-    extracted_docs = [d for d in documents if d.status == DocumentStatus.PARSED]
+    extracted_docs = [
+        d for d in documents
+        if d.status in (
+            DocumentStatus.STRUCTURED_PARSED,
+            DocumentStatus.REVIEW_REQUIRED,
+            DocumentStatus.PARSED,
+            DocumentStatus.SCORED,
+        )
+    ]
 
     if not extracted_docs:
         raise HTTPException(

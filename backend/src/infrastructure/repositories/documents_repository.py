@@ -146,6 +146,77 @@ class DocumentsRepository:
             return DocumentItem.from_dynamodb_item(items[0])
         return None
 
+    def list_for_session(self, job_id: str, session_id: str) -> List[DocumentItem]:
+        """List all documents belonging to an upload session."""
+        response = self._table.query(
+            KeyConditionExpression=(
+                Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("DOC#")
+            ),
+            FilterExpression=Attr("session_id").eq(session_id),
+        )
+        items = response.get("Items", [])
+        return [DocumentItem.from_dynamodb_item(item) for item in items]
+
+    def update_status_conditional(
+        self,
+        job_id: str,
+        document_id: str,
+        new_status: DocumentStatus,
+        allowed_current_statuses: Optional[List[DocumentStatus]] = None,
+        extra_updates: Optional[Dict[str, Any]] = None,
+    ) -> Optional[DocumentItem]:
+        """Update document status conditionally for idempotent state machine transitions.
+
+        If current status is not in allowed_current_statuses, returns None without raising,
+        preventing duplicate SQS message processing.
+        """
+        import botocore.exceptions
+        from src.infrastructure.repositories.base import to_decimal
+
+        set_parts = ["#s = :status", "#v = #v + :one", "updated_at = :now"]
+        expr_names: Dict[str, str] = {"#s": "status", "#v": "version"}
+        expr_values: Dict[str, Any] = {
+            ":status": new_status.value,
+            ":one": 1,
+            ":now": _utcnow_iso(),
+        }
+
+        if extra_updates:
+            for i, (k, v) in enumerate(extra_updates.items()):
+                placeholder = f":val{i}"
+                name_placeholder = f"#f{i}"
+                set_parts.append(f"{name_placeholder} = {placeholder}")
+                expr_names[name_placeholder] = k
+                expr_values[placeholder] = to_decimal(v)
+
+        cond_parts = ["attribute_exists(PK)"]
+        if allowed_current_statuses:
+            status_placeholders = []
+            for j, st in enumerate(allowed_current_statuses):
+                st_ph = f":curr_s{j}"
+                status_placeholders.append(st_ph)
+                expr_values[st_ph] = st.value
+            cond_parts.append(f"#s IN ({', '.join(status_placeholders)})")
+
+        try:
+            response = self._table.update_item(
+                Key={"PK": f"JOB#{job_id}", "SK": f"DOC#{document_id}"},
+                UpdateExpression="SET " + ", ".join(set_parts),
+                ConditionExpression=" AND ".join(cond_parts),
+                ExpressionAttributeNames=expr_names,
+                ExpressionAttributeValues=expr_values,
+                ReturnValues="ALL_NEW",
+            )
+            return DocumentItem.from_dynamodb_item(response["Attributes"])
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.info(
+                    "Conditional status update skipped for doc %s (current status not in %s)",
+                    document_id, [s.value for s in allowed_current_statuses] if allowed_current_statuses else [],
+                )
+                return None
+            raise
+
     def delete(self, job_id: str, document_id: str) -> None:
         """Delete a single Document item."""
         self._table.delete_item(

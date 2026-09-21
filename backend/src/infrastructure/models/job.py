@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 class JobStatus(str, Enum):
     """Job lifecycle states."""
+    # Legacy states
     CREATED = "created"
     DOCUMENTS_UPLOADED = "documents_uploaded"
     EXTRACTING = "extracting"
@@ -23,6 +24,15 @@ class JobStatus(str, Enum):
     SCORING = "scoring"
     SCORED = "scored"
     ARCHIVED = "archived"
+
+    # Durable pipeline states (v2.2)
+    UPLOADING = "UPLOADING"
+    FAST_PARSING = "FAST_PARSING"
+    FALLBACK_PROCESSING = "FALLBACK_PROCESSING"
+    FINAL_RANKING = "FINAL_RANKING"
+    READY = "READY"
+    READY_WITH_WARNINGS = "READY_WITH_WARNINGS"
+    FAILED = "FAILED"
 
 
 def _utcnow_iso() -> str:
@@ -116,6 +126,11 @@ class JobItem(BaseModel):
         raw_weights = item.get("weights", {})
         # Convert Decimal values back to float
         weights = {k: float(v) for k, v in raw_weights.items()}
+        raw_status = item.get("status", "created")
+        try:
+            status_obj = JobStatus(raw_status)
+        except ValueError:
+            status_obj = JobStatus.CREATED
         return cls(
             job_id=item["job_id"],
             org_id=item.get("org_id", "org_default"),
@@ -131,7 +146,7 @@ class JobItem(BaseModel):
             education_field=item.get("education_field", ""),
             keywords=item.get("keywords", []),
             weights=weights,
-            status=JobStatus(item.get("status", "created")),
+            status=status_obj,
             document_count=int(item.get("document_count", 0)),
             version=int(item.get("version", 1)),
             job_version=int(item.get("job_version", 1)),
