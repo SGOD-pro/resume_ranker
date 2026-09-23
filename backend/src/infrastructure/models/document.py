@@ -37,6 +37,7 @@ class DocumentStatus(str, Enum):
     STRUCTURED_PARSED = "STRUCTURED_PARSED"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
     FAILED = "FAILED"
+    REJECTED_DUPLICATE = "REJECTED_DUPLICATE"
 
     # ── V1 backwards-compat aliases ────
     EXTRACTING = "extracting"
@@ -47,8 +48,10 @@ class DocumentStatus(str, Enum):
         return self in (
             DocumentStatus.STRUCTURED_PARSED,
             DocumentStatus.NEEDS_ODL,
+            DocumentStatus.NEEDS_NOVA,
             DocumentStatus.REVIEW_REQUIRED,
             DocumentStatus.FAILED,
+            DocumentStatus.REJECTED_DUPLICATE,
             DocumentStatus.PARSED,
             DocumentStatus.PARSE_FAILED,
             DocumentStatus.SCORED,
@@ -59,10 +62,12 @@ class DocumentStatus(str, Enum):
             DocumentStatus.STRUCTURED_PARSED,
             DocumentStatus.REVIEW_REQUIRED,
             DocumentStatus.FAILED,
+            DocumentStatus.REJECTED_DUPLICATE,
             DocumentStatus.PARSED,
             DocumentStatus.PARSE_FAILED,
             DocumentStatus.SCORED,
         )
+
 
 
 

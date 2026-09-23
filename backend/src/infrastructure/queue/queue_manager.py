@@ -55,8 +55,8 @@ def enqueue_fast_parse(
     content_hash: str,
     attempt_number: int = 1,
 ) -> str:
-    """Enqueue a single document for fast parsing."""
-    adapter = get_queue_adapter()
+    """Enqueue a single document for fast parsing (via SNS Topic pub/sub if configured, or direct SQS)."""
+    settings = get_settings()
     msg = QueueMessage(
         job_id=job_id,
         session_id=session_id,
@@ -68,6 +68,25 @@ def enqueue_fast_parse(
         stage="FAST_PARSE",
         attempt_number=attempt_number,
     )
+    adapter = get_queue_adapter()
+    if settings.USE_REAL_SQS and settings.SNS_EVENTS_TOPIC_ARN and not isinstance(adapter, LocalQueueAdapter):
+        try:
+            from src.config.aws import get_client
+            sns_client = get_client("sns")
+            resp = sns_client.publish(
+                TopicArn=settings.SNS_EVENTS_TOPIC_ARN,
+                Message=msg.to_json(),
+                MessageAttributes={
+                    "stage": {"DataType": "String", "StringValue": "FAST_PARSE"},
+                    "job_id": {"DataType": "String", "StringValue": job_id},
+                },
+            )
+            msg_id = resp.get("MessageId", msg.event_id)
+            logger.info("Published FAST_PARSE event to SNS topic %s (id: %s)", settings.SNS_EVENTS_TOPIC_ARN, msg_id)
+            return msg_id
+        except Exception as e:
+            logger.warning("SNS publish failed, falling back to direct SQS send: %s", e)
+
     return adapter.send_message(FAST_PARSE_QUEUE, msg)
 
 

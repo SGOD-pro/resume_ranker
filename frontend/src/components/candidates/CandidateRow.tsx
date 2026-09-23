@@ -26,7 +26,9 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
     !candidate.name;
   const displayName = isUnresolvedName ? 'Name needs review' : candidate.name;
 
-  const scoreValue = candidate.relevanceScore ?? candidate.overallScore;
+  const scoreValue = typeof candidate.overallScore === 'number'
+    ? candidate.overallScore
+    : (candidate.relevanceScore ?? 0);
 
   // Derive eligibility badge
   const eligibility = candidate.eligibilityStatus || (candidate.signal === 'knockout' ? 'DOES_NOT_MEET_CRITERIA' : 'ELIGIBLE');
@@ -36,7 +38,15 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
     dot: signal.dot,
   };
 
-  if (eligibility === 'DOES_NOT_MEET_CRITERIA') {
+  if (candidate.status && candidate.status !== 'under-review') {
+    if (candidate.status === 'shortlisted') {
+      statusBadge = { label: 'Shortlisted', color: 'text-success', dot: 'bg-success' };
+    } else if (candidate.status === 'rejected') {
+      statusBadge = { label: 'Rejected', color: 'text-error', dot: 'bg-error' };
+    } else if (candidate.status === 'assessment-sent') {
+      statusBadge = { label: 'Assessment Sent', color: 'text-info', dot: 'bg-info' };
+    }
+  } else if (eligibility === 'DOES_NOT_MEET_CRITERIA') {
     statusBadge = {
       label: 'Criteria Not Met',
       color: 'text-error',

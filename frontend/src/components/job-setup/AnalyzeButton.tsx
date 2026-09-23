@@ -7,7 +7,7 @@
  * - On scoring 500/validation error: blocking Alert (not toast)
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -15,11 +15,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useJobStore } from '@/store/job-store';
 import { useAppStore } from '@/store/app-store';
 import { useCandidateStore } from '@/store/candidate-store';
-import { startExtraction, scoreJob, updateJob } from '@/lib/api';
+import { requestAnalysis, getAnalysisStatus, getResults, updateJob, scoreJob } from '@/lib/api';
 import { mapScoredCandidates } from '@/lib/mapScoredCandidate';
-
-const MAX_SSE_RETRIES = 3;
-const SSE_RETRY_DELAY_MS = 2000;
 
 export function AnalyzeButton() {
   const { isAnalyzing, setAnalyzing, job } = useJobStore();
@@ -27,15 +24,20 @@ export function AnalyzeButton() {
   const setAppPhase = useAppStore((s) => s.setAppPhase);
   const jobId = useAppStore((s) => s.jobId);
   const setBlockingError = useAppStore((s) => s.setBlockingError);
-  const setSseRetryCount = useAppStore((s) => s.setSseRetryCount);
   const setCandidates = useCandidateStore((s) => s.setCandidates);
   const setUpload = useCandidateStore((s) => s.setUpload);
+  const handleClickRef = useRef<(() => Promise<void>) | null>(null);
+  // Track whether user clicked Analyze while fast_preprocessing is still running
+  const analyzeRequestedRef = useRef(false);
+
 
   const isDisabled =
     isAnalyzing ||
-    appPhase === 'extracting' ||
-    appPhase === 'scoring' ||
     appPhase === 'uploading' ||
+    appPhase === 'analysis_queued' ||
+    appPhase === 'fallback_processing' ||
+    appPhase === 'final_ranking' ||
+    appPhase === 'scoring' ||
     !jobId;
 
   const getTooltipText = () => {
@@ -43,60 +45,74 @@ export function AnalyzeButton() {
       return 'Upload resumes first to begin analysis';
     }
     switch (appPhase) {
-      case 'extracting':
-        return 'Extraction in progress';
-      case 'scoring':
-        return 'Scoring in progress';
       case 'uploading':
         return 'Upload in progress';
+      case 'analysis_queued':
+        return 'Analysis queued';
+      case 'fast_preprocessing':
+        return 'Click to analyze — parsing continues in background';
+      case 'fallback_processing':
+        return 'Deeper extraction in progress';
+      case 'final_ranking':
+      case 'scoring':
+        return 'Scoring in progress';
       default:
         return null;
     }
   };
 
-  /** Run SSE extraction with auto-retry */
-  const runExtraction = useCallback(
-    (currentJobId: string): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        let retryCount = 0;
+  /** Poll durable upload session progress until terminal state */
+  const pollAnalysisProgress = useCallback(
+    async (currentJobId: string): Promise<void> => {
+      const maxAttempts = 180;
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const statusRes = await getAnalysisStatus(currentJobId);
+          const st = statusRes.status;
 
-        const attemptConnect = () => {
-          setSseRetryCount(retryCount);
-
-          const cleanup = startExtraction(
-            currentJobId,
-            // onEvent — no-op; progress UI can be added here in the future
-            () => {
-              // Could update progress UI here in the future
-            },
-            // onError
-            (error: Error) => {
-              retryCount++;
-              setSseRetryCount(retryCount);
-
-              if (retryCount <= MAX_SSE_RETRIES) {
-                toast.warning(`Connection lost. Reconnecting… (${retryCount}/${MAX_SSE_RETRIES})`);
-                setTimeout(attemptConnect, SSE_RETRY_DELAY_MS * retryCount);
-              } else {
-                setSseRetryCount(0);
-                reject(error);
-              }
-            },
-            // onComplete
-            () => {
-              setSseRetryCount(0);
-              resolve();
-            },
-          );
-
-          // Store cleanup ref (could be used for unmount)
-          void cleanup;
-        };
-
-        attemptConnect();
-      });
+          if (st === 'FAST_PREPROCESSING' || st === 'FAST_PARSING') {
+            setAppPhase('fast_preprocessing');
+          } else if (st === 'ANALYSIS_REQUESTED') {
+            setAppPhase('analysis_queued');
+          } else if (st === 'FALLBACK_PROCESSING') {
+            setAppPhase('fallback_processing');
+          } else if (st === 'FINAL_RANKING') {
+            setAppPhase('final_ranking');
+          } else if (st === 'READY_TO_ANALYZE') {
+            // Fast-parse complete, waiting for Analyze click — transition UI
+            setAppPhase('ready_to_analyze');
+            // If user had already clicked Analyze (race), re-trigger immediately
+            if (analyzeRequestedRef.current) {
+              handleClickRef.current?.();
+            }
+            return;
+          } else if (st === 'READY' || st === 'READY_WITH_WARNINGS') {
+            const results = await getResults(currentJobId);
+            const mapped = mapScoredCandidates(results.candidates, currentJobId);
+            setCandidates(mapped);
+            setUpload({
+              totalFiles: results.total_candidates,
+              analyzedFiles: results.total_candidates,
+              processingFiles: 0,
+            });
+            setAppPhase('complete');
+            toast.success('Analysis complete');
+            return;
+          } else if (st === 'FAILED') {
+            const errDoc = statusRes.documents?.find((d) => d.error_reason);
+            throw new Error(errDoc?.error_reason || 'Analysis processing failed.');
+          }
+        } catch (pollErr: unknown) {
+          // If status route not ready or error, continue polling unless terminal
+          if (i > 5 && pollErr instanceof Error && pollErr.message.includes('failed')) {
+            throw pollErr;
+          }
+        }
+      }
+      throw new Error('Analysis timed out. Please refresh to check results.');
     },
-    [setSseRetryCount],
+    [setAppPhase, setCandidates, setUpload],
   );
 
   const handleClick = useCallback(async () => {
@@ -111,19 +127,17 @@ export function AnalyzeButton() {
       setBlockingError({
         title: 'Invalid Weights',
         message: `Score weights must sum to 100%. Current total: ${weightsSum}%.`,
-        onRetry: () => {
-          // Just dismiss — user needs to fix weights
-        },
+        onRetry: () => {},
       });
       return;
     }
 
     setAnalyzing(true);
+    // Mark intent in case we're still in fast_preprocessing
+    analyzeRequestedRef.current = true;
 
     try {
       // Phase 0: Push current JD form state to backend
-      // The job was created at upload time with empty/default config.
-      // Now that the user has filled the form, sync it before scoring.
       try {
         await updateJob(jobId, {
           title: job.title || 'Untitled Job',
@@ -143,61 +157,95 @@ export function AnalyzeButton() {
         setBlockingError({
           title: 'Config Update Failed',
           message,
-          onRetry: () => handleClick(),
+          onRetry: () => handleClickRef.current?.(),
         });
-        setAppPhase('idle');
+        setAppPhase('ready_to_analyze');
         setAnalyzing(false);
+        analyzeRequestedRef.current = false;
         return;
       }
 
-      // Phase 1: Extraction (SSE)
-      setAppPhase('extracting');
+      // Phase 1: Request analysis authorization.
+      // If we're still in fast_preprocessing, the backend will persist analysis_requested=True
+      // and the coordinator will dispatch ODL/final-rank as soon as fast-parse completes.
+      setAppPhase('analysis_queued');
       try {
-        await runExtraction(jobId);
-        toast.success('Extraction complete');
-      } catch {
-        // SSE failed after all retries
-        setBlockingError({
-          title: 'Extraction Failed',
-          message:
-            'Lost connection to the server during extraction after multiple reconnection attempts. Please try again.',
-          onRetry: () => handleClick(),
-        });
-        setAppPhase('idle');
-        setAnalyzing(false);
-        return;
-      }
-
-      // Phase 2: Scoring
-      setAppPhase('scoring');
-      try {
+        await requestAnalysis(jobId, { weights: job.weights });
+      } catch (reqErr) {
+        console.warn('Direct analysis trigger failed, falling back to synchronous score:', reqErr);
+        // Fallback to synchronous score endpoint if legacy backend
         const response = await scoreJob(jobId, { weights: job.weights });
-
-        // ── STEP 5: Use setCandidates (full replacement, never append) ──────
-        const mapped = mapScoredCandidates(response.candidates);
+        const mapped = mapScoredCandidates(response.candidates, jobId);
         setCandidates(mapped);
         setUpload({
           totalFiles: response.total_candidates,
           analyzedFiles: response.total_candidates,
           processingFiles: 0,
         });
-        toast.success('Analysis complete');
         setAppPhase('complete');
-      } catch (err) {
-        // Scoring error → blocking Alert (not toast)
-        const message =
-          err instanceof Error ? err.message : 'An unexpected error occurred during scoring.';
-        setBlockingError({
-          title: 'Scoring Failed',
-          message,
-          onRetry: () => handleClick(),
-        });
-        setAppPhase('idle');
+        toast.success('Analysis complete');
+        analyzeRequestedRef.current = false;
+        return;
       }
+
+      // Phase 2: Poll durable pipeline progress through barrier and ranking
+      await pollAnalysisProgress(jobId);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'An unexpected error occurred during analysis.';
+      setBlockingError({
+        title: 'Analysis Failed',
+        message,
+        onRetry: () => handleClickRef.current?.(),
+      });
+      setAppPhase('ready_to_analyze');
     } finally {
       setAnalyzing(false);
+      analyzeRequestedRef.current = false;
     }
-  }, [jobId, job, setAnalyzing, setAppPhase, setBlockingError, runExtraction, setCandidates, setUpload]);
+  }, [jobId, job, setAnalyzing, setAppPhase, setBlockingError, pollAnalysisProgress, setCandidates, setUpload]);
+
+
+  useEffect(() => {
+    handleClickRef.current = handleClick;
+  }, [handleClick]);
+
+  // Background polling: while in fast_preprocessing, poll every 3s to detect
+  // when READY_TO_ANALYZE is reached and auto-transition the UI.
+  useEffect(() => {
+    if (appPhase !== 'fast_preprocessing' || !jobId || isAnalyzing) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const statusRes = await getAnalysisStatus(jobId);
+        const st = statusRes.status;
+        if (cancelled) return;
+
+        if (st === 'READY_TO_ANALYZE') {
+          setAppPhase('ready_to_analyze');
+          if (analyzeRequestedRef.current) {
+            handleClickRef.current?.();
+          }
+        } else if (st === 'READY' || st === 'READY_WITH_WARNINGS') {
+          // Analysis already completed (e.g. after page refresh)
+          setAppPhase('complete');
+        } else if (st === 'FAILED') {
+          setAppPhase('error');
+        }
+        // If still FAST_PREPROCESSING, the interval will poll again
+      } catch {
+        // ignore transient errors — keep polling
+      }
+    };
+
+    const intervalId = setInterval(poll, 3000);
+    poll(); // immediate first check
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [appPhase, jobId, isAnalyzing, setAppPhase]);
 
   const tooltipText = getTooltipText();
   const showTooltip = isDisabled && tooltipText;
@@ -211,8 +259,17 @@ export function AnalyzeButton() {
       {isAnalyzing ? (
         <span className="flex items-center gap-sp-2">
           <Spinner className="text-current" />
-          {appPhase === 'extracting' ? 'Extracting…' : appPhase === 'scoring' ? 'Scoring…' : 'Analyzing…'}
+          {appPhase === 'analysis_queued'
+            ? 'Analysis queued…'
+            : appPhase === 'fast_preprocessing'
+              ? 'Preprocessing…'
+              : appPhase === 'fallback_processing'
+                ? 'Deep parsing…'
+                : appPhase === 'final_ranking' || appPhase === 'scoring'
+                  ? 'Scoring…'
+                  : 'Analyzing…'}
         </span>
+
       ) : (
         'Analyze Resumes'
       )}

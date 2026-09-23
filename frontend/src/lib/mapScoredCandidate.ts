@@ -29,7 +29,7 @@ function deriveSignal(finalScore: number, knockedOut: boolean): Signal {
 }
 
 /** Map a single backend ScoredCandidate dict to the frontend Candidate shape */
-export function mapScoredCandidate(raw: any, index: number): Candidate {
+export function mapScoredCandidate(raw: any, index: number, defaultJobId?: string): Candidate {
   const id = raw.document_id || `candidate-${index}`;
   const rawName = raw.name;
   const identityStatus = raw.identity_status || (rawName && rawName !== 'Unknown' ? 'VERIFIED' : 'UNRESOLVED');
@@ -139,10 +139,15 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
   // Title — use best_title_match or fallback
   const title = raw.best_title_match || '';
 
-  // ── Contact info from backend extraction ──────────────────────────────
-  const pdfUrlPath = raw.pdf_url || '';
+  // ── Contact info & PDF URL from backend extraction ──────────────────────────────
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  const pdfUrl = pdfUrlPath ? `${apiBase}${pdfUrlPath}` : '';
+  const effectiveJobId = raw.job_id || defaultJobId || '';
+  let pdfUrl = '';
+  if (raw.pdf_url) {
+    pdfUrl = raw.pdf_url.startsWith('http') ? raw.pdf_url : `${apiBase}${raw.pdf_url}`;
+  } else if (raw.document_id && effectiveJobId) {
+    pdfUrl = `${apiBase}/api/v2/jobs/${effectiveJobId}/resumes/${raw.document_id}/download`;
+  }
 
   const mapped: Candidate = {
     id,
@@ -183,6 +188,6 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
 }
 
 /** Map an array of backend ScoredCandidate dicts to frontend Candidate[] */
-export function mapScoredCandidates(rawCandidates: any[]): Candidate[] {
-  return rawCandidates.map((raw, i) => mapScoredCandidate(raw, i));
+export function mapScoredCandidates(rawCandidates: any[], defaultJobId?: string): Candidate[] {
+  return rawCandidates.map((raw, i) => mapScoredCandidate(raw, i, defaultJobId));
 }

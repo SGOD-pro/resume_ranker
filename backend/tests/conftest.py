@@ -14,6 +14,21 @@ if str(BACKEND_ROOT) not in sys.path:
 from src.ranking.scorer import CandidateScorer
 
 
+@pytest.fixture(autouse=True)
+def configure_test_queue():
+    """Ensure tests run against deterministic in-memory LocalQueueAdapter."""
+    import os
+    from src.infrastructure.queue.local_adapter import LocalQueueAdapter
+    from src.infrastructure.queue.queue_manager import set_queue_adapter
+    from src.config.aws import get_settings
+    os.environ["USE_REAL_SQS"] = "false"
+    get_settings.cache_clear()
+    adapter = LocalQueueAdapter()
+    set_queue_adapter(adapter)
+    yield adapter
+    set_queue_adapter(None)
+
+
 @pytest.fixture(scope="session")
 def scorer():
     """Shared CandidateScorer instance."""

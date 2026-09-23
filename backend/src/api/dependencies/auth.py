@@ -43,6 +43,9 @@ async def get_auth_context(request: Request) -> AuthContext:
     if not token and SESSION_COOKIE_NAME in request.cookies:
         token = request.cookies[SESSION_COOKIE_NAME]
 
+    # 3. Query parameter (direct browser links/downloads)
+    if not token and "token" in request.query_params:
+        token = request.query_params["token"]
 
     if token:
         ctx = verify_session_token(token)

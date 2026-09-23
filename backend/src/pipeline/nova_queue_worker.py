@@ -57,6 +57,17 @@ def process_nova_message(message: QueueMessage) -> None:
         # Load extracted JSON from S3
         fields = storage.get_extracted_json(job_id, doc_id)
         unresolved_chunks = fields.get("unresolved_chunks", [])
+        if not unresolved_chunks:
+            if fields.get("raw_text"):
+                unresolved_chunks = [fields["raw_text"]]
+            else:
+                try:
+                    pdf_bytes = storage.get_resume(job_id, doc_id, s3_key=doc.s3_pdf_key)
+                    import fitz
+                    with fitz.open(stream=pdf_bytes, filetype="pdf") as pdoc:
+                        unresolved_chunks = [page.get_text() for page in pdoc if page.get_text().strip()]
+                except Exception as ex:
+                    logger.warning("Could not extract raw text for Nova infill: %s", ex)
 
         t0 = time.time()
         if unresolved_chunks:
@@ -69,11 +80,15 @@ def process_nova_message(message: QueueMessage) -> None:
             fields["_timings"]["total_ms"] = round(fields["_timings"].get("total_ms", 0.0) + nova_ms, 2)
 
         candidate_name = fields.get("name")
-        identity_status = fields.get("identity_status", "PROVISIONAL")
-        extraction_quality = fields.get("extraction_quality", 0.80)
+        identity_info = fields.get("identity") or {}
+        identity_status = identity_info.get("status") or fields.get("identity_status", "PROVISIONAL")
+        if hasattr(identity_status, "value"):
+            identity_status = identity_status.value
+        identity_confidence = identity_info.get("confidence", 0.80)
+        extraction_quality = fields.get("extraction_quality", 0.85)
 
-        # Status: If confidence is still weak, remain REVIEW_REQUIRED
-        if candidate_name and candidate_name != "Name needs review" and fields.get("skills"):
+        # Status: If candidate name is valid, promote to STRUCTURED_PARSED
+        if candidate_name and str(candidate_name).strip() not in ("", "Name needs review", "Unknown"):
             target_status = DocumentStatus.STRUCTURED_PARSED
         else:
             target_status = DocumentStatus.REVIEW_REQUIRED
@@ -90,6 +105,7 @@ def process_nova_message(message: QueueMessage) -> None:
             extra_updates={
                 "candidate_name": candidate_name or "Name needs review",
                 "identity_status": identity_status,
+                "identity_confidence": identity_confidence,
                 "extraction_quality": extraction_quality,
             },
         )

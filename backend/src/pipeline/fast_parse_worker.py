@@ -91,14 +91,67 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         t_dl_1 = time.time()
         dl_ms = round((t_dl_1 - t_dl_0) * 1000, 2)
 
+        # 2. SHA-256 hash calculation & duplicate detection in background worker
+        import hashlib
+        file_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+        existing = docs_repo.find_by_hash(job_id, file_hash)
+        if existing and existing.document_id != doc_id:
+            logger.info("FastParseWorker: Doc %s duplicate of %s (hash %s)", doc_id, existing.document_id, file_hash)
+            docs_repo.update_status_conditional(
+                job_id=job_id,
+                document_id=doc_id,
+                new_status=DocumentStatus.REJECTED_DUPLICATE,
+                allowed_current_statuses=[DocumentStatus.FAST_PARSING],
+                extra_updates={
+                    "content_hash": file_hash,
+                    "error_reason": f"Duplicate of '{existing.filename}' (SHA-256 match)",
+                },
+            )
+            return
+
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(pdf_bytes)
             tmp_path = tmp.name
 
-        # 2. PyMuPDF inspection & layout quality calculation
+        # 3. PyMuPDF inspection & layout quality calculation
         t_struct_0 = time.time()
-        pdf_doc = fitz.open(tmp_path)
-        page_count = len(pdf_doc)
+        try:
+            pdf_doc = fitz.open(tmp_path)
+            page_count = len(pdf_doc)
+            if page_count == 0:
+                raise ValueError("Corrupt PDF: 0 pages")
+        except Exception as open_err:
+            logger.warning("FastParseWorker: Failed to open PDF %s: %s", doc_id, open_err)
+            docs_repo.update_status_conditional(
+                job_id=job_id,
+                document_id=doc_id,
+                new_status=DocumentStatus.FAILED,
+                allowed_current_statuses=[DocumentStatus.FAST_PARSING],
+                extra_updates={
+                    "content_hash": file_hash,
+                    "error_reason": "Corrupt or unreadable PDF structure",
+                },
+            )
+            return
+
+        from src.config.aws import get_settings
+        settings = get_settings()
+        if page_count > settings.MAX_PAGE_COUNT:
+            pdf_doc.close()
+            logger.warning("FastParseWorker: Doc %s page count %d > %d", doc_id, page_count, settings.MAX_PAGE_COUNT)
+            docs_repo.update_status_conditional(
+                job_id=job_id,
+                document_id=doc_id,
+                new_status=DocumentStatus.FAILED,
+                allowed_current_statuses=[DocumentStatus.FAST_PARSING],
+                extra_updates={
+                    "content_hash": file_hash,
+                    "page_count": page_count,
+                    "error_reason": f"Document exceeds {settings.MAX_PAGE_COUNT} page limit ({page_count} pages)",
+                },
+            )
+            return
 
         scores = [pymupdf_layout_quality(page) for page in pdf_doc]
         quality_score = round(sum(scores) / len(scores), 2) if scores else 0.0
@@ -111,6 +164,7 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         full_pymupdf_text = "\n".join(pymupdf_text_lines)
         t_struct_1 = time.time()
         struct_ms = round((t_struct_1 - t_struct_0) * 1000, 2)
+
 
         # 3. Deterministic extraction pass
         t_det_0 = time.time()
@@ -147,12 +201,33 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         fields["_document_id"] = doc_id
         fields["extraction_quality"] = quality_score
 
-        # 4. Check whether deeper ODL extraction is needed
+        # 4. Check whether deeper ODL extraction or LLM infill is needed
         needs_odl = quality_score < QUALITY_THRESHOLD
+
+        is_unresolved_name = (
+            not candidate_name
+            or str(candidate_name).strip() in ("", "Name needs review", "Unknown")
+            or identity_status == "UNRESOLVED"
+        )
+        is_missing_experience = not fields.get("experience") or len(fields.get("experience")) == 0
+
         if needs_odl:
             fallback_reason = f"PyMuPDF layout quality ({quality_score:.2f} < {QUALITY_THRESHOLD}) indicates complex/multi-column layout"
             fields["fallback_reason"] = fallback_reason
+            fields["unresolved_chunks"] = [full_pymupdf_text[:4000]]
+            fields["raw_text"] = full_pymupdf_text[:4000]
             target_status = DocumentStatus.NEEDS_ODL
+        elif is_unresolved_name or is_missing_experience:
+            reasons = []
+            if is_unresolved_name:
+                reasons.append("candidate name unresolved")
+            if is_missing_experience:
+                reasons.append("experience records not found")
+            fallback_reason = f"Deterministic parse missed critical fields ({', '.join(reasons)}); queued for LLM fallback infill"
+            fields["fallback_reason"] = fallback_reason
+            fields["unresolved_chunks"] = [full_pymupdf_text[:4000]]
+            fields["raw_text"] = full_pymupdf_text[:4000]
+            target_status = DocumentStatus.NEEDS_NOVA
         else:
             fallback_reason = None
             if identity_status in ("VERIFIED", "PLAUSIBLE") and quality_score >= 0.70:
@@ -175,9 +250,11 @@ def process_fast_parse_message(message: QueueMessage) -> None:
                 "identity_confidence": identity_confidence,
                 "extraction_quality": quality_score,
                 "page_count": page_count,
+                "content_hash": file_hash,
                 "s3_extracted_key": s3_extracted_key,
                 "fallback_reason": fallback_reason,
             },
+
         )
         logger.info(
             "FastParseWorker: Processed %s -> status %s (quality=%.2f, name=%s)",

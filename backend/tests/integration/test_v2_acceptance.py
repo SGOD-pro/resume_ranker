@@ -16,6 +16,7 @@ Validates:
 """
 
 import sys
+import uuid
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
@@ -143,15 +144,28 @@ def test_tenant_isolation(client):
 
 def test_pdf_magic_bytes_validation(client):
     """Verify that corrupt or non-PDF files are rejected even if given .pdf extension."""
+    unique_id = uuid.uuid4().hex[:8]
+    reg_resp = client.post(
+        "/api/v2/auth/register",
+        json={
+            "org_name": f"Org_{unique_id}",
+            "email": f"recruiter_{unique_id}@example.com",
+            "name": f"Recruiter {unique_id}",
+            "password": "Password123!",
+        },
+    )
+    assert reg_resp.status_code == 201
+    headers = {"Authorization": f"Bearer {reg_resp.json()['token']}"}
+
     # Create Job
-    job_resp = client.post("/api/v2/jobs", json={"title": "Test PDF Validation"})
+    job_resp = client.post("/api/v2/jobs", json={"title": "Test PDF Validation"}, headers=headers)
     job_id = job_resp.json()["id"]
 
     # Upload file with text content disguised as PDF
     fake_pdf = b"This is plain text pretending to be a PDF."
     files = [("files", ("fake.pdf", fake_pdf, "application/pdf"))]
 
-    upload_resp = client.post(f"/api/v2/jobs/{job_id}/resumes", files=files)
+    upload_resp = client.post(f"/api/v2/jobs/{job_id}/resumes", files=files, headers=headers)
     assert upload_resp.status_code in (200, 202)
     data = upload_resp.json()
     assert len(data["rejected"]) == 1

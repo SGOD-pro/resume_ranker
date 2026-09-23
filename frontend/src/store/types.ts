@@ -156,11 +156,16 @@ export type JobStatus =
 
 export type UploadSessionStatus =
   | 'UPLOADING'
+  | 'UPLOAD_FINALIZED'
+  | 'FAST_PREPROCESSING'
   | 'FAST_PARSING'
+  | 'READY_TO_ANALYZE'
+  | 'ANALYSIS_REQUESTED'
   | 'FALLBACK_PROCESSING'
   | 'FINAL_RANKING'
   | 'READY'
   | 'READY_WITH_WARNINGS'
   | 'FAILED'
   | 'EXPIRED';
+
 

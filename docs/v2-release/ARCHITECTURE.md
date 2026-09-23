@@ -66,39 +66,48 @@ sequenceDiagram
     loop Parallel Uploads (Bounded concurrency = 4)
         C->>S3: PUT /resumes/{doc_id}.pdf (Direct to S3)
         C->>A: POST /documents/{doc_id}/complete
+        A->>S3: HEAD object & Range bytes=0-9 check
         A->>DB: Update DocumentStatus: UPLOADED
-        A-->>C: Acknowledged
+        A->>Q: Enqueue FastParseMessage (doc_id)
+        A-->>C: 202 Accepted
     end
 
-    %% 3. Finalize & Stage 1 Queueing
+    %% 3. Finalize & Fast Preprocessing
     C->>A: POST /upload-sessions/{id}/finalize
-    A->>DB: Transition UploadSession: FAST_PARSING
-    A->>Q: Enqueue FastParseMessage for each document
-    A-->>C: Finalized (READY / FAST_PARSING)
+    A->>DB: Transition UploadSession: FAST_PREPROCESSING
+    A-->>C: 202 Accepted
 
-    %% 4. Stage 1: Fast Parse Worker
+    %% 4. Stage 1: Fast Parse Worker & Barrier
     W->>Q: Poll fast-parse queue
-    W->>S3: Fetch PDF
+    W->>S3: Fetch PDF & calculate SHA-256
+    W->>W: Duplicate check (mark REJECTED_DUPLICATE if duplicate)
     W->>W: Structural parsing & quality gate
     alt Quality Gate Pass
         W->>S3: Write extracted JSON
         W->>DB: DocumentStatus: STRUCTURED_PARSED
     else Low Quality / Complex Layout
         W->>DB: DocumentStatus: NEEDS_ODL
-        W->>Q: Enqueue ODLBatchMessage
     end
-    W->>DB: Evaluate Fast-Parse Barrier
+    W->>DB: Evaluate Fast-Parse Barrier (session pauses at READY_TO_ANALYZE)
 
-    %% 5. Stage 2: ODL Fallback (if needed)
+    %% 5. Explicit Analysis Trigger
+    Note over C,A: Recruiter reviews/edits criteria & weights, clicks Analyze
+    C->>A: POST /jobs/{job_id}/analysis (updated criteria/weights)
+    A->>DB: Increment job_version & pin session (analysis_requested = True)
+    A->>DB: Transition UploadSession: ANALYSIS_REQUESTED
+    A-->>C: 202 Accepted
+
+    %% 6. Stage 2: ODL Fallback (if needed)
     opt Complex Layouts
+        A->>Q: Enqueue bounded ODL batch
         W->>Q: Poll odl-batch queue
-        W->>W: Run ODL JVM extraction
+        W->>W: Run ODL JVM extraction in bounded batches
         W->>S3: Write extracted JSON
         W->>DB: DocumentStatus: STRUCTURED_PARSED or REVIEW_REQUIRED
         W->>DB: Evaluate Barrier
     end
 
-    %% 6. Barrier Synchronization & Stage 3: Final Rank
+    %% 7. Barrier Synchronization & Stage 3: Final Rank
     Note over W,DB: When all documents reach terminal parse states:
     W->>DB: Transition UploadSession: FINAL_RANKING
     W->>Q: Enqueue FinalRankMessage(job_id, session_id, job_version)
@@ -114,12 +123,16 @@ sequenceDiagram
 ## Key Design Decisions
 
 1. **Direct Browser-to-S3 Uploads with Presigned PUTs**: Uploads bypass the API server entirely via short-lived, presigned S3 PUT URLs with strict CORS configurations. The API server never buffers 40+ PDFs in memory, eliminating process bottlenecks and 429 rate limit errors.
-2. **Durable Multi-Stage SQS Pipelines**: Extraction and ranking are decoupled into discrete SQS queues (`fast-parse`, `odl-batch`, `final-rank`, and `dlq`). Failed messages undergo exponential backoff with jitter before routing to the DLQ, ensuring zero data loss.
-3. **Barrier Synchronization**: Final ranking is gated by a barrier condition in DynamoDB. Only when all documents in an upload session reach a terminal parse state (`STRUCTURED_PARSED`, `REVIEW_REQUIRED`, or `FAILED`) does the pipeline enqueue the `FinalRankMessage`. Partial failures resolve to `READY_WITH_WARNINGS`.
-4. **Job Version Pinning & Stale Rank Rejection**: Upload sessions and ranking messages pin the exact `job_version` active at session creation. If criteria change before ranking begins, stale ranking runs are dropped without overwriting updated criteria.
-5. **Stateless Resumability & No In-Memory Locks**: Process-local locks (`_extraction_locks`) and FastAPI `BackgroundTasks` have been eliminated. Workers are completely stateless and horizontally scalable; workers can crash and restart without losing session or document progress.
-6. **SSE for Real-Time Observability**: Clients monitor real-time extraction progress via Server-Sent Events (`GET /api/v2/jobs/{job_id}/upload-sessions/{session_id}/events`), streaming durable DynamoDB status changes.
-7. **Deterministic Scoring**: All scoring is deterministic given the same inputs. BM25 uses dynamic pool IDF. No LLM or non-deterministic component is used in score computation.
+2. **Lightweight Upload Completion (Decision Record: *"Upload completion is not analysis completion."*)**:
+   - `POST /documents/{doc_id}/complete` performs an S3 HEAD check and Range-request (`bytes=0-9`) magic-bytes check, marks `UPLOADED`, enqueues `FAST_PARSE_QUEUE`, and returns HTTP 202 immediately. It never downloads the full PDF or runs PyMuPDF on the HTTP request thread.
+   - `POST /upload-sessions/{id}/finalize` transitions the session to `FAST_PREPROCESSING` (HTTP 202). Fast-parse workers process PDFs and pause at `READY_TO_ANALYZE`.
+   - The recruiter can review and adjust criteria/weights, then trigger analysis via `POST /api/v2/jobs/{job_id}/analysis`, which sets `analysis_requested = True`, pins `job_version`, and engages ODL fallback and final ranking.
+3. **Durable Multi-Stage SQS Pipelines**: Extraction and ranking are decoupled into discrete SQS queues (`fast-parse`, `odl-batch`, `final-rank`, and `dlq`). Failed messages undergo exponential backoff with jitter before routing to the DLQ, ensuring zero data loss.
+4. **Barrier Synchronization**: Final ranking is gated by a barrier condition in DynamoDB. Only when all documents in an upload session reach a terminal parse state (`STRUCTURED_PARSED`, `REVIEW_REQUIRED`, `REJECTED_DUPLICATE`, or `FAILED`) and `analysis_requested == True` does the pipeline enqueue the `FinalRankMessage`. Partial failures resolve to `READY_WITH_WARNINGS`.
+5. **Job Version Pinning & Stale Rank Rejection**: Upload sessions and ranking messages pin the exact `job_version` active at analysis initiation. If criteria change before ranking begins, stale ranking runs are dropped without overwriting updated criteria.
+6. **Stateless Resumability & Worker Daemon Discipline**: Process-local locks (`_extraction_locks`) and FastAPI `BackgroundTasks` have been eliminated. Workers are completely stateless and horizontally scalable. `BackgroundWorkerDaemon` is strictly gated behind `RUN_LOCAL_WORKERS=true` in FastAPI lifespan and is never run by default in production. FastAPI HTTP request handlers never invoke `drain_all_queues_sync()`.
+7. **Structured Rate Limiting Diagnostics**: Active session quota breaches return structured 429 JSON payloads (`status_code`, `error_code`, `route`, `job_id`, `session_id`, `org_id`, `client_ip_hash`, `retry_after`) with standard `Retry-After` headers.
+8. **Deterministic Scoring**: All scoring is deterministic given the same inputs. BM25 uses dynamic pool IDF. No LLM or non-deterministic component is used in score computation.
 
 ## Optional Adapters (Feature-Flagged)
 

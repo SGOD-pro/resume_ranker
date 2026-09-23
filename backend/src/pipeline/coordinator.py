@@ -83,7 +83,26 @@ def check_and_progress_session(job_id: str, session_id: str) -> None:
         )
         return
 
-    # Fast-parse barrier reached! Inspect fallback requirements
+    # Fast-parse barrier reached!
+    # Check if recruiter has explicitly authorized analysis (Analyze click)
+    if not getattr(session, "analysis_requested", False):
+        if session.status != UploadSessionStatus.READY_TO_ANALYZE:
+            try:
+                fresh_session = sessions_repo.get(job_id, session_id)
+                if fresh_session and fresh_session.status != UploadSessionStatus.READY_TO_ANALYZE:
+                    sessions_repo.update_status(
+                        job_id,
+                        session_id,
+                        UploadSessionStatus.READY_TO_ANALYZE,
+                        expected_version=fresh_session.version,
+                    )
+                    logger.info("Coordinator: Session %s reached fast-pass barrier and is READY_TO_ANALYZE", session_id)
+            except Exception as e:
+                logger.debug("Coordinator: error setting READY_TO_ANALYZE for session %s: %s", session_id, e)
+        return
+
+    # User explicitly authorized analysis (analysis_requested = True)
+    # Inspect fallback requirements
     needs_odl_docs = [d for d in documents if d.status == DocumentStatus.NEEDS_ODL]
 
     if needs_odl_docs:
@@ -99,6 +118,7 @@ def check_and_progress_session(job_id: str, session_id: str) -> None:
                 )
         except Exception as e:
             logger.debug("Coordinator: session status update race: %s", e)
+
 
         # Batch documents into bounded chunks
         batch_size = max(1, settings.ODL_BATCH_SIZE)

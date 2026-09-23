@@ -470,3 +470,44 @@ export async function exportCandidatesCsv(jobId: string): Promise<string> {
   }
   return res.text();
 }
+
+export interface AnalysisResponse {
+  job_id: string;
+  session_id: string;
+  job_version: number;
+  status: string;
+  message: string;
+}
+
+/** Request analysis authorization (Analyze button trigger) */
+export async function requestAnalysis(
+  jobId: string,
+  payload?: {
+    weights?: Record<string, number>;
+    session_id?: string;
+  },
+): Promise<AnalysisResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/analysis`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+/** Retrieve live analysis progress */
+export async function getAnalysisStatus(
+  jobId: string,
+  sessionId?: string,
+): Promise<UploadSessionProgressResponse> {
+  const url = sessionId
+    ? `/api/v2/jobs/${jobId}/upload-sessions/${sessionId}`
+    : `/api/v2/jobs/${jobId}/analysis/status`;
+  return apiFetch(url);
+}
+
+/** Retrieve stored final scoring results */
+export async function getResults(
+  jobId: string,
+): Promise<ScoreResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/results`);
+}
+

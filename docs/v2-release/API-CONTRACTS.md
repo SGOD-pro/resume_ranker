@@ -75,27 +75,66 @@ All endpoints except `/health` and `/api/v2/ats-check` require authentication.
 
 #### 2. Complete Document Upload
 - `POST /api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{document_id}/complete`
-  - Acknowledges that the browser successfully PUT the file to S3.
+  - Status Code: `202 Accepted`
+  - Lightweight verification: Performs S3 HEAD check and Range-request (`bytes=0-9`) magic-bytes check. Does NOT download full PDF or execute PyMuPDF on the HTTP request thread.
+  - Enqueues `FAST_PARSE_QUEUE` message.
   - Response:
     ```json
     {
-      "status": "success",
       "document_id": "doc-uuid",
-      "document_status": "UPLOADED"
+      "status": "UPLOADED",
+      "message": "Document upload confirmed. Fast parse queued."
     }
     ```
 
 #### 3. Finalize Upload Session
 - `POST /api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize`
-  - Closes the upload session and enqueues all confirmed documents into the SQS `fast-parse` work queue.
+  - Status Code: `202 Accepted`
+  - Closes the upload session and marks status as `FAST_PREPROCESSING`. Fast-parse workers process PDFs and pause at `READY_TO_ANALYZE`.
   - Response:
     ```json
     {
       "session_id": "session-uuid",
-      "status": "FAST_PARSING",
-      "total_queued": 40
+      "job_id": "job-uuid",
+      "status": "FAST_PREPROCESSING",
+      "message": "Upload session finalized. Fast preprocessing engaged."
     }
     ```
+
+#### 3a. Trigger Candidate Analysis (Recruiter Action)
+- `POST /api/v2/jobs/{job_id}/analysis`
+  - Status Code: `202 Accepted`
+  - Explicit recruiter trigger decoupling upload finalization from analysis execution.
+  - Validates weights (summing to 100%), updates job criteria if modified, increments `job_version`, pins upload session, sets `analysis_requested = True`, and engages coordinator to process ODL fallback batches and final ranking.
+  - Body (optional):
+    ```json
+    {
+      "session_id": "session-uuid",
+      "title": "Senior Engineer",
+      "must_have_skills": ["Python", "FastAPI"],
+      "weights": {
+        "skills": 40,
+        "experience": 25,
+        "keywords": 20,
+        "education": 15
+      }
+    }
+    ```
+  - Response:
+    ```json
+    {
+      "job_id": "job-uuid",
+      "session_id": "session-uuid",
+      "job_version": 2,
+      "status": "ANALYSIS_REQUESTED",
+      "message": "Analysis requested. Background processing pipeline engaged."
+    }
+    ```
+
+#### 3b. Get Candidate Analysis Status
+- `GET /api/v2/jobs/{job_id}/analysis/status`
+  - Query params: `session_id` (optional)
+  - Returns current durable session status (`FAST_PREPROCESSING`, `READY_TO_ANALYZE`, `ANALYSIS_REQUESTED`, `FALLBACK_PROCESSING`, `FINAL_RANKING`, `READY`, `READY_WITH_WARNINGS`), progress counters, and per-document diagnostics.
 
 #### 4. Get Upload Session Status
 - `GET /api/v2/jobs/{job_id}/upload-sessions/{session_id}`

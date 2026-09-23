@@ -18,7 +18,11 @@ from pydantic import BaseModel, Field
 class UploadSessionStatus(str, Enum):
     """Lifecycle states for an upload session."""
     UPLOADING = "UPLOADING"
-    FAST_PARSING = "FAST_PARSING"
+    UPLOAD_FINALIZED = "UPLOAD_FINALIZED"
+    FAST_PREPROCESSING = "FAST_PREPROCESSING"
+    FAST_PARSING = "FAST_PARSING"  # Backwards compatibility alias
+    READY_TO_ANALYZE = "READY_TO_ANALYZE"
+    ANALYSIS_REQUESTED = "ANALYSIS_REQUESTED"
     FALLBACK_PROCESSING = "FALLBACK_PROCESSING"
     FINAL_RANKING = "FINAL_RANKING"
     READY = "READY"
@@ -48,12 +52,14 @@ class UploadSessionItem(BaseModel):
     uploaded_document_count: int = 0
 
     status: UploadSessionStatus = UploadSessionStatus.UPLOADING
+    analysis_requested: bool = False
     error_message: Optional[str] = None
 
     version: int = 1
     created_at: str = Field(default_factory=_utcnow_iso)
     updated_at: str = Field(default_factory=_utcnow_iso)
     expires_at: Optional[str] = None
+
 
     @property
     def pk(self) -> str:
@@ -75,6 +81,7 @@ class UploadSessionItem(BaseModel):
             "expected_document_count": self.expected_document_count,
             "uploaded_document_count": self.uploaded_document_count,
             "status": self.status.value,
+            "analysis_requested": self.analysis_requested,
             "version": self.version,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -102,9 +109,11 @@ class UploadSessionItem(BaseModel):
             expected_document_count=int(item.get("expected_document_count", 0)),
             uploaded_document_count=int(item.get("uploaded_document_count", 0)),
             status=session_status,
+            analysis_requested=bool(item.get("analysis_requested", False)),
             error_message=item.get("error_message"),
             version=int(item.get("version", 1)),
             created_at=item.get("created_at", ""),
             updated_at=item.get("updated_at", ""),
             expires_at=item.get("expires_at"),
         )
+

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,11 +30,15 @@ interface CandidateActionsProps {
 export function CandidateActions({ candidate }: CandidateActionsProps) {
   const { setStatus, setNote } = useCandidateStore();
   const { jobId } = useAppStore();
-  const [noteInput, setNoteInput] = useState(candidate.note);
+  const [noteInput, setNoteInput] = useState(candidate.note || '');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const status = statusLabels[candidate.status];
+
+  useEffect(() => {
+    setNoteInput(candidate.note || '');
+  }, [candidate.id, candidate.note]);
 
   const handleShortlist = async () => {
     setStatus(candidate.id, 'shortlisted');
@@ -66,6 +70,7 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
         await updateCandidateDecision(jobId, candidate.id, {
           decision: 'rejected',
           reason: trimmed,
+          note: `Rejection reason: ${trimmed}`,
         });
       } catch {
         // Optimistic UI
@@ -80,8 +85,22 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
     if (jobId) {
       try {
         await updateCandidateDecision(jobId, candidate.id, {
-          decision: candidate.status,
           note: noteInput,
+        });
+      } catch {
+        // Optimistic UI
+      }
+    }
+  };
+
+  const handleSendAssessment = async () => {
+    setStatus(candidate.id, 'assessment-sent');
+    toast.success(`Assessment invitation sent to ${candidate.name}.`);
+    if (jobId) {
+      try {
+        await updateCandidateDecision(jobId, candidate.id, {
+          decision: 'interview',
+          note: 'Assessment invitation sent.',
         });
       } catch {
         // Optimistic UI
@@ -191,7 +210,8 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
         </Dialog>
 
         <Button
-          onClick={() => setStatus(candidate.id, 'assessment-sent')}
+          onClick={handleSendAssessment}
+          aria-label={`Send assessment to ${candidate.name}`}
           variant="outline"
           className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-foreground hover:text-background transition-colors"
         >

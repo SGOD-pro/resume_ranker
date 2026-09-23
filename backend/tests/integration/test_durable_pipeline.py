@@ -186,7 +186,7 @@ def test_scenario_1_bulk_40_resumes_upload_session_no_429(client, auth_headers):
                 headers=auth_headers,
             )
             # Must succeed without 429 rate limit error
-            assert comp_resp.status_code == 200
+            assert comp_resp.status_code == 202
             assert comp_resp.json()["status"] == "UPLOADED"
 
     # Verify FAST_PARSE_QUEUE received exactly 40 messages
@@ -197,10 +197,28 @@ def test_scenario_1_bulk_40_resumes_upload_session_no_429(client, auth_headers):
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize",
         headers=auth_headers,
     )
-    assert fin_resp.status_code == 200
-    assert fin_resp.json()["status"] == "FAST_PARSING"
+    assert fin_resp.status_code == 202
+    assert fin_resp.json()["status"] == "FAST_PREPROCESSING"
 
-    # 5. Process any remaining pipeline events
+    # 5. Process fast-parse events to barrier
+    drain_all_queues_sync(max_rounds=50)
+
+    # Fast parse barrier pauses at READY_TO_ANALYZE
+    prog_resp = client.get(
+        f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}",
+        headers=auth_headers,
+    )
+    assert prog_resp.status_code == 200
+    assert prog_resp.json()["status"] == "READY_TO_ANALYZE"
+
+    # Recruiter clicks Analyze
+    analyze_resp = client.post(
+        f"/api/v2/jobs/{job_id}/analysis",
+        headers=auth_headers,
+    )
+    assert analyze_resp.status_code == 202
+
+    # Process remaining pipeline events (final ranking)
     drain_all_queues_sync(max_rounds=50)
 
     # 6. Verify upload session status and document counts
@@ -262,7 +280,7 @@ def test_scenario_2_duplicate_completion_and_duplicate_sqs_idempotency(client, a
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{doc_id}/complete",
         headers=auth_headers,
     )
-    assert comp1.status_code == 200
+    assert comp1.status_code == 202
     assert comp1.json()["status"] == "UPLOADED"
 
     # Duplicate completion call
@@ -270,7 +288,7 @@ def test_scenario_2_duplicate_completion_and_duplicate_sqs_idempotency(client, a
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{doc_id}/complete",
         headers=auth_headers,
     )
-    assert comp2.status_code == 200
+    assert comp2.status_code == 202
     assert comp2.json()["status"] == "UPLOADED"
 
     # Fast parse queue should have received only 1 message despite duplicate completion
@@ -362,11 +380,15 @@ def test_scenario_3_stage_routing_odl_and_nova(client, auth_headers, monkeypatch
 
     monkeypatch.setattr(fast_parse_worker, "pymupdf_layout_quality", mock_analyze)
 
-    # Finalize upload session so coordinator barrier is active and fast-parse drains
-    client.post(
+    # Finalize upload session so coordinator barrier is active
+    fin_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize",
         headers=auth_headers,
     )
+    assert fin_resp.status_code == 202
+
+    # Process fast-parse queue
+    drain_all_queues_sync(max_rounds=10)
 
     # Check document statuses
     clean_item = docs_repo.get(job_id, doc_clean["document_id"])
@@ -382,6 +404,13 @@ def test_scenario_3_stage_routing_odl_and_nova(client, auth_headers, monkeypatch
         DocumentStatus.SCORED,
         "scored",
     )
+
+    # Advance through Analyze to process ODL fallback and final ranking
+    client.post(
+        f"/api/v2/jobs/{job_id}/analysis",
+        headers=auth_headers,
+    )
+    drain_all_queues_sync(max_rounds=10)
 
     # Session completes successfully through ODL fallback and final ranking
     prog_resp = client.get(
@@ -443,14 +472,14 @@ def test_scenario_4_barrier_synchronization_before_fast_parse_completion(client,
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize",
         headers=auth_headers,
     )
-    assert fin_resp.status_code == 200
-    assert fin_resp.json()["status"] == "FAST_PARSING"
+    assert fin_resp.status_code == 202
+    assert fin_resp.json()["status"] == "FAST_PREPROCESSING"
 
     # Verify barrier: FINAL_RANK_QUEUE must NOT be enqueued because doc2 is still pending!
     assert queue_adapter.get_queue_depth(FINAL_RANK_QUEUE) == 0
 
     session_item = sessions_repo.get(job_id, session_id)
-    assert session_item.status == UploadSessionStatus.FAST_PARSING
+    assert session_item.status == UploadSessionStatus.FAST_PREPROCESSING
 
     # Now upload and complete doc2
     storage._client.put_object(
@@ -459,15 +488,27 @@ def test_scenario_4_barrier_synchronization_before_fast_parse_completion(client,
         Body=create_sample_pdf("Doc Two", ["AWS"]),
         ContentType="application/pdf",
     )
-    client.post(
+    comp2_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{doc2['document_id']}/complete",
         headers=auth_headers,
     )
+    assert comp2_resp.status_code == 202
 
     # Process all fast-parse queue items
     drain_all_queues_sync(max_rounds=10)
 
-    # Once barrier is satisfied, session reaches READY/READY_WITH_WARNINGS
+    # Barrier is satisfied at fast-parse stage, transitioning session to READY_TO_ANALYZE
+    session_barrier = sessions_repo.get(job_id, session_id)
+    assert session_barrier.status == UploadSessionStatus.READY_TO_ANALYZE
+
+    # Recruiter triggers analysis
+    client.post(
+        f"/api/v2/jobs/{job_id}/analysis",
+        headers=auth_headers,
+    )
+    drain_all_queues_sync(max_rounds=10)
+
+    # Once analysis completes, session reaches READY/READY_WITH_WARNINGS
     session_final = sessions_repo.get(job_id, session_id)
     assert session_final.status in (UploadSessionStatus.READY, UploadSessionStatus.READY_WITH_WARNINGS)
 
@@ -513,10 +554,11 @@ def test_scenario_5_partial_failure_diagnostics_and_ready_with_warnings(client, 
         Body=create_sample_pdf("Carol Sec", ["SIEM", "Python"]),
         ContentType="application/pdf",
     )
-    client.post(
+    comp_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{doc_valid['document_id']}/complete",
         headers=auth_headers,
     )
+    assert comp_resp.status_code == 202
 
     # Upload corrupt non-PDF file directly to S3 key
     storage._client.put_object(
@@ -542,12 +584,20 @@ def test_scenario_5_partial_failure_diagnostics_and_ready_with_warnings(client, 
     )
 
     # Finalize session
-    client.post(
+    fin_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize",
         headers=auth_headers,
     )
+    assert fin_resp.status_code == 202
 
-    # Drain queues
+    # Drain fast-parse queues
+    drain_all_queues_sync(max_rounds=10)
+
+    # Trigger analysis
+    client.post(
+        f"/api/v2/jobs/{job_id}/analysis",
+        headers=auth_headers,
+    )
     drain_all_queues_sync(max_rounds=10)
 
     # Progress session
@@ -600,14 +650,17 @@ def test_scenario_6_stateless_worker_restart_resumability(client, auth_headers):
         Body=create_sample_pdf("Restart Candidate", ["AWS", "Terraform"]),
         ContentType="application/pdf",
     )
-    client.post(
+    comp_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/documents/{doc_info['document_id']}/complete",
         headers=auth_headers,
     )
-    client.post(
+    assert comp_resp.status_code == 202
+
+    fin_resp = client.post(
         f"/api/v2/jobs/{job_id}/upload-sessions/{session_id}/finalize",
         headers=auth_headers,
     )
+    assert fin_resp.status_code == 202
 
     # Simulate process restart by draining in a fresh run
     drain_all_queues_sync(max_rounds=10)

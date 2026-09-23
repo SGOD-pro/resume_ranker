@@ -8,12 +8,13 @@ Guarantees idempotency and version consistency; prevents stale ranking overwrite
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from dataclasses import asdict
 from typing import Any, Dict, List
 
 from src.infrastructure.models.document import DocumentStatus
 from src.infrastructure.models.job import JobStatus
-from src.infrastructure.models.scoring import ScoringItem
+from src.infrastructure.models.scoring import ScoringItem, ScoringStatus
 from src.infrastructure.models.upload_session import (
     UploadSessionItem,
     UploadSessionStatus,
@@ -128,7 +129,8 @@ def process_final_rank_message(message: QueueMessage) -> None:
             "keywords": 0.20,
             "education": 0.15,
         }
-        float_weights = {k: float(v) for k, v in raw_weights.items()}
+        total_w = sum(float(v) for v in raw_weights.values()) or 1.0
+        float_weights = {k: float(v) / (100.0 if total_w > 1.5 else 1.0) for k, v in raw_weights.items()}
 
         jd = JobDescription(
             title=job.title,
@@ -148,9 +150,17 @@ def process_final_rank_message(message: QueueMessage) -> None:
         scorer = CandidateScorer()
         results = scorer.rank(jd, candidates)
 
+        # Build candidate dictionaries with pdf_url and job_id for frontend display
+        results_dicts = []
+        for r in results:
+            rd = asdict(r)
+            rd["job_id"] = job_id
+            rd["pdf_url"] = f"/api/v2/jobs/{job_id}/resumes/{r.document_id}/download"
+            results_dicts.append(rd)
+
         # Persist ranking JSON to S3
         scoring_id = str(uuid.uuid4())
-        s3_key = storage.upload_ranking(job_id, scoring_id, [asdict(r) for r in results])
+        s3_key = storage.upload_ranking(job_id, scoring_id, results_dicts)
 
         # Persist ScoringItem in DynamoDB
         top_name = results[0].name if results else None
@@ -165,6 +175,8 @@ def process_final_rank_message(message: QueueMessage) -> None:
             weights_used=float_weights,
             top_candidate_name=top_name,
             top_candidate_score=top_score,
+            status=ScoringStatus.COMPLETED,
+            completed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             score_version="2.2.0",
             policy_version="2026.1",
             job_version=message.job_version,

@@ -20,6 +20,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import uuid
 from fastapi.testclient import TestClient
 from src.main import app
 from src.config.settings import RESUME_DIR
@@ -29,6 +30,19 @@ def test_api_flow():
     # Initialize the client. Under the hood, this will execute the lifespan
     # context manager, which verifies DynamoDB and S3 connectivity on startup.
     client = TestClient(app)
+
+    unique_id = uuid.uuid4().hex[:8]
+    reg_resp = client.post(
+        "/api/v2/auth/register",
+        json={
+            "org_name": f"Org_{unique_id}",
+            "email": f"recruiter_{unique_id}@example.com",
+            "name": f"Recruiter {unique_id}",
+            "password": "Password123!",
+        },
+    )
+    assert reg_resp.status_code == 201
+    auth_headers = {"Authorization": f"Bearer {reg_resp.json()['token']}"}
 
     # 1. Health check
     print("\n--- 1. Testing /health ---")
@@ -53,7 +67,7 @@ def test_api_flow():
         "education_field": "Computer Science",
         "keywords": ["backend", "database"]
     }
-    resp = client.post("/jobs", json=job_data)
+    resp = client.post("/jobs", json=job_data, headers=auth_headers)
     print(f"Status: {resp.status_code}")
     print(f"Response: {resp.json()}")
     assert resp.status_code == 200
@@ -67,7 +81,7 @@ def test_api_flow():
     update_data = {
         "nice_to_have_skills": ["AWS", "Docker", "S3", "DynamoDB"]
     }
-    resp = client.patch(f"/jobs/{job_id}", json=update_data)
+    resp = client.patch(f"/jobs/{job_id}", json=update_data, headers=auth_headers)
     print(f"Status: {resp.status_code}")
     print(f"Response: {resp.json()}")
     assert resp.status_code == 200
@@ -85,7 +99,7 @@ def test_api_flow():
             ("files", (resume1_path.name, r1, "application/pdf")),
             ("files", (resume2_path.name, r2, "application/pdf")),
         ]
-        resp = client.post(f"/jobs/{job_id}/resumes", files=files)
+        resp = client.post(f"/jobs/{job_id}/resumes", files=files, headers=auth_headers)
     print(f"Status: {resp.status_code}")
     print(f"Response: {resp.json()}")
     assert resp.status_code in (200, 202)
@@ -93,11 +107,15 @@ def test_api_flow():
     assert upload_res["total_accepted"] >= 2
     print("✅ Resume uploads accepted and saved to S3 successfully.")
 
+    # Process background worker queues for synchronous test execution
+    from src.pipeline.worker_runner import drain_all_queues_sync
+    drain_all_queues_sync()
+
     # 5. Extract Resumes (SSE stream)
     print(f"\n--- 5. Testing GET /jobs/{job_id}/extract (SSE stream) ---")
     events = []
     # TestClient's stream method enables iterating over the streaming response lines
-    with client.stream("GET", f"/jobs/{job_id}/extract") as r:
+    with client.stream("GET", f"/jobs/{job_id}/extract", headers=auth_headers) as r:
         assert r.status_code == 200
         for line in r.iter_lines():
             if line:
@@ -119,7 +137,7 @@ def test_api_flow():
             "education": 15
         }
     }
-    resp = client.post(f"/jobs/{job_id}/score", json=score_data)
+    resp = client.post(f"/jobs/{job_id}/score", json=score_data, headers=auth_headers)
     print(f"Status: {resp.status_code}")
     assert resp.status_code == 200
     score_res = resp.json()
@@ -134,7 +152,7 @@ def test_api_flow():
 
     # 7. Get Results
     print(f"\n--- 7. Testing GET /jobs/{job_id}/results ---")
-    resp = client.get(f"/jobs/{job_id}/results")
+    resp = client.get(f"/jobs/{job_id}/results", headers=auth_headers)
     print(f"Status: {resp.status_code}")
     assert resp.status_code == 200
     results_res = resp.json()

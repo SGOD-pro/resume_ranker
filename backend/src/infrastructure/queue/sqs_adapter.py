@@ -88,7 +88,15 @@ class SqsQueueAdapter(QueueAdapter):
         results: List[QueueMessage] = []
         for rm in raw_msgs:
             try:
-                msg = QueueMessage.from_json(rm["Body"], receipt_handle=rm["ReceiptHandle"])
+                raw_body = rm["Body"]
+                import json
+                try:
+                    parsed = json.loads(raw_body)
+                    if isinstance(parsed, dict) and parsed.get("Type") == "Notification" and "Message" in parsed:
+                        raw_body = parsed["Message"]
+                except Exception:
+                    pass
+                msg = QueueMessage.from_json(raw_body, receipt_handle=rm["ReceiptHandle"])
                 results.append(msg)
             except Exception as e:
                 logger.error("Failed to deserialize SQS message body: %s", e)
@@ -118,3 +126,12 @@ class SqsQueueAdapter(QueueAdapter):
     def purge(self, queue_name: str) -> None:
         url = self._get_url(queue_name)
         self._client.purge_queue(QueueUrl=url)
+
+    def clear_all(self) -> None:
+        """Purge all configured queues (useful in test teardown)."""
+        for url in self._queue_urls.values():
+            if url:
+                try:
+                    self._client.purge_queue(QueueUrl=url)
+                except Exception:
+                    pass

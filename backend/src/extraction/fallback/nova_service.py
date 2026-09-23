@@ -91,8 +91,93 @@ class NovaService:
             f"<resume>\n{text_to_process}\n</resume>"
         )
 
-        extracted = self._call_nova(user_text)
+        extracted = self._call_nova(user_text) if not self._dead else {}
+
+        # If Nova LLM did not resolve name or experience, apply heuristic fallback
+        if not extracted or not (extracted.get("name") or extracted.get("experience")):
+            heuristics = self._heuristic_infill(text_to_process, existing_fields)
+            if not extracted:
+                extracted = heuristics
+            else:
+                for k, v in heuristics.items():
+                    if not extracted.get(k):
+                        extracted[k] = v
+
         return self._merge(existing_fields, extracted)
+
+    def _heuristic_infill(self, text: str, existing: Dict[str, Any]) -> Dict[str, Any]:
+        """Heuristic extractor fallback when Nova Bedrock is unreachable or rate limited."""
+        result: Dict[str, Any] = {}
+        from src.extractors.contact.identity_resolver import CandidateIdentityResolver
+        resolver = CandidateIdentityResolver()
+
+        # 1. Candidate Name resolution
+        name_cand = None
+        # Check email prefix first (e.g., subhadip.mondal@example.com -> Subhadip Mondal)
+        email = existing.get("email") or ""
+        if not email:
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
+            if email_match:
+                email = email_match.group(0)
+                result["email"] = email
+
+        if email and "@" in email:
+            handle = email.split("@")[0]
+            parts = re.split(r'[._\-]+', handle)
+            clean_parts = [re.sub(r'\d+', '', p).strip().title() for p in parts]
+            clean_parts = [p for p in clean_parts if len(p) >= 2 and p.isalpha()]
+            if 2 <= len(clean_parts) <= 3:
+                potential_name = " ".join(clean_parts)
+                cleaned, err = resolver._clean_and_validate(potential_name)
+                if cleaned:
+                    valid, _ = resolver._evaluate_negative_evidence(cleaned)
+                    if valid:
+                        name_cand = potential_name
+
+        # If still no name, check top 10 lines of text
+        if not name_cand:
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            for line in lines[:10]:
+                if len(line) < 3 or len(line) > 40:
+                    continue
+                if any(c in line for c in "@|/\\;:•*+~=[]{}()<>"):
+                    continue
+                if re.search(r'\d', line):
+                    continue
+                cleaned, err = resolver._clean_and_validate(line)
+                if cleaned:
+                    valid, _ = resolver._evaluate_negative_evidence(cleaned)
+                    if valid:
+                        name_cand = cleaned
+                        break
+
+        if name_cand:
+            result["name"] = name_cand
+
+        # 2. Experience extraction fallback if missing
+        if not existing.get("experience"):
+            exp_entries = []
+            role_keywords = (
+                "engineer", "developer", "scientist", "manager", "architect",
+                "analyst", "consultant", "intern", "specialist", "designer",
+                "administrator", "lead", "officer", "executive", "associate"
+            )
+            lines = [l.strip() for l in text.split("\n") if l.strip()]
+            for i, line in enumerate(lines):
+                line_lower = line.lower()
+                if any(kw in line_lower for kw in role_keywords) and len(line) < 80:
+                    context = " ".join(lines[max(0, i-1):min(len(lines), i+3)])
+                    exp_entries.append({
+                        "role": line,
+                        "company": "",
+                        "description": context[:200],
+                    })
+                    if len(exp_entries) >= 3:
+                        break
+            if exp_entries:
+                result["experience"] = exp_entries
+
+        return result
 
     # ──────────────────────────────────────────────────────────────────────────
     # Private helpers

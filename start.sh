@@ -27,6 +27,7 @@ CLR_RESET=$'\033[0m'
 # Ensure unbuffered output and preserve colors through pipes
 export PYTHONUNBUFFERED=1
 export FORCE_COLOR=1
+export RUN_LOCAL_WORKERS=true
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -107,9 +108,9 @@ fi
 
 # Determine backend command
 if command -v uv >/dev/null 2>&1; then
-    BACKEND_EXEC="uv run uvicorn src.main:app --port ${BACKEND_PORT} --reload --use-colors"
+    BACKEND_EXEC="uv run uvicorn src.main:app --port ${BACKEND_PORT} --reload --reload-dir src --use-colors"
 else
-    BACKEND_EXEC="uvicorn src.main:app --port ${BACKEND_PORT} --reload --use-colors"
+    BACKEND_EXEC="uvicorn src.main:app --port ${BACKEND_PORT} --reload --reload-dir src --use-colors"
 fi
 
 # Start backend server

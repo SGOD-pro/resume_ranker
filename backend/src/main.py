@@ -6,6 +6,7 @@ and AWS connectivity checks on startup.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -60,15 +61,20 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_check_health_async())
 
-    # Start queue background worker daemon
+    # Start queue background worker daemon only when RUN_LOCAL_WORKERS=true
     daemon = None
-    try:
-        from src.pipeline.worker_runner import get_worker_daemon
-        daemon = get_worker_daemon()
-        daemon.start()
-        logger.info("BackgroundWorkerDaemon started ✅")
-    except Exception as e:
-        logger.warning("Failed to start BackgroundWorkerDaemon: %s", e)
+    run_local = os.environ.get("RUN_LOCAL_WORKERS", "false").lower() in ("true", "1", "yes")
+    if run_local:
+        try:
+            from src.pipeline.worker_runner import get_worker_daemon
+            daemon = get_worker_daemon()
+            daemon.start()
+            logger.info("BackgroundWorkerDaemon started (RUN_LOCAL_WORKERS=true) ✅")
+        except Exception as e:
+            logger.warning("Failed to start BackgroundWorkerDaemon: %s", e)
+    else:
+        logger.info("BackgroundWorkerDaemon disabled (managed worker / production mode)")
+
 
     # Configure S3 CORS for direct browser PUTs
     try:

@@ -63,11 +63,18 @@ class UploadSessionsRepository:
         items = response.get("Items", [])
         return [UploadSessionItem.from_dynamodb_item(it) for it in items]
 
-    def count_active_for_org(self, org_id: str) -> int:
-        """Count active upload sessions for an organization to enforce quotas."""
+    def count_active_for_org(self, org_id: str, max_age_seconds: int = 1800) -> int:
+        """Count active in-flight upload sessions for an organization to enforce quotas.
+
+        Sessions in READY_TO_ANALYZE or terminal states (READY, FAILED, EXPIRED) are excluded.
+        Sessions older than max_age_seconds (default 30 min) are treated as expired and excluded.
+        """
         active_statuses = [
             UploadSessionStatus.UPLOADING.value,
+            UploadSessionStatus.UPLOAD_FINALIZED.value,
+            UploadSessionStatus.FAST_PREPROCESSING.value,
             UploadSessionStatus.FAST_PARSING.value,
+            UploadSessionStatus.ANALYSIS_REQUESTED.value,
             UploadSessionStatus.FALLBACK_PROCESSING.value,
             UploadSessionStatus.FINAL_RANKING.value,
         ]
@@ -77,10 +84,22 @@ class UploadSessionsRepository:
                 & Attr("org_id").eq(org_id)
                 & Attr("status").is_in(active_statuses)
             ),
-            ProjectionExpression="session_id",
+            ProjectionExpression="session_id, created_at, updated_at",
         )
         items = response.get("Items", [])
-        return len(items)
+        now = datetime.now(timezone.utc)
+        active_count = 0
+        for it in items:
+            ts_str = it.get("updated_at") or it.get("created_at")
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if (now - ts).total_seconds() > max_age_seconds:
+                        continue
+                except Exception:
+                    pass
+            active_count += 1
+        return active_count
 
     def update_status(
         self,
@@ -89,6 +108,7 @@ class UploadSessionsRepository:
         status: UploadSessionStatus,
         expected_version: int,
         error_message: Optional[str] = None,
+        extra_updates: Optional[Dict[str, Any]] = None,
     ) -> UploadSessionItem:
         """Update session status with optimistic locking."""
         set_parts = ["#s = :status", "#v = #v + :one", "updated_at = :now"]
@@ -103,6 +123,14 @@ class UploadSessionsRepository:
             set_parts.append("error_message = :err")
             expr_values[":err"] = error_message
 
+        if extra_updates:
+            for idx, (k, v) in enumerate(extra_updates.items()):
+                p_name = f"#ext_{idx}"
+                p_val = f":ext_val_{idx}"
+                set_parts.append(f"{p_name} = {p_val}")
+                expr_names[p_name] = k
+                expr_values[p_val] = to_decimal(v)
+
         response = self._table.update_item(
             Key={"PK": f"JOB#{job_id}", "SK": f"SESSION#{session_id}"},
             UpdateExpression="SET " + ", ".join(set_parts),
@@ -114,6 +142,46 @@ class UploadSessionsRepository:
         logger.info(
             "Updated upload session %s status → %s (v%d → v%d)",
             session_id, status.value, expected_version, expected_version + 1
+        )
+        return UploadSessionItem.from_dynamodb_item(response["Attributes"])
+
+    def set_analysis_requested(
+        self,
+        job_id: str,
+        session_id: str,
+        expected_version: int,
+        analysis_requested: bool = True,
+        new_status: Optional[UploadSessionStatus] = None,
+        job_version: Optional[int] = None,
+    ) -> UploadSessionItem:
+        """Set analysis_requested flag and optionally update pinned job_version and status."""
+        set_parts = ["analysis_requested = :ar", "#v = #v + :one", "updated_at = :now"]
+        expr_names = {"#v": "version"}
+        expr_values: Dict[str, Any] = {
+            ":ar": analysis_requested,
+            ":one": 1,
+            ":now": _utcnow_iso(),
+            ":expected_version": expected_version,
+        }
+        if new_status:
+            set_parts.append("#s = :status")
+            expr_names["#s"] = "status"
+            expr_values[":status"] = new_status.value
+        if job_version is not None:
+            set_parts.append("job_version = :jv")
+            expr_values[":jv"] = job_version
+
+        response = self._table.update_item(
+            Key={"PK": f"JOB#{job_id}", "SK": f"SESSION#{session_id}"},
+            UpdateExpression="SET " + ", ".join(set_parts),
+            ConditionExpression="#v = :expected_version",
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_values,
+            ReturnValues="ALL_NEW",
+        )
+        logger.info(
+            "Set analysis_requested=%s for session %s (v%d → v%d)",
+            analysis_requested, session_id, expected_version, expected_version + 1
         )
         return UploadSessionItem.from_dynamodb_item(response["Attributes"])
 
@@ -137,3 +205,4 @@ class UploadSessionsRepository:
             ReturnValues="ALL_NEW",
         )
         return UploadSessionItem.from_dynamodb_item(response["Attributes"])
+

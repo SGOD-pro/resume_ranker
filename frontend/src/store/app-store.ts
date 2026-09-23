@@ -8,7 +8,19 @@
 import { create } from 'zustand';
 
 export type BackendStatus = 'checking' | 'waking-up' | 'ready' | 'unreachable';
-export type AppPhase = 'idle' | 'uploading' | 'extracting' | 'scoring' | 'complete';
+export type AppPhase =
+  | 'idle'
+  | 'uploading'
+  | 'ready_to_analyze'
+  | 'analysis_queued'
+  | 'fast_preprocessing'
+  | 'fallback_processing'
+  | 'final_ranking'
+  | 'extracting'
+  | 'scoring'
+  | 'complete'
+  | 'error';
+
 
 export interface UploadProgress {
   loaded: number;
@@ -32,6 +44,7 @@ interface AppStore {
   sseRetryCount: number;
   blockingError: BlockingError | null;
   jobId: string | null;
+  sessionId: string | null;
 
   setBackendStatus: (status: BackendStatus) => void;
   setAppPhase: (phase: AppPhase) => void;
@@ -40,6 +53,7 @@ interface AppStore {
   setSseRetryCount: (count: number) => void;
   setBlockingError: (error: BlockingError | null) => void;
   setJobId: (id: string | null) => void;
+  setSessionId: (id: string | null) => void;
 }
 
 const defaultUploadProgress: UploadProgress = {
@@ -58,6 +72,7 @@ export const useAppStore = create<AppStore>((set) => ({
   sseRetryCount: 0,
   blockingError: null,
   jobId: null,
+  sessionId: null,
 
   setBackendStatus: (status) => set({ backendStatus: status }),
   setAppPhase: (phase) => set({ appPhase: phase }),
@@ -70,4 +85,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setSseRetryCount: (count) => set({ sseRetryCount: count }),
   setBlockingError: (error) => set({ blockingError: error }),
   setJobId: (id) => set({ jobId: id }),
+  setSessionId: (id) => set({ sessionId: id }),
 }));
+

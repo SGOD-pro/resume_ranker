@@ -159,6 +159,8 @@ class BatchDoc:
     s3_bucket: str
     s3_key: str
     save_images: bool = False
+    force_odl: bool = False
+
 
 
 class StructuralParsingService:
@@ -297,7 +299,7 @@ class StructuralParsingService:
                 fitz_doc.close()
                 t1 = time.time()
                 raw_markdown = "\n".join(raw_pymupdf_text)
-                triggered_fallback = min_quality < QUALITY_THRESHOLD
+                triggered_fallback = (min_quality < QUALITY_THRESHOLD) or doc.force_odl
 
                 timings.append(StageTiming(
                     document_id=doc.document_id,
@@ -385,8 +387,26 @@ class StructuralParsingService:
                         pymupdf_text=raw_markdown,
                     )
                 else:
-                    # ODL failed for this specific doc — failing without fallback
+                    # ODL failed for this specific doc — attribute error without failing the whole batch
                     err = batch_result.failed.get(doc.document_id)
-                    raise err or ODLParseError(f"ODL failed for {doc.document_id}")
+                    err_msg = str(err) if err else f"ODL failed for {doc.document_id}"
+                    timings.append(StageTiming(
+                        document_id=doc.document_id,
+                        stage="odl_parse",
+                        method_used="opendataloader",
+                        duration_ms=per_doc_ms,
+                        triggered_fallback=False,
+                        error_reason=err_msg,
+                    ))
+                    pymupdf_results[odl_idx] = ParseResult(
+                        markdown=raw_markdown,
+                        elements=[],
+                        stage_timings=timings,
+                        quality_score=min_quality,
+                        hyperlinks=hyperlinks,
+                        pymupdf_text=raw_markdown,
+                        error_reason=err_msg,
+                    )
 
         return pymupdf_results
+

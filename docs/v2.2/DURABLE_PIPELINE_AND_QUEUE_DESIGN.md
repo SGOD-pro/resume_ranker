@@ -78,16 +78,29 @@ Sortlist v2.2 introduces a **production-grade, decoupled S3 + SQS pipeline**:
 
 ## 3. Upload & Stage Transition State Machine
 
-### 3.1 Upload Session States (`UploadSessionStatus`)
+#### 3.1 Upload Session States (`UploadSessionStatus`)
+
+> **Decision Record — Binding:** *"Upload completion is not analysis completion."*  
+> Uploading documents verifies S3 object existence, validates PDF headers, and executes fast preprocessing. Final ranking and fallback deep extraction are only triggered when the recruiter explicitly initiates analysis via `POST /api/v2/jobs/{job_id}/analysis`. The Analyze button in the frontend is unlocked as soon as uploads are registered, allowing immediate initiation or reconfiguration of criteria and scoring weights without waiting for background extraction to finish.
 
 ```
- [ UPLOADING ] ──(All files PUT & /finalize)──► [ FAST_PARSING ]
+ [ UPLOADING ] ──(All files PUT & /finalize)──► [ FAST_PREPROCESSING ]
+                                                       │
+                                            (Fast-parse barrier)
+                                                       │
+                                                       ▼
+                                              [ READY_TO_ANALYZE ]
+                                                       │
+                                   (Recruiter clicks Analyze / POST /analysis)
+                                                       │
+                                                       ▼
+                                            [ ANALYSIS_REQUESTED ]
                                                        │
                            ┌───────────────────────────┴───────────────────────────┐
                            ▼                                                       ▼
                 (Any doc needs ODL)                                      (All docs fast-parsed)
                            │                                                       │
-                           ▼                                                       │
+                           │                                                       │
               [ FALLBACK_PROCESSING ]                                              │
                            │                                                       │
                            └───────────────────────────┬───────────────────────────┘
@@ -98,29 +111,32 @@ Sortlist v2.2 introduces a **production-grade, decoupled S3 + SQS pipeline**:
                                                        │
                            ┌───────────────────────────┴───────────────────────────┐
                            ▼                                                       ▼
-                (All docs succeeded)                                    (Partial doc failures)
+                 (All docs succeeded)                                    (Partial doc failures)
                            │                                                       │
                            ▼                                                       ▼
                        [ READY ]                                        [ READY_WITH_WARNINGS ]
 ```
 
 - **`UPLOADING`**: Session created, presigned URLs issued. Waiting for browser to PUT files and call completion.
-- **`FAST_PARSING`**: Finalize called. Documents queued in `fast-parse`. Structural parsing in progress.
+- **`FAST_PREPROCESSING`**: Finalize called. Documents queued in `fast-parse`. Structural parsing in progress. Analysis has not yet been requested by the recruiter.
+- **`READY_TO_ANALYZE`**: Fast-parse barrier reached. Fast structural parsing complete. Awaiting recruiter analysis trigger.
+- **`ANALYSIS_REQUESTED`**: Recruiter clicked Analyze (`POST /api/v2/jobs/{job_id}/analysis`). Background pipeline engaged.
 - **`FALLBACK_PROCESSING`**: One or more complex multi-column documents routed to the JVM ODL parser.
-- **`FINAL_RANKING`**: All documents have reached terminal parsing states. Ranking worker is scoring candidates against the pinned job description.
+- **`FINAL_RANKING`**: All documents have reached terminal parsing states. Ranking worker is scoring candidates against the pinned job description and recruiter weights.
 - **`READY`**: All documents parsed and ranked successfully. Results available in DynamoDB and S3.
 - **`READY_WITH_WARNINGS`**: Some documents failed parsing (e.g., corrupt PDF, unsupported font encoding), but valid documents were scored and ranked.
 - **`FAILED`**: Critical session failure (e.g., all documents unparseable or job criteria deleted).
 
 ### 3.2 Document Extraction States (`DocumentStatus`)
 
-- `UPLOAD_INITIALIZED` → `UPLOADED`
+- `UPLOAD_INITIALIZED` → `UPLOADED` (via lightweight Range header magic-bytes check, returns HTTP 202)
 - `FAST_PARSE_QUEUED` → `FAST_PARSING`
 - Terminal Fast-Parse States:
   - `STRUCTURED_PARSED`: Clean single-column layout extracted.
   - `NEEDS_ODL`: Complex column or reading order detected, routed to Stage 2.
   - `REVIEW_REQUIRED`: Extraction complete but confidence below threshold.
-  - `FAILED`: Document corrupt or unparseable.
+  - `REJECTED_DUPLICATE`: Document has identical SHA-256 to another document in the job.
+  - `FAILED`: Document corrupt, non-PDF, or exceeded page limits.
 - Terminal Fallback States:
   - `STRUCTURED_PARSED`: ODL extraction succeeded.
   - `REVIEW_REQUIRED`: ODL completed with warnings.
@@ -130,23 +146,33 @@ Sortlist v2.2 introduces a **production-grade, decoupled S3 + SQS pipeline**:
 
 ## 4. Barrier Synchronization & Concurrency Control
 
-### 4.1 Fast-Parse Barrier
+### 4.1 Fast-Parse Barrier & Recruiter Decoupling
 When `FastParseWorker` completes processing a document:
-1. It updates the document state to `STRUCTURED_PARSED`, `NEEDS_ODL`, `REVIEW_REQUIRED`, or `FAILED`.
+1. It updates the document state to `STRUCTURED_PARSED`, `NEEDS_ODL`, `REVIEW_REQUIRED`, `REJECTED_DUPLICATE`, or `FAILED`.
 2. It queries all documents associated with the `session_id`.
-3. If all documents have completed Stage 1:
-   - If any document is in `NEEDS_ODL`, the session transitions to `FALLBACK_PROCESSING`.
-   - If zero documents need ODL, the session transitions to `FINAL_RANKING` and enqueues a `FinalRankMessage`.
+3. If all documents have completed fast-parse:
+   - If `session.analysis_requested` is False: the session transitions to `READY_TO_ANALYZE` and pauses. No ODL or final ranking is run until the recruiter triggers analysis.
+   - If `session.analysis_requested` is True:
+     - If any document is in `NEEDS_ODL`, the session transitions to `FALLBACK_PROCESSING` and enqueues ODL batch messages.
+     - If zero documents need ODL, the session transitions to `FINAL_RANKING` and enqueues a `FinalRankMessage`.
 
 ### 4.2 Fallback Barrier
-When `ODLBatchWorker` completes a document:
-1. It updates the document state to `STRUCTURED_PARSED`, `REVIEW_REQUIRED`, or `FAILED`.
+When `ODLBatchWorker` completes a document batch:
+1. It isolates per-document failures (recording `error_reason` without failing the entire batch) and updates document states to `STRUCTURED_PARSED`, `REVIEW_REQUIRED`, or `NEEDS_NOVA`.
 2. It checks all session documents. If every document has reached a terminal parsing state (`STRUCTURED_PARSED`, `REVIEW_REQUIRED`, or `FAILED`), it transitions the session to `FINAL_RANKING` and enqueues `FinalRankMessage`.
 
-### 4.3 Idempotency & Stale Rank Protection
-1. **Duplicate Completion Protection:** `POST /documents/{doc_id}/complete` is idempotent. Calling it multiple times for the same document returns HTTP 200 without duplicating session counters.
-2. **Duplicate Message Handling:** If an SQS worker restarts or receives a duplicate message, it inspects the document status in DynamoDB. If the document is already in a terminal state for that stage, the worker safely skips processing and deletes the message from the queue.
-3. **Job Version Pinning:** When `FinalRankWorker` dequeues a `FinalRankMessage`, it verifies `message.job_version == job.job_version`. If the recruiter changed job weights or criteria while parsing was underway, the stale ranking run is discarded, and the new criteria are preserved.
+### 4.3 Idempotency, Duplicate Detection & Stale Rank Protection
+1. **Lightweight Completion:** `POST /documents/{doc_id}/complete` performs an S3 HEAD check and Range-request (`bytes=0-9`) magic-bytes check, marks `UPLOADED`, enqueues `FAST_PARSE_QUEUE`, and returns HTTP 202 immediately. It never downloads the full PDF or runs PyMuPDF on the HTTP request thread. Calling it multiple times for the same document returns HTTP 202 idempotently without duplicating SQS messages.
+2. **Asynchronous Duplicate Detection:** Full PDF download and SHA-256 calculation occur inside `FastParseWorker`. If another document in the same job shares the identical content hash, the worker marks the duplicate `REJECTED_DUPLICATE`.
+3. **Job Version Pinning:** When the recruiter triggers analysis (`POST /api/v2/jobs/{job_id}/analysis`), any updated weights or job criteria increment `job_version`. The session is pinned to this `job_version`. When `FinalRankWorker` dequeues a `FinalRankMessage`, it verifies `message.job_version == job.job_version`. If criteria changed while ranking was in-flight, the stale ranking run is safely discarded.
+4. **Daemon & Draining Discipline:** `BackgroundWorkerDaemon` is strictly gated behind `RUN_LOCAL_WORKERS=true` in FastAPI lifespan and is never run by default in production or containerized environments. FastAPI HTTP request handlers never invoke `drain_all_queues_sync()`.
+
+### 4.4 Transactional Outbox Pattern for Zero Message Loss
+To prevent the crash window between DynamoDB state writes and SQS message publishing:
+1. When `POST /complete` executes, `write_outbox_and_send` records a `PENDING` outbox record in DynamoDB with a 24-hour TTL before publishing to SQS.
+2. Upon successful SQS publication, the outbox record is immediately deleted.
+3. If an unexpected server failure occurs before SQS send, the record remains in DynamoDB.
+4. An outbox relay worker (`relay_pending_outbox`) periodically scans for orphaned `PENDING` records every 30 seconds and safely replays them to SQS.
 
 ---
 
@@ -166,7 +192,7 @@ Uploading 40 resumes sequentially or in parallel triggered HTTP 429 after the 15
 
 ---
 
-## 6. Operational Runbook
+## 6. Operational Runbook & Deployment Architecture
 
 ### 6.1 Monitoring Metrics
 - **SQS Queue Depth:** Alert if `ApproximateNumberOfMessagesVisible` on `fast-parse` > 100 for > 5 minutes.
@@ -189,11 +215,22 @@ aws sqs start-message-move-task --source-arn <DLQ_ARN> --destination-arn <FAST_P
 - **Local Dev Mode (`USE_REAL_SQS=False`):** Uses in-memory FIFO queue simulation. When `POST /finalize` is called, test runners or local servers drain queues synchronously via `drain_all_queues_sync(10)`.
 - **Cloud Mode (`USE_REAL_SQS=True`):** Real AWS SQS queues and S3 buckets are utilized. The `BackgroundWorkerDaemon` polls queues continuously in background threads.
 
+### 6.4 Standalone Worker Deployment (Production)
+In production, queue consumption must be decoupled from the API web process:
+- Dedicated worker process: `python backend/worker.py`
+- Fail-fast enforcement: The worker exits immediately with code 1 if `USE_REAL_SQS != true` or queue URLs are missing.
+- Supervisor Unit: Provided at `infra/resume-ranker-worker.service` (systemd service with graceful SIGTERM termination and auto-restart).
+- Outbox Relay: Replays stuck messages every 30 seconds automatically.
+
+### 6.5 Infrastructure as Code (IaC)
+- **Provisioning Script:** `infra/queues.sh` (idempotent bash provisioning script with `--check` mode).
+- **CloudFormation Template:** `infra/queues.yaml` (full SQS queues, DLQ, SNS topic, subscriptions, and CloudWatch alarms for DLQ and queue depth).
+
 ---
 
 ## 7. Verification Test Matrix
 
-All 8 core failure and concurrency scenarios are automated in `tests/integration/test_durable_pipeline.py`:
+### 7.1 Durable Pipeline Integration Scenarios (`tests/integration/test_durable_pipeline.py`)
 
 | Scenario ID | Test Function | Verified Behavior |
 |---|---|---|
@@ -205,3 +242,16 @@ All 8 core failure and concurrency scenarios are automated in `tests/integration
 | **Scenario 6** | `test_scenario_6_stateless_worker_restart_resumability` | Workers resume sessions and documents directly from DynamoDB and S3 without in-memory state. |
 | **Scenario 7** | `test_scenario_7_job_version_pinning_and_stale_rank_rejection` | Stale ranking messages generated against old job versions are rejected. |
 | **Scenario 8** | `test_scenario_8_scoring_policy_and_ats_compatibility` | Scorer enforces strict fairness (0 prestige bonus, 0 gap penalty, strict identity resolution). |
+
+### 7.2 Hardening & Unit Scenarios (`tests/unit/test_v2_2_hardening.py`)
+
+| Test ID | Test Function | Verified Behavior |
+|---|---|---|
+| **Hardening 1** | `test_complete_document_upload_lightweight_returns_202` | `POST /complete` performs lightweight Range read (bytes=0-9) and returns HTTP 202 without downloading full PDF. |
+| **Hardening 2** | `test_duplicate_completion_is_idempotent` | Multiple `/complete` requests return 202 without creating duplicate queue messages. |
+| **Hardening 3** | `test_duplicate_pdf_marked_rejected_duplicate_in_worker` | Duplicate PDF content by SHA-256 is accurately identified and flagged as `REJECTED_DUPLICATE` in worker. |
+| **Hardening 4** | `test_finalize_upload_session_fast_preprocessing_analysis_unrequested` | Session finalization pauses at `READY_TO_ANALYZE` without enqueuing final rank until explicit Analyze trigger. |
+| **Hardening 5** | `test_trigger_analysis_sets_analysis_requested_and_pins_job_version` | Analyze trigger updates criteria, increments `job_version`, sets `analysis_requested=True`, and advances session. |
+| **Hardening 6** | `test_odl_batch_worker_bounded_batches_and_isolation` | Bounded ODL batch isolates document failures, preventing whole-batch failure when one document is corrupt. |
+| **Hardening 7** | `test_structured_429_error_diagnostics` | Exceeding active session quota produces structured JSON 429 error with `Retry-After: 60`. |
+

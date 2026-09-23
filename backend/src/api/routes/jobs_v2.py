@@ -37,9 +37,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, status, Depends, Query
+from fastapi import APIRouter, File, HTTPException, UploadFile, BackgroundTasks, status, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, field_validator
+
 
 from src.api.auth import AuthContext
 from src.api.dependencies.auth import get_auth_context, enforce_tenant_ownership
@@ -197,11 +198,35 @@ class UploadSessionProgressResponse(BaseModel):
     documents: List[Dict[str, Any]]
 
 
+class AnalysisTriggerRequest(BaseModel):
+    session_id: Optional[str] = None
+    weights: Optional[Dict[str, float]] = None
+    title: Optional[str] = None
+    department: Optional[str] = None
+    description: Optional[str] = None
+    must_have_skills: Optional[List[str]] = None
+    nice_to_have_skills: Optional[List[str]] = None
+    min_years: Optional[int] = None
+    max_years: Optional[int] = None
+    education_level: Optional[str] = None
+    education_field: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+
+class AnalysisTriggerResponse(BaseModel):
+    job_id: str
+    session_id: str
+    job_version: int
+    status: str
+    message: str
+
+
 class DecisionUpdateRequest(BaseModel):
-    decision: str  # "new", "reviewing", "shortlisted", "rejected", "interview", "archived"
+    decision: Optional[str] = None  # "new", "reviewing", "shortlisted", "rejected", "interview", "archived"
     reason: Optional[str] = None  # Mandatory if decision == "rejected"
     note: Optional[str] = None
     tags: List[str] = []
+
 
 
 from src.core.lazy_proxy import LazyProxy
@@ -301,6 +326,7 @@ async def update_job(job_id: str, body: UpdateJobRequest, ctx: AuthContext = Dep
 @router.post("/{job_id}/resumes", response_model=UploadResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_resumes(
     job_id: str,
+    request: Request,
     files: List[UploadFile] = File(...),
     ctx: AuthContext = Depends(get_auth_context),
 ):
@@ -321,12 +347,22 @@ async def upload_resumes(
     # Check org active upload sessions quota
     active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
     if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
         raise HTTPException(
             status_code=429,
             detail={
+                "status_code": 429,
+                "error_code": "CONCURRENT_SESSIONS_EXCEEDED",
                 "code": "CONCURRENT_SESSIONS_EXCEEDED",
-                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
+                "route": request.url.path,
+                "job_id": job_id,
+                "session_id": None,
+                "org_id": ctx.org_id,
+                "client_ip_hash": ip_hash,
+                "retry_after": 60,
                 "retry_after_seconds": 60,
+                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
             },
             headers={"Retry-After": "60"},
         )
@@ -341,6 +377,7 @@ async def upload_resumes(
         expected_document_count=len(files),
         uploaded_document_count=0,
         status=UploadSessionStatus.UPLOADING,
+        analysis_requested=True,
     )
     _sessions_repo.create(session)
 
@@ -438,15 +475,10 @@ async def upload_resumes(
         _sessions_repo.update_status(
             job_id,
             session_id,
-            UploadSessionStatus.FAST_PARSING,
+            UploadSessionStatus.FAST_PREPROCESSING,
             expected_version=fresh_sess.version,
         )
     check_and_progress_session(job_id, session_id)
-
-    # In local development or test mode, drain queues synchronously so tests pass reliably
-    if not settings.USE_REAL_SQS:
-        from src.pipeline.worker_runner import drain_all_queues_sync
-        await asyncio.to_thread(drain_all_queues_sync, 10)
 
     all_docs = _docs_repo.list_for_job(job_id)
     return UploadResponse(
@@ -467,6 +499,7 @@ async def upload_resumes(
 )
 async def create_upload_session(
     job_id: str,
+    request: Request,
     body: CreateUploadSessionRequest,
     ctx: AuthContext = Depends(get_auth_context),
 ):
@@ -489,15 +522,26 @@ async def create_upload_session(
     # Guard 1: Concurrency / Quota
     active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
     if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
         raise HTTPException(
             status_code=429,
             detail={
+                "status_code": 429,
+                "error_code": "CONCURRENT_SESSIONS_EXCEEDED",
                 "code": "CONCURRENT_SESSIONS_EXCEEDED",
-                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
+                "route": request.url.path,
+                "job_id": job_id,
+                "session_id": None,
+                "org_id": ctx.org_id,
+                "client_ip_hash": ip_hash,
+                "retry_after": 60,
                 "retry_after_seconds": 60,
+                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
             },
             headers={"Retry-After": "60"},
         )
+
 
     # Guard 2: Document count limit
     if body.document_count > settings.MAX_DOCS_PER_SESSION or len(body.files) > settings.MAX_DOCS_PER_SESSION:
@@ -596,6 +640,7 @@ async def create_upload_session(
 @router.post(
     "/{job_id}/upload-sessions/{session_id}/documents/{document_id}/complete",
     response_model=CompleteDocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def complete_document_upload(
     job_id: str,
@@ -603,7 +648,7 @@ async def complete_document_upload(
     document_id: str,
     ctx: AuthContext = Depends(get_auth_context),
 ):
-    """Verify S3 upload completion, validate PDF integrity, and enqueue for fast-parse."""
+    """Verify S3 upload completion, validate PDF integrity header, and enqueue for fast-parse."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -649,31 +694,7 @@ async def complete_document_upload(
             raise
         raise HTTPException(status_code=400, detail="Failed to verify PDF header bytes")
 
-    # 3. Compute SHA256 hash for deduplication
-    pdf_bytes = _storage.get_resume(job_id, document_id, s3_key=doc.s3_pdf_key)
-    file_hash = hashlib.sha256(pdf_bytes).hexdigest()
-
-    existing = _docs_repo.find_by_hash(job_id, file_hash)
-    if existing and existing.document_id != document_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Duplicate of '{existing.filename}' (SHA-256 match)",
-        )
-
-    # 4. Check page count
-    try:
-        import fitz
-        pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page_count = len(pdf_doc)
-        pdf_doc.close()
-        if page_count > settings.MAX_PAGE_COUNT:
-            raise HTTPException(status_code=400, detail=f"Document exceeds {settings.MAX_PAGE_COUNT} page limit ({page_count} pages)")
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise
-        raise HTTPException(status_code=400, detail="Corrupt or unreadable PDF structure")
-
-    # 5. Update DocumentItem in DynamoDB to UPLOADED
+    # 3. Update DocumentItem in DynamoDB to UPLOADED
     updated = _docs_repo.update_status_conditional(
         job_id=job_id,
         document_id=document_id,
@@ -681,8 +702,6 @@ async def complete_document_upload(
         allowed_current_statuses=[DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING],
         extra_updates={
             "file_size": actual_size,
-            "content_hash": file_hash,
-            "page_count": page_count,
         },
     )
     if updated:
@@ -694,16 +713,31 @@ async def complete_document_upload(
         if fresh_job:
             _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
 
-        # Enqueue small message to FAST_PARSE_QUEUE
-        enqueue_fast_parse(
-            job_id=job_id,
-            session_id=session_id,
-            document_id=document_id,
-            org_id=ctx.org_id,
-            job_version=session.job_version,
-            s3_key=doc.s3_pdf_key,
-            content_hash=file_hash,
-        )
+        # Enqueue via transactional outbox — eliminates crash window between
+        # DynamoDB write and SQS publish. If SQS fails, the outbox relay retries.
+        try:
+            from src.infrastructure.queue.outbox import write_outbox_and_send
+            write_outbox_and_send(
+                job_id=job_id,
+                session_id=session_id,
+                document_id=document_id,
+                org_id=ctx.org_id,
+                job_version=session.job_version,
+                s3_key=doc.s3_pdf_key,
+                stage="FAST_PARSE",
+            )
+        except Exception as outbox_err:
+            # Outbox import/call failed — fall back to direct enqueue
+            logger.warning("Outbox dispatch failed for doc %s, falling back to direct enqueue: %s", document_id, outbox_err)
+            enqueue_fast_parse(
+                job_id=job_id,
+                session_id=session_id,
+                document_id=document_id,
+                org_id=ctx.org_id,
+                job_version=session.job_version,
+                s3_key=doc.s3_pdf_key,
+                content_hash="",
+            )
 
     return CompleteDocumentUploadResponse(
         document_id=document_id,
@@ -716,6 +750,7 @@ async def complete_document_upload(
 @router.post(
     "/{job_id}/upload-sessions/{session_id}/finalize",
     response_model=FinalizeUploadSessionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def finalize_upload_session(
     job_id: str,
@@ -732,12 +767,13 @@ async def finalize_upload_session(
     if not session:
         raise HTTPException(status_code=404, detail="Upload session not found")
 
-    # Idempotent finalization
+    # Idempotent finalization: transition to FAST_PREPROCESSING
+    # Note: analysis_requested remains False until user clicks Analyze!
     if session.status == UploadSessionStatus.UPLOADING:
         _sessions_repo.update_status(
             job_id,
             session_id,
-            UploadSessionStatus.FAST_PARSING,
+            UploadSessionStatus.FAST_PREPROCESSING,
             expected_version=session.version,
         )
         fresh_job = _jobs_repo.get(job_id)
@@ -746,18 +782,13 @@ async def finalize_upload_session(
 
     check_and_progress_session(job_id, session_id)
 
-    # In local dev/test mode without real SQS daemon, drain pending queue items
-    settings = get_settings()
-    if not settings.USE_REAL_SQS:
-        from src.pipeline.worker_runner import drain_all_queues_sync
-        await asyncio.to_thread(drain_all_queues_sync, 10)
-
     return FinalizeUploadSessionResponse(
         session_id=session_id,
         job_id=job_id,
-        status="FAST_PARSING",
+        status="FAST_PREPROCESSING",
         message="Upload session finalized. Processing pipeline barrier active.",
     )
+
 
 
 @router.get(
@@ -804,6 +835,190 @@ async def get_upload_session(
         status=session.status.value,
         expected_document_count=session.expected_document_count,
         uploaded_document_count=session.uploaded_document_count,
+        fast_parsed_count=fast_parsed,
+        terminal_count=terminal,
+        documents=doc_list,
+    )
+
+
+@router.post(
+    "/{job_id}/analysis",
+    response_model=AnalysisTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def trigger_analysis(
+    job_id: str,
+    body: Optional[AnalysisTriggerRequest] = None,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Explicit recruiter Analyze trigger.
+
+    Validates weights, updates JD config if modified, increments job_version,
+    pins the session to new job_version, sets analysis_requested = True,
+    and advances workflow through ODL/fallback to final ranking.
+    """
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    req = body or AnalysisTriggerRequest()
+
+    # 1. Validate weights if supplied
+    if req.weights:
+        w_sum = sum(req.weights.values())
+        if abs(w_sum - 100) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Score weights must sum to 100%, got {w_sum}%",
+            )
+
+    # 2. Check if JD criteria or weights changed; update and bump job_version
+    updates: Dict[str, Any] = {}
+    if req.title and req.title != job.title:
+        updates["title"] = req.title
+    if req.department and req.department != job.department:
+        updates["department"] = req.department
+    if req.description and req.description != job.description:
+        updates["description"] = req.description
+    if req.must_have_skills is not None and req.must_have_skills != job.must_have_skills:
+        updates["must_have_skills"] = req.must_have_skills
+    if req.nice_to_have_skills is not None and req.nice_to_have_skills != job.nice_to_have_skills:
+        updates["nice_to_have_skills"] = req.nice_to_have_skills
+    if req.min_years is not None and req.min_years != job.min_years:
+        updates["min_years"] = req.min_years
+    if req.max_years is not None and req.max_years != job.max_years:
+        updates["max_years"] = req.max_years
+    if req.education_level is not None and req.education_level != job.education_level:
+        updates["education_level"] = req.education_level
+    if req.education_field is not None and req.education_field != job.education_field:
+        updates["education_field"] = req.education_field
+    if req.keywords is not None and req.keywords != job.keywords:
+        updates["keywords"] = req.keywords
+    if req.weights:
+        updates["weights"] = req.weights
+
+    current_job_version = getattr(job, "job_version", 1)
+    if updates:
+        current_job_version += 1
+        updates["job_version"] = current_job_version
+        _jobs_repo.update(job_id, updates, expected_version=job.version)
+        logger.info("Job %s criteria updated, new job_version=%d", job_id, current_job_version)
+
+    # 3. Locate session
+    session = None
+    if req.session_id:
+        session = _sessions_repo.get(job_id, req.session_id)
+    if not session:
+        sessions = _sessions_repo.list_for_job(job_id)
+        if sessions:
+            sessions.sort(key=lambda s: s.created_at, reverse=True)
+            session = sessions[0]
+
+    if not session:
+        raise HTTPException(status_code=400, detail="No upload session found for job")
+
+    # 4. Idempotency: If already analysis requested and running or complete, return 202
+    if getattr(session, "analysis_requested", False) and session.status in (
+        UploadSessionStatus.ANALYSIS_REQUESTED,
+        UploadSessionStatus.FALLBACK_PROCESSING,
+        UploadSessionStatus.FINAL_RANKING,
+        UploadSessionStatus.READY,
+        UploadSessionStatus.READY_WITH_WARNINGS,
+    ):
+        return AnalysisTriggerResponse(
+            job_id=job_id,
+            session_id=session.session_id,
+            job_version=session.job_version,
+            status=session.status.value,
+            message="Analysis already requested and in progress.",
+        )
+
+    # 5. Authorize analysis and pin job_version
+    fresh_session = _sessions_repo.get(job_id, session.session_id)
+    if fresh_session:
+        _sessions_repo.set_analysis_requested(
+            job_id=job_id,
+            session_id=session.session_id,
+            expected_version=fresh_session.version,
+            analysis_requested=True,
+            new_status=UploadSessionStatus.ANALYSIS_REQUESTED,
+            job_version=current_job_version,
+        )
+
+    # 6. Trigger coordinator to advance through ODL or final ranking
+    check_and_progress_session(job_id, session.session_id)
+
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "ANALYSIS_REQUESTED",
+        "job",
+        job_id,
+        {"session_id": session.session_id, "job_version": current_job_version},
+    )
+
+    return AnalysisTriggerResponse(
+        job_id=job_id,
+        session_id=session.session_id,
+        job_version=current_job_version,
+        status="ANALYSIS_REQUESTED",
+        message="Analysis requested. Background processing pipeline engaged.",
+    )
+
+
+@router.get(
+    "/{job_id}/analysis/status",
+    response_model=UploadSessionProgressResponse,
+)
+async def get_analysis_status(
+    job_id: str,
+    session_id: Optional[str] = None,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Retrieve analysis / session status for a job."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    target_session = None
+    if session_id:
+        target_session = _sessions_repo.get(job_id, session_id)
+    else:
+        sessions = _sessions_repo.list_for_job(job_id)
+        if sessions:
+            sessions.sort(key=lambda s: s.created_at, reverse=True)
+            target_session = sessions[0]
+
+    if not target_session:
+        raise HTTPException(status_code=404, detail="No session found for job")
+
+    docs = _docs_repo.list_for_session(job_id, target_session.session_id)
+    fast_parsed = sum(1 for d in docs if d.status.is_terminal_fast_parse())
+    terminal = sum(1 for d in docs if d.status.is_terminal_extraction())
+
+    doc_list = [
+        {
+            "document_id": d.document_id,
+            "filename": d.filename,
+            "status": d.status.value,
+            "candidate_name": d.candidate_name,
+            "identity_status": d.identity_status,
+            "extraction_quality": d.extraction_quality,
+            "fallback_reason": d.fallback_reason,
+            "error_reason": d.error_reason,
+        }
+        for d in docs
+    ]
+
+    return UploadSessionProgressResponse(
+        session_id=target_session.session_id,
+        job_id=job_id,
+        job_version=target_session.job_version,
+        status=target_session.status.value,
+        expected_document_count=target_session.expected_document_count,
+        uploaded_document_count=target_session.uploaded_document_count,
         fast_parsed_count=fast_parsed,
         terminal_count=terminal,
         documents=doc_list,
@@ -862,12 +1077,6 @@ async def _extraction_event_stream(job_id: str):
             yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total, 'succeeded': succeeded, 'failed': failed})}\n\n"
             break
 
-        # In local/test mode without SQS daemon, ensure queue progress
-        from src.config.aws import get_settings
-        if not get_settings().USE_REAL_SQS:
-            from src.pipeline.worker_runner import drain_all_queues_sync
-            await asyncio.to_thread(drain_all_queues_sync, 2)
-
         yield ": ping\n\n"
         await asyncio.sleep(1.0)
     else:
@@ -882,12 +1091,6 @@ async def extract_resumes(job_id: str, ctx: AuthContext = Depends(get_auth_conte
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-    # In local/test mode without SQS daemon, trigger worker drain
-    from src.config.aws import get_settings
-    if not get_settings().USE_REAL_SQS:
-        from src.pipeline.worker_runner import drain_all_queues_sync
-        await asyncio.to_thread(drain_all_queues_sync, 5)
-
     return StreamingResponse(
         _extraction_event_stream(job_id),
         media_type="text/event-stream",
@@ -897,6 +1100,7 @@ async def extract_resumes(job_id: str, ctx: AuthContext = Depends(get_auth_conte
             "X-Accel-Buffering": "no",
         },
     )
+
 
 
 @router.post("/{job_id}/score")
@@ -1083,6 +1287,14 @@ async def get_results(job_id: str, ctx: AuthContext = Depends(get_auth_context))
 
     try:
         candidates = _storage.get_ranking(job_id, latest_scoring.scoring_id)
+        # Ensure every candidate dictionary has document_id, job_id, and pdf_url for the UI
+        for c in candidates:
+            doc_id = c.get("document_id") or c.get("_document_id")
+            if doc_id:
+                c["document_id"] = doc_id
+                c["job_id"] = job_id
+                if not c.get("pdf_url"):
+                    c["pdf_url"] = f"/api/v2/jobs/{job_id}/resumes/{doc_id}/download"
     except Exception as e:
         logger.error("Failed to load ranking from S3: %s", e)
         raise HTTPException(
@@ -1111,7 +1323,7 @@ async def download_resume(job_id: str, document_id: str, ctx: AuthContext = Depe
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        pdf_bytes = _storage.get_resume(job_id, document_id)
+        pdf_bytes = _storage.get_resume(job_id, document_id, s3_key=doc.s3_pdf_key)
     except Exception as e:
         logger.error("Failed to download resume %s: %s", document_id, e)
         raise HTTPException(status_code=500, detail="Failed to download resume")
@@ -1198,17 +1410,33 @@ async def update_candidate_decision(
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
 
-    decision_norm = body.decision.strip().lower()
     valid_decisions = ("new", "reviewing", "shortlisted", "rejected", "interview", "archived")
-    if decision_norm not in valid_decisions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid decision state. Must be one of: {', '.join(valid_decisions)}",
-        )
+    aliases = {
+        "under-review": "reviewing",
+        "under_review": "reviewing",
+        "shortlist": "shortlisted",
+        "reject": "rejected",
+        "assessment-sent": "interview",
+        "assessment_sent": "interview",
+    }
+    decision_norm = None
+    if body.decision and body.decision.strip():
+        raw_d = body.decision.strip().lower()
+        decision_norm = aliases.get(raw_d, raw_d)
+        if decision_norm not in valid_decisions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid decision state. Must be one of: {', '.join(valid_decisions)}",
+            )
 
-    # Mandatory reason rule
+    # Mandatory reason rule for rejected decisions
+    effective_reason = (body.reason or "").strip()
     if decision_norm == "rejected":
-        if not body.reason or not body.reason.strip():
+        if not effective_reason and body.note and "rejection reason:" in body.note.lower():
+            parts = body.note.split(":", 1)
+            if len(parts) > 1 and parts[1].strip():
+                effective_reason = parts[1].strip()
+        if not effective_reason:
             raise HTTPException(
                 status_code=400,
                 detail="Non-negotiable policy: Rejections require a documented, evidence-backed reason.",
@@ -1223,7 +1451,7 @@ async def update_candidate_decision(
         {
             "job_id": job_id,
             "decision": decision_norm,
-            "reason": body.reason,
+            "reason": effective_reason if decision_norm == "rejected" else body.reason,
             "note": body.note,
         },
     )
@@ -1232,7 +1460,7 @@ async def update_candidate_decision(
         "job_id": job_id,
         "document_id": document_id,
         "decision": decision_norm,
-        "reason": body.reason,
+        "reason": effective_reason if decision_norm == "rejected" else body.reason,
         "note": body.note,
         "status": "updated",
     }

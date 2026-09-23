@@ -22,16 +22,17 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 export function ResumeUploadZone() {
   const upload = useCandidateStore((s) => s.upload);
   const setUpload = useCandidateStore((s) => s.setUpload);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const appPhase = useAppStore((s) => s.appPhase);
   const setAppPhase = useAppStore((s) => s.setAppPhase);
   const setUploadProgress = useAppStore((s) => s.setUploadProgress);
   const resetUploadProgress = useAppStore((s) => s.resetUploadProgress);
   const jobId = useAppStore((s) => s.jobId);
   const setJobId = useAppStore((s) => s.setJobId);
+  const setSessionId = useAppStore((s) => s.setSessionId);
   const job = useJobStore((s) => s.job);
 
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /** Client-side validation — returns only valid PDF files */
   const validateFiles = useCallback((fileList: FileList | File[]): File[] => {
@@ -103,6 +104,11 @@ export function ResumeUploadZone() {
           },
         );
 
+        // Persist session_id for refresh recovery and downstream polling
+        if (result.session_id) {
+          setSessionId(result.session_id);
+        }
+
         // Toast server-side rejections individually
         for (const rejected of result.rejected) {
           toast.error(`Server rejected: ${rejected.filename}`, {
@@ -119,21 +125,27 @@ export function ResumeUploadZone() {
         });
 
         if (result.accepted.length > 0) {
+          // Transition to fast_preprocessing immediately — PyMuPDF is running in background.
+          // The AnalyzeButton will poll and advance to ready_to_analyze once parsing finishes.
+          setAppPhase('fast_preprocessing');
           toast.success(
-            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded`,
+            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} stored. Parsing in background…`,
           );
+        } else {
+          setAppPhase('idle');
         }
       } catch (err) {
         toast.error('Upload failed', {
           description: err instanceof Error ? err.message : 'An unexpected error occurred',
         });
+        setAppPhase('error');
       } finally {
-        setAppPhase('idle');
         resetUploadProgress();
       }
     },
-    [jobId, setJobId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job.title],
+    [jobId, setJobId, setSessionId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job.title],
   );
+
 
   // ── Drag-drop handlers ──────────────────────────────────────────────────
 
@@ -177,7 +189,12 @@ export function ResumeUploadZone() {
     [validateFiles, handleUpload],
   );
 
-  const isDisabled = appPhase === 'uploading' || appPhase === 'extracting' || appPhase === 'scoring';
+  const isDisabled =
+    appPhase === 'uploading' ||
+    appPhase === 'analysis_queued' ||
+    appPhase === 'fallback_processing' ||
+    appPhase === 'final_ranking';
+
 
   return (
     <div>

@@ -735,7 +735,14 @@ class CandidateScorer:
             result.skill_score = max(0.0, result.skill_score * (1.0 + penalty / 100.0))
 
         # ── Weighted final score ──────────────────────────────────────────
-        w = jd.weights
+        raw_w = jd.weights or {}
+        total_w = sum(float(v) for v in raw_w.values()) if raw_w else 0.0
+        # Defensively normalize if weights are given on a 0-100 scale
+        if total_w > 1.5:
+            w = {k: float(v) / total_w for k, v in raw_w.items()}
+        else:
+            w = {k: float(v) for k, v in raw_w.items()} if raw_w else {}
+
         skill_w = w.get('skills', 0.4)
         exp_w = w.get('experience', 0.25)
         kw_w = w.get('keywords', 0.2)

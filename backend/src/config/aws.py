@@ -8,9 +8,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logging.getLogger("botocore.credentials").setLevel(logging.WARNING)
 
 
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+
 class AWSSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(BACKEND_DIR / ".env"), ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -33,6 +38,9 @@ class AWSSettings(BaseSettings):
     SQS_NOVA_DLQ_URL: str = ""
     SQS_FINAL_RANK_QUEUE_URL: str = ""
     SQS_FINAL_RANK_DLQ_URL: str = ""
+
+    # SNS Topic ARN for pub/sub events
+    SNS_EVENTS_TOPIC_ARN: str = ""
 
     # Queue execution mode (False = use deterministic LocalQueueAdapter)
     USE_REAL_SQS: bool = False
@@ -88,7 +96,7 @@ def _get_session_for_service(service: str) -> boto3.Session:
     session_kwargs = {}
     
     if not is_running_in_lambda():
-        if service in ("bedrock-runtime", "lambda"):
+        if service in ("bedrock-runtime", "lambda", "sqs", "sns"):
             # Cloud services MUST use real AWS credentials
             session_kwargs["profile_name"] = "aws"
         else:
@@ -108,7 +116,8 @@ def get_client(service: str, config=None):
     kwargs: dict = {}
     kwargs.update(extra)
     
-    if s.is_local() and service not in ("bedrock-runtime", "lambda"):
+    # Only use local endpoint for local dev when NOT targeting cloud services
+    if s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
         kwargs["endpoint_url"] = "http://localhost:4566"
     
     session = _get_session_for_service(service)
@@ -122,7 +131,7 @@ def get_resource(service: str, config=None):
     kwargs: dict = {}
     kwargs.update(extra)
     
-    if s.is_local() and service not in ("bedrock-runtime", "lambda"):
+    if s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
         kwargs["endpoint_url"] = "http://localhost:4566"
     
     session = _get_session_for_service(service)

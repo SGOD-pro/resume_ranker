@@ -52,8 +52,8 @@ export function CandidateListPanel() {
         (c.scoreBreakdown.keywords * (jobWeights.keywords / totalWeight)) +
         (c.scoreBreakdown.education * (jobWeights.education / totalWeight));
       
-      const dynamicScore = c.signal === 'knockout' ? 0 : Math.round(baseScore * 10) / 10;
-      return { ...c, overallScore: dynamicScore };
+      const dynamicScore = Math.round(baseScore * 10) / 10;
+      return { ...c, overallScore: dynamicScore, relevanceScore: dynamicScore };
     });
 
     if (sortField === 'score') {
