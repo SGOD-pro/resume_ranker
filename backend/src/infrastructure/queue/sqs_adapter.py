@@ -21,15 +21,29 @@ class SqsQueueAdapter(QueueAdapter):
     def __init__(self) -> None:
         self._client = get_client("sqs")
         self._settings = get_settings()
+        s = self._settings
+        fast_parse_url = s.SQS_FAST_PARSE_QUEUE_URL or s.SQS_STAGE1_QUEUE_URL
+        fast_parse_dlq = s.SQS_FAST_PARSE_DLQ_URL or s.SQS_STAGE1_DLQ_URL
+        stage2_url = s.SQS_ODL_BATCH_QUEUE_URL or s.SQS_STAGE2_QUEUE_URL or s.SQS_NOVA_QUEUE_URL
+        stage2_dlq = s.SQS_ODL_BATCH_DLQ_URL or s.SQS_STAGE2_DLQ_URL or s.SQS_NOVA_DLQ_URL
+        final_rank_url = s.SQS_FINAL_RANK_QUEUE_URL or s.SQS_SCORING_QUEUE_URL
+        final_rank_dlq = s.SQS_FINAL_RANK_DLQ_URL or s.SQS_SCORING_DLQ_URL
+
         self._queue_urls: Dict[str, str] = {
-            "fast_parse_queue": self._settings.SQS_FAST_PARSE_QUEUE_URL,
-            "fast_parse_dlq": self._settings.SQS_FAST_PARSE_DLQ_URL,
-            "odl_batch_queue": self._settings.SQS_ODL_BATCH_QUEUE_URL,
-            "odl_batch_dlq": self._settings.SQS_ODL_BATCH_DLQ_URL,
-            "nova_queue": self._settings.SQS_NOVA_QUEUE_URL,
-            "nova_dlq": self._settings.SQS_NOVA_DLQ_URL,
-            "final_rank_queue": self._settings.SQS_FINAL_RANK_QUEUE_URL,
-            "final_rank_dlq": self._settings.SQS_FINAL_RANK_DLQ_URL,
+            "fast_parse_queue": fast_parse_url,
+            "fast_parse_dlq": fast_parse_dlq,
+            "stage1_queue": fast_parse_url,
+            "stage1_dlq": fast_parse_dlq,
+            "odl_batch_queue": stage2_url,
+            "odl_batch_dlq": stage2_dlq,
+            "nova_queue": stage2_url,
+            "nova_dlq": stage2_dlq,
+            "stage2_queue": stage2_url,
+            "stage2_dlq": stage2_dlq,
+            "final_rank_queue": final_rank_url,
+            "final_rank_dlq": final_rank_dlq,
+            "scoring_queue": final_rank_url,
+            "scoring_dlq": final_rank_dlq,
         }
 
     def _get_url(self, queue_name: str) -> str:

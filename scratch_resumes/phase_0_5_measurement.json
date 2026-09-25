@@ -1,0 +1,135 @@
+{
+  "timestamp": "2026-09-24T19:25:52.658Z",
+  "sampleCount": 20,
+  "totalSizeBytes": 2044669,
+  "totalWallClockMs": 61927.781300999995,
+  "sessionInitEvents": [
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v2/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/upload-sessions",
+      "status": 201,
+      "statusText": "Created",
+      "durationMs": 2955,
+      "startTime": 11717.772817,
+      "endTime": 14672.526687
+    }
+  ],
+  "s3PutEvents": [
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/2d573e19-df04-4945-9a47-732aea0c6eac.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=a457dd90278a67315d7eb5828cc7152122ebd257b25f1b9cd8954faffc483d05",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 23642,
+      "startTime": 14675.324291,
+      "endTime": 38317.77771
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/9f86359e-0b3c-4805-bed4-59265c4a9dcb.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192052Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=1b4ce79417f9be073af795546b215f5f07cfdf9e2ff72c550f9a5f0bd318c2fb",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 23690,
+      "startTime": 14675.171234,
+      "endTime": 38365.372711
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/84a84314-7357-4b87-ad6b-0803f3299371.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=8fda8d27210eb797bb359152e133a4a808ff503e75ef9facc1975c013102a830",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 23692,
+      "startTime": 14675.488208,
+      "endTime": 38367.943017
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/679ad5ed-e73c-41fc-899c-3e983811b541.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=7048a84b1144e18e17b90c8e4f7e6e799b68c346253582bca4f6ef5535468410",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 23723,
+      "startTime": 14675.502835,
+      "endTime": 38398.991605
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/d909fa3d-2aa2-4778-a451-ae7015ccfe95.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=b562be9941187ab921bbb63356a9411146801d3bca218613e8029285fc01d194",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 469,
+      "startTime": 68320.687881,
+      "endTime": 68789.886739
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/3cb8d027-2eb6-4b69-a740-46fa1d75b5cc.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=4d5e4c6789970b71830ba3eb1ec564dbde1f8033780f391d7cdc509ee48d8f36",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 518,
+      "startTime": 68369.069601,
+      "endTime": 68886.994682
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/7eca285a-e6a4-44aa-b3d4-dde95a807d53.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=c013ad0f2720a3b0d387be95428a0e5f5abc3d28e74485143fa474abcc952f2a",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 695,
+      "startTime": 68365.337038,
+      "endTime": 69060.222923
+    },
+    {
+      "method": "PUT",
+      "url": "https://resume-ranker-prod-storage.s3.amazonaws.com/org_default/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/resumes/8cbecd43-58fb-431c-9b63-e6ca1cfef70c.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAWPPO6KTN65ACMD4G%2F20260924%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Date=20260924T192053Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=18b222e334d38b5eae35ac7d6b8f1d5ab3560e1f4563346f8a7412bed3f4ba16",
+      "status": 200,
+      "statusText": "OK",
+      "durationMs": 703,
+      "startTime": 68400.053956,
+      "endTime": 69103.147269
+    }
+  ],
+  "completeEvents": [
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v2/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/upload-sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/documents/2d573e19-df04-4945-9a47-732aea0c6eac/complete",
+      "status": 0,
+      "statusText": "FAILED: net::ERR_ABORTED",
+      "durationMs": 30003,
+      "startTime": 38318.142542,
+      "endTime": 68320.740366,
+      "failed": true
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v2/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/upload-sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/documents/9f86359e-0b3c-4805-bed4-59265c4a9dcb/complete",
+      "status": 0,
+      "statusText": "FAILED: net::ERR_ABORTED",
+      "durationMs": 30000,
+      "startTime": 38365.483442,
+      "endTime": 68365.364668,
+      "failed": true
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v2/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/upload-sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/documents/84a84314-7357-4b87-ad6b-0803f3299371/complete",
+      "status": 0,
+      "statusText": "FAILED: net::ERR_ABORTED",
+      "durationMs": 30001,
+      "startTime": 38368.087018,
+      "endTime": 68369.165295,
+      "failed": true
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:8000/api/v2/jobs/480fca3d-0a01-4db9-b736-6ea824acc2c2/upload-sessions/fa8b7e8b-62db-4f05-bd40-3f24d689a212/documents/679ad5ed-e73c-41fc-899c-3e983811b541/complete",
+      "status": 0,
+      "statusText": "FAILED: net::ERR_ABORTED",
+      "durationMs": 30001,
+      "startTime": 38399.030726,
+      "endTime": 68400.109066,
+      "failed": true
+    }
+  ],
+  "finalizeEvents": [],
+  "statusEvents": []
+}

@@ -47,19 +47,24 @@ async def get_auth_context(request: Request) -> AuthContext:
     if not token and "token" in request.query_params:
         token = request.query_params["token"]
 
+    env = os.environ.get("ENVIRONMENT", "dev").lower()
+    is_prod = STRICT_AUTH or env in ("prod", "production")
+
     if token:
         ctx = verify_session_token(token)
         if ctx:
             return ctx
-        else:
+        elif is_prod:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired session. Please log in again.",
             )
+        else:
+            logger.debug("Invalid session token in dev mode, using default recruiter context")
+            return get_default_auth_context()
 
     # If strict auth is enabled, require valid token
-    env = os.environ.get("ENVIRONMENT", "dev").lower()
-    if STRICT_AUTH or env in ("prod", "production"):
+    if is_prod:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",

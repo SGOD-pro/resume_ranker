@@ -75,6 +75,33 @@ class StorageService:
         )
         return url
 
+    def generate_presigned_post(
+        self,
+        s3_key: str,
+        content_type: str = "application/pdf",
+        min_bytes: int = 1,
+        max_bytes: int = 10 * 1024 * 1024,
+        expires_in: int = 900,
+    ) -> Dict[str, Any]:
+        """Generate presigned POST policy and fields for direct browser-to-S3 upload (Amendment 4).
+        Enforces content-length-range 1..10MB and key exact match.
+        """
+        fields = {
+            "Content-Type": content_type,
+        }
+        conditions = [
+            ["content-length-range", min_bytes, max_bytes],
+            {"key": s3_key},
+            {"Content-Type": content_type},
+        ]
+        return self._client.generate_presigned_post(
+            Bucket=self._bucket,
+            Key=s3_key,
+            Fields=fields,
+            Conditions=conditions,
+            ExpiresIn=expires_in,
+        )
+
     def head_object(self, s3_key: str) -> Dict[str, Any]:
         """Retrieve S3 object metadata via HEAD request."""
         return self._client.head_object(Bucket=self._bucket, Key=s3_key)
@@ -109,7 +136,7 @@ class StorageService:
             "CORSRules": [
                 {
                     "AllowedHeaders": ["*"],
-                    "AllowedMethods": ["PUT", "HEAD", "GET"],
+                    "AllowedMethods": ["POST", "PUT", "HEAD", "GET"],
                     "AllowedOrigins": allowed_origins,
                     "ExposeHeaders": ["ETag"],
                     "MaxAgeSeconds": 3000,
@@ -125,7 +152,59 @@ class StorageService:
         except Exception as e:
             logger.warning("Could not set S3 CORS (may lack permissions or local mock): %s", e)
 
-    # ── Extraction JSON ───────────────────────────────────────────────────
+    # ── Stage 1 & Stage 2 JSON ─────────────────────────────────────────────
+
+    def upload_stage1_json(
+        self,
+        job_id: str,
+        file_id: str,
+        data: Dict[str, Any],
+    ) -> str:
+        """Upload Stage 1 intermediate extraction JSON."""
+        s3_key = f"jobs/{job_id}/stage1/{file_id}.json"
+        body = json.dumps(data, ensure_ascii=False, default=str)
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=s3_key,
+            Body=body.encode("utf-8"),
+            ContentType="application/json",
+        )
+        logger.info("Uploaded stage 1 JSON: s3://%s/%s", self._bucket, s3_key)
+        return s3_key
+
+    def get_stage1_json(self, job_id: str, file_id: str) -> Dict[str, Any]:
+        """Download and parse Stage 1 intermediate extraction JSON."""
+        s3_key = f"jobs/{job_id}/stage1/{file_id}.json"
+        response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
+        body = response["Body"].read().decode("utf-8")
+        return json.loads(body)
+
+    def upload_stage2_json(
+        self,
+        job_id: str,
+        file_id: str,
+        data: Dict[str, Any],
+    ) -> str:
+        """Upload final structured extraction JSON (Stage 2 or clean Stage 1)."""
+        s3_key = f"jobs/{job_id}/stage2/{file_id}.json"
+        body = json.dumps(data, ensure_ascii=False, default=str)
+        self._client.put_object(
+            Bucket=self._bucket,
+            Key=s3_key,
+            Body=body.encode("utf-8"),
+            ContentType="application/json",
+        )
+        logger.info("Uploaded stage 2 JSON: s3://%s/%s", self._bucket, s3_key)
+        return s3_key
+
+    def get_stage2_json(self, job_id: str, file_id: str) -> Dict[str, Any]:
+        """Download and parse final structured extraction JSON."""
+        s3_key = f"jobs/{job_id}/stage2/{file_id}.json"
+        response = self._client.get_object(Bucket=self._bucket, Key=s3_key)
+        body = response["Body"].read().decode("utf-8")
+        return json.loads(body)
+
+    # ── Extraction JSON (Legacy compatibility) ────────────────────────────
 
     def upload_extracted_json(
         self,
@@ -133,16 +212,9 @@ class StorageService:
         document_id: str,
         data: Dict[str, Any],
     ) -> str:
-        """Upload extraction result JSON to S3.
-
-        Args:
-            job_id: Parent job UUID.
-            document_id: Document UUID.
-            data: Extraction result dict (fields, metadata, etc.).
-
-        Returns:
-            The S3 object key.
-        """
+        """Upload extraction result JSON to S3."""
+        # Save to stage2 key as canonical and mirror to extracted for backwards compat
+        self.upload_stage2_json(job_id, document_id, data)
         s3_key = f"jobs/{job_id}/extracted/{document_id}.json"
         body = json.dumps(data, ensure_ascii=False, default=str)
         self._client.put_object(

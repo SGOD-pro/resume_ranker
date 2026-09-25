@@ -23,7 +23,9 @@ def cluster_word_x_positions(page: fitz.Page) -> list:
     words = page.get_text("words")
     if not words:
         return []
-    xs = sorted(w[0] for w in words)
+    xs = sorted(w[0] for w in words if len(w) > 0)
+    if not xs:
+        return []
     clusters: list = []
     curr = [xs[0]]
     for x in xs[1:]:

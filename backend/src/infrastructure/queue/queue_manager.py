@@ -30,8 +30,9 @@ def get_queue_adapter() -> QueueAdapter:
     global _adapter_instance
     if _adapter_instance is None:
         settings = get_settings()
-        if settings.USE_REAL_SQS:
-            logger.info("Initializing SqsQueueAdapter (USE_REAL_SQS=True)")
+        from src.config.aws import is_running_in_lambda
+        if is_running_in_lambda() or settings.USE_REAL_SQS:
+            logger.info("Initializing SqsQueueAdapter (USE_REAL_SQS=True or running in Lambda)")
             _adapter_instance = SqsQueueAdapter()
         else:
             logger.info("Initializing LocalQueueAdapter (in-memory)")

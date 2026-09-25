@@ -62,6 +62,8 @@ class ScoredCandidate:
     phone: str = ""
     location: str = ""
     pdf_url: str = ""
+    low_confidence_extraction: bool = False
+    fallback_reason: Optional[str] = None
 
 
     # Phase 2 sub-scores (each 0.0–100.0 before weight)

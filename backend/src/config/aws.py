@@ -29,6 +29,8 @@ class AWSSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     FRONTEND_URL: str = "http://localhost:5173"
 
+    AWS_ENDPOINT_URL: Optional[str] = None
+
     # SQS Queue URLs & DLQs
     SQS_FAST_PARSE_QUEUE_URL: str = ""
     SQS_FAST_PARSE_DLQ_URL: str = ""
@@ -38,6 +40,14 @@ class AWSSettings(BaseSettings):
     SQS_NOVA_DLQ_URL: str = ""
     SQS_FINAL_RANK_QUEUE_URL: str = ""
     SQS_FINAL_RANK_DLQ_URL: str = ""
+
+    # Aliases matching template.dev.yaml
+    SQS_STAGE1_QUEUE_URL: str = ""
+    SQS_STAGE1_DLQ_URL: str = ""
+    SQS_STAGE2_QUEUE_URL: str = ""
+    SQS_STAGE2_DLQ_URL: str = ""
+    SQS_SCORING_QUEUE_URL: str = ""
+    SQS_SCORING_DLQ_URL: str = ""
 
     # SNS Topic ARN for pub/sub events
     SNS_EVENTS_TOPIC_ARN: str = ""
@@ -60,7 +70,12 @@ class AWSSettings(BaseSettings):
     NOVA_WORKER_CONCURRENCY: int = 2
 
     def is_local(self) -> bool:
-        return self.ENVIRONMENT == "dev"
+        if is_running_in_lambda():
+            return False
+        import os
+        if os.environ.get("AWS_PROFILE") == "aws":
+            return False
+        return self.ENVIRONMENT in ("dev", "local", "development")
 
     @property
     def environment(self) -> str:
@@ -87,16 +102,20 @@ def get_settings() -> AWSSettings:
 def is_running_in_lambda() -> bool:
     """Returns True if the code is deployed in AWS Lambda."""
     import os
-    return "AWS_LAMBDA_FUNCTION_NAME" in os.environ
+    return "AWS_LAMBDA_FUNCTION_NAME" in os.environ or "AWS_EXECUTION_ENV" in os.environ
 
 
 def _get_session_for_service(service: str) -> boto3.Session:
     """Helper to return a properly profiled session depending on the service."""
+    import os
     s = get_settings()
     session_kwargs = {}
     
     if not is_running_in_lambda():
-        if service in ("bedrock-runtime", "lambda", "sqs", "sns"):
+        env_profile = os.environ.get("AWS_PROFILE")
+        if env_profile:
+            session_kwargs["profile_name"] = env_profile
+        elif service in ("bedrock-runtime", "lambda", "sqs", "sns"):
             # Cloud services MUST use real AWS credentials
             session_kwargs["profile_name"] = "aws"
         else:
@@ -111,14 +130,23 @@ def _get_session_for_service(service: str) -> boto3.Session:
 
 def get_client(service: str, config=None):
     """Get a boto3 client."""
+    import os
     s = get_settings()
     extra = {} if config is None else {"config": config}
     kwargs: dict = {}
     kwargs.update(extra)
     
-    # Only use local endpoint for local dev when NOT targeting cloud services
-    if s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
-        kwargs["endpoint_url"] = "http://localhost:4566"
+    if is_running_in_lambda():
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    elif os.environ.get("AWS_PROFILE") == "aws":
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    else:
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+        elif s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
+            kwargs["endpoint_url"] = "http://localhost:4566"
     
     session = _get_session_for_service(service)
     return session.client(service, **kwargs)
@@ -126,13 +154,23 @@ def get_client(service: str, config=None):
 
 def get_resource(service: str, config=None):
     """Get a boto3 resource."""
+    import os
     s = get_settings()
     extra = {} if config is None else {"config": config}
     kwargs: dict = {}
     kwargs.update(extra)
     
-    if s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
-        kwargs["endpoint_url"] = "http://localhost:4566"
+    if is_running_in_lambda():
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    elif os.environ.get("AWS_PROFILE") == "aws":
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    else:
+        if s.AWS_ENDPOINT_URL:
+            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+        elif s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
+            kwargs["endpoint_url"] = "http://localhost:4566"
     
     session = _get_session_for_service(service)
     return session.resource(service, **kwargs)

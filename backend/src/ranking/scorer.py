@@ -567,6 +567,8 @@ class CandidateScorer:
             location=candidate.get('location') or pi.get('location') or pi.get('address') or '',
             total_exp_years=total_years,
             extraction_quality=candidate.get('extraction_quality', 0.0),
+            low_confidence_extraction=bool(candidate.get('low_confidence_extraction', False)),
+            fallback_reason=candidate.get('fallback_reason'),
         )
 
         # ── Phase 2 Pre-compute: Inference Engine ─────────────────────────

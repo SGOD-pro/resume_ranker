@@ -1,0 +1,66 @@
+[
+  {
+    "drill": "(a) Analyze before stage1 finishes",
+    "job_id": "db08dfe8-800b-4203-97de-40b01e8e59c2",
+    "final_status": "DONE",
+    "remaining": 0,
+    "usable_files": 2,
+    "passed": true
+  },
+  {
+    "drill": "(b) Analyze mid-way",
+    "job_id": "a7bbf383-dde9-4f91-bc36-e0b3c449a720",
+    "final_status": "DONE",
+    "remaining": 0,
+    "usable_files": 3,
+    "passed": true
+  },
+  {
+    "drill": "(c) Analyze after all stage 1",
+    "job_id": "1578ae53-6ccb-4703-bd78-327172ca2d1c",
+    "final_status": "DONE",
+    "remaining": 0,
+    "usable_files": 2,
+    "passed": true
+  },
+  {
+    "drill": "(d) Duplicate SQS message idempotency",
+    "job_id": "drill-d-11dff93c",
+    "final_status": "SCORING",
+    "remaining": 0,
+    "usable_files": 1,
+    "passed": true
+  },
+  {
+    "drill": "(e) Corrupt PDF handling",
+    "job_id": "dce4608f-cda2-4403-8aa1-31d0944a6e48",
+    "final_status": "DONE_WITH_ERRORS",
+    "remaining": 0,
+    "usable_files": 1,
+    "passed": true
+  },
+  {
+    "drill": "(f) Stage 2 worker timeout / failure",
+    "job_id": "drill-f-3d28badf",
+    "final_status": "DONE_WITH_ERRORS",
+    "remaining": 0,
+    "usable_files": 0,
+    "passed": true
+  },
+  {
+    "drill": "(g) Bedrock throttling retryable backoff",
+    "job_id": "N/A (worker retry semantics)",
+    "final_status": "RETRYABLE_BACKOFF",
+    "remaining": 0,
+    "usable_files": 0,
+    "passed": true
+  },
+  {
+    "drill": "(h) DLQ consumer terminal accounting",
+    "job_id": "drill-h-2c533c06",
+    "final_status": "DONE_WITH_ERRORS",
+    "remaining": 0,
+    "usable_files": 0,
+    "passed": true
+  }
+]
