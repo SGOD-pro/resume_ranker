@@ -570,13 +570,21 @@ async def get_job_status(
 
     Uses a single DynamoDB query (PK=JOB#{job_id}) to fetch METADATA and all FILE# items.
     """
+    # Reconcile any pending outbox events to ensure guaranteed downstream progress
+    _files_repo.reconcile_outbox(job_id)
+
+    # Re-fetch after reconciliation in case status advanced
     job, files = _jobs_repo.get_job_with_files(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_session_ownership(job, request, ctx)
 
-    # Compute deterministic ETag over status, remaining counter, and last update
-    etag_input = f"{job.status.value}:{job.remaining}:{job.usable_files}:{job.updated_at}:{len(files)}"
+    # Compute deterministic ETag over status, remaining counter, updated_at, and all per-file states
+    file_signatures = [
+        f"{f.file_id}:{f.status.value if hasattr(f.status, 'value') else f.status}:{f.candidate_name}:{getattr(f, 'updated_at', '')}:{f.error_message}"
+        for f in sorted(files, key=lambda x: x.file_id)
+    ]
+    etag_input = f"{job.status.value}:{job.remaining}:{job.usable_files}:{job.updated_at}:{';'.join(file_signatures)}"
     etag = f'"{hashlib.sha256(etag_input.encode("utf-8")).hexdigest()[:16]}"'
 
     if_none_match = request.headers.get("if-none-match")
@@ -670,7 +678,8 @@ async def download_resume(
     enforce_session_ownership(job, request, ctx)
 
     file_item = _files_repo.get_file(job_id, document_id)
-    s3_key = file_item.s3_raw_key if file_item else f"jobs/{job_id}/raw/{document_id}.pdf"
+    doc_item = _docs_repo.get(job_id, document_id) if not file_item else None
+    s3_key = file_item.s3_raw_key if file_item else (doc_item.s3_pdf_key if doc_item and doc_item.s3_pdf_key else f"jobs/{job_id}/raw/{document_id}.pdf")
 
     try:
         pdf_bytes = _storage.get_resume(job_id, document_id, s3_key=s3_key)
@@ -678,7 +687,7 @@ async def download_resume(
         logger.error("Failed to download resume %s: %s", document_id, e)
         raise HTTPException(status_code=404, detail="Resume PDF not found in storage.")
 
-    filename = (file_item.filename if file_item else None) or f"{document_id}.pdf"
+    filename = (file_item.filename if file_item else (doc_item.filename if doc_item else None)) or f"{document_id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -838,3 +847,90 @@ async def export_job_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="sortlist_job_{job_id[:8]}_export.csv"'},
     )
+
+
+@router.get("/{job_id}/extraction-metrics")
+async def get_extraction_metrics(
+    job_id: str,
+    request: Request,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Return aggregate extraction quality and timing metrics for a job."""
+    from src.infrastructure.models.document import DocumentStatus
+
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    docs = _docs_repo.list_for_job(job_id)
+    total_docs = len(docs)
+    extracted = [d for d in docs if d.status == DocumentStatus.PARSED]
+    failed = [d for d in docs if d.status == DocumentStatus.PARSE_FAILED]
+    pending = total_docs - len(extracted) - len(failed)
+
+    avg_quality = sum(d.extraction_quality for d in extracted) / len(extracted) if extracted else 0.0
+
+    verified_cnt = 0
+    unresolved_cnt = 0
+    download_times = []
+    structure_times = []
+    determ_times = []
+    nova_times = []
+    doc_metrics = []
+
+    for d in docs:
+        d_meta = {
+            "document_id": d.document_id,
+            "filename": d.filename,
+            "status": d.status.value,
+            "candidate_name": d.candidate_name,
+            "identity_status": None,
+            "timings": None,
+        }
+        if d.status == DocumentStatus.PARSED:
+            try:
+                ej = _storage.get_extracted_json(job_id, d.document_id)
+                ident = ej.get("identity", {})
+                istat = ident.get("status", "UNRESOLVED")
+                d_meta["identity_status"] = istat
+                if istat == "VERIFIED":
+                    verified_cnt += 1
+                elif istat == "UNRESOLVED":
+                    unresolved_cnt += 1
+
+                t = ej.get("_timings", {})
+                d_meta["timings"] = t
+                if "download_ms" in t:
+                    download_times.append(t["download_ms"])
+                if "structure_ms" in t:
+                    structure_times.append(t["structure_ms"])
+                if "deterministic_ms" in t:
+                    determ_times.append(t["deterministic_ms"])
+                if "nova_ms" in t:
+                    nova_times.append(t["nova_ms"])
+            except Exception:
+                pass
+        doc_metrics.append(d_meta)
+
+    unresolved_rate = (unresolved_cnt / len(extracted)) if extracted else 0.0
+
+    return {
+        "job_id": job_id,
+        "total_documents": total_docs,
+        "extracted_count": len(extracted),
+        "failed_count": len(failed),
+        "pending_count": pending,
+        "avg_quality_score": avg_quality,
+        "identity_metrics": {
+            "verified_count": verified_cnt,
+            "unresolved_count": unresolved_cnt,
+            "unresolved_rate": unresolved_rate,
+        },
+        "timings_summary": {
+            "download_ms": sum(download_times) / len(download_times) if download_times else 0.0,
+            "structure_ms": sum(structure_times) / len(structure_times) if structure_times else 0.0,
+            "deterministic_ms": sum(determ_times) / len(determ_times) if determ_times else 0.0,
+            "nova_ms": sum(nova_times) / len(nova_times) if nova_times else 0.0,
+        },
+        "documents": doc_metrics,
+    }

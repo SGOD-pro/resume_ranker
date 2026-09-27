@@ -127,6 +127,8 @@ def test_stage2_bedrock_throttling_is_retryable():
     )
 
     with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", return_value=file_item), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.reserve_llm_slot", return_value=(True, None)), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.update_file_non_terminal"), \
          patch("src.infrastructure.storage.storage_service.StorageService.get_stage1_json", return_value=stage1_json), \
          patch("src.extraction.fallback.nova_service.NovaService.resolve_chunks", side_effect=throttle_error), \
@@ -169,6 +171,7 @@ def test_analyze_before_stage1_completes():
     dummy_pdf_bytes = b"%PDF-1.4 test"
 
     with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", return_value=file_item), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.update_file_non_terminal"), \
          patch("src.infrastructure.repositories.jobs_repository.JobsRepository.get", return_value=job), \
          patch("src.infrastructure.storage.storage_service.StorageService.get_resume", return_value=dummy_pdf_bytes), \
@@ -176,7 +179,8 @@ def test_analyze_before_stage1_completes():
          patch("fitz.open") as mock_fitz, \
          patch("src.pipeline.stage1_worker.pymupdf_layout_quality_signals") as mock_signals, \
          patch("src.extraction.markdown_extraction_service.MarkdownExtractionService.extract") as mock_extract, \
-         patch("src.pipeline.stage1_worker.get_queue_adapter") as mock_adapter:
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.record_outbox_event") as mock_outbox, \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.reconcile_outbox") as mock_reconcile:
 
         # Mock fitz document
         doc_mock = MagicMock()
@@ -195,15 +199,12 @@ def test_analyze_before_stage1_completes():
         }
         mock_extract.return_value = {"fields": {"name": "Candidate A"}, "unresolved_chunks": ["chunk"]}
 
-        queue_mock = MagicMock()
-        mock_adapter.return_value = queue_mock
-
         process_stage1_message(msg)
 
-        # Stage 2 MUST be enqueued automatically because analyze_requested was True
-        queue_mock.send_message.assert_called_once()
-        args, _ = queue_mock.send_message.call_args
-        assert args[0] == "odl_batch_queue"
-        enqueued_msg = args[1]
-        assert enqueued_msg.job_id == job_id
-        assert enqueued_msg.document_id == file_id
+        # Stage 2 MUST be durably recorded and reconciled because analyze_requested was True
+        mock_outbox.assert_called_once()
+        _, kwargs = mock_outbox.call_args
+        assert kwargs["job_id"] == job_id
+        assert kwargs["event_type"] == "STAGE2_DISPATCH"
+        assert kwargs["payload"]["file_id"] == file_id
+        mock_reconcile.assert_called_once_with(job_id)

@@ -13,6 +13,7 @@ Triggered by S3 s3:ObjectCreated notification on jobs/{job_id}/raw/{file_id}.pdf
 
 import json
 import logging
+import uuid
 from typing import Any, Dict, Optional, Tuple
 
 import fitz
@@ -135,8 +136,18 @@ def process_stage1_message(message: Any) -> bool:
         logger.info("Stage1Worker: file %s/%s already terminal (%s), skipping", job_id, file_id, file_item.status)
         return True
 
-    # Mark non-terminal S1_PROCESSING
-    files_repo.update_file_non_terminal(job_id, file_id, FileStatus.S1_PROCESSING)
+    # Claim file for processing with lease
+    worker_id = f"stage1-{uuid.uuid4().hex[:8]}"
+    claimed = files_repo.claim_file(
+        job_id=job_id,
+        file_id=file_id,
+        worker_id=worker_id,
+        lease_seconds=180,
+        processing_status=FileStatus.S1_PROCESSING.value,
+    )
+    if not claimed:
+        logger.info("Stage1Worker: could not claim file %s/%s (active lease exists or already terminal), skipping", job_id, file_id)
+        return True
 
     s3_raw_key = s3_key or f"jobs/{job_id}/raw/{file_id}.pdf"
 
@@ -215,23 +226,30 @@ def process_stage1_message(message: Any) -> bool:
             logger.info("Stage1Worker: %s/%s needs fallback -> S1_DONE (quality %.2f, unresolved: %d)",
                         job_id, file_id, min_quality, len(unresolved))
 
-            # If recruiter already requested analysis, immediately route to Stage 2
+            # If recruiter already requested analysis, handle routing to Stage 2
             job = jobs_repo.get(job_id)
             if job and job.analyze_requested:
-                # Only if this file is in analyze_file_ids (or list is empty/all)
-                if not job.analyze_file_ids or file_id in job.analyze_file_ids:
-                    adapter = get_queue_adapter()
-                    msg = QueueMessage(
+                if job.analyze_file_ids and file_id not in job.analyze_file_ids:
+                    logger.info("Stage1Worker: Job %s analyze_requested but file %s excluded -> REMOVED", job_id, file_id)
+                    files_repo.transition_file_terminal(
                         job_id=job_id,
-                        session_id=job_id,
-                        document_id=file_id,
-                        org_id="org_default",
-                        job_version=job.job_version,
-                        s3_key=s3_raw_key,
-                        stage="ODL_BATCH",
+                        file_id=file_id,
+                        terminal_status=FileStatus.REMOVED.value,
+                        error_message="Excluded from analysis",
                     )
-                    adapter.send_message(ODL_BATCH_QUEUE, msg)
-                    logger.info("Stage1Worker: Job %s analyze_requested=True -> immediately enqueued %s to Stage 2", job_id, file_id)
+                else:
+                    files_repo.record_outbox_event(
+                        job_id=job_id,
+                        outbox_sk=f"OUTBOX#STAGE2#{file_id}",
+                        event_type="STAGE2_DISPATCH",
+                        payload={
+                            "job_id": job_id,
+                            "file_id": file_id,
+                            "s3_key": s3_raw_key,
+                        },
+                    )
+                    files_repo.reconcile_outbox(job_id)
+                    logger.info("Stage1Worker: Job %s analyze_requested=True -> durably enqueued %s to Stage 2", job_id, file_id)
 
         return True
 

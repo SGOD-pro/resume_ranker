@@ -120,9 +120,11 @@ class FileItem(BaseModel):
         except ValueError:
             status_obj = FileStatus.PENDING_UPLOAD
 
+        job_id = item.get("job_id") or item.get("PK", "").replace("JOB#", "")
+        file_id = item.get("file_id") or item.get("SK", "").replace("FILE#", "")
         return cls(
-            job_id=item.get("job_id", ""),
-            file_id=item.get("file_id", ""),
+            job_id=job_id,
+            file_id=file_id,
             filename=item.get("filename", ""),
             file_size=int(item.get("file_size", 0)),
             status=status_obj,

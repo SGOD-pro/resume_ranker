@@ -48,14 +48,16 @@ def stage2_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler invoked by Stage 2 SQS Queue (Fallback processing)."""
     records = event.get("Records", [])
     logger.info("Stage 2 Lambda received %d records", len(records))
-    for record in records:
-        try:
-            process_stage2_message(record)
-        except Exception as e:
-            logger.error("Stage 2 record processing error: %s", e, exc_info=True)
-            # Re-raise to trigger SQS retry with backoff
-            raise
-    return {"statusCode": 200, "processed": len(records)}
+    if not records:
+        return {"statusCode": 200, "processed": 0}
+    try:
+        from src.pipeline.stage2_worker import process_stage2_batch
+        res = process_stage2_batch(records)
+        return {"statusCode": 200, "processed": res.get("processed", len(records))}
+    except Exception as e:
+        logger.error("Stage 2 batch processing error: %s", e, exc_info=True)
+        # Re-raise to trigger SQS retry with backoff
+        raise
 
 
 def scoring_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:

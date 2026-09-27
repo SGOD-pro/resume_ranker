@@ -39,6 +39,21 @@ _SYSTEM_PROMPT = (
 )
 
 
+class NovaProviderError(Exception):
+    """Base exception for Nova Bedrock provider failures."""
+    pass
+
+
+class NovaThrottlingError(NovaProviderError):
+    """Raised when Bedrock throttles requests (HTTP 429, ThrottlingException, etc.)."""
+    pass
+
+
+class NovaQuotaExceededError(NovaProviderError):
+    """Raised when AWS account or model quota is exhausted."""
+    pass
+
+
 class NovaService:
     """
     LLM fallback using Amazon Nova Micro via the Bedrock ``converse`` API.
@@ -269,18 +284,22 @@ class NovaService:
                 error_msg = exc.response.get("Error", {}).get("Message", str(exc))
                 http_status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
 
-                if error_code in ("ThrottlingException", "TooManyRequestsException",
-                                  "ServiceQuotaExceededException"):
+                if error_code in ("ThrottlingException", "TooManyRequestsException", "RequestLimitExceeded"):
                     logger.error(
-                        "Nova LLM QUOTA EXHAUSTED [%s] HTTP %s: %s — "
-                        "Attempt %d/%d. Sleeping...",
-                        error_code, http_status, error_msg, attempt + 1, max_retries
+                        "Nova LLM THROTTLED [%s] HTTP %s: %s — Attempt %d/%d. Sleeping...",
+                        error_code, http_status, error_msg, attempt + 1, max_retries,
                     )
                     if attempt < max_retries - 1:
                         time.sleep(2 ** attempt)  # 1s, 2s
                         continue
                     else:
-                        return {}
+                        raise NovaThrottlingError(
+                            f"Bedrock Nova throttled after {max_retries} attempts: [{error_code}] {error_msg}"
+                        )
+                elif error_code == "ServiceQuotaExceededException":
+                    logger.error("Nova LLM QUOTA EXHAUSTED [%s] HTTP %s: %s", error_code, http_status, error_msg)
+                    self._dead = True
+                    raise NovaQuotaExceededError(f"Bedrock Nova quota exhausted: [{error_code}] {error_msg}")
                 elif error_code in ("AccessDeniedException", "UnrecognizedClientException",
                                     "InvalidSignatureException"):
                     logger.error(

@@ -188,35 +188,9 @@ class JobsRepository:
         files_repo = FilesRepository()
         all_files = files_repo.list_files_for_job(job_id)
         selected_set = set(file_ids)
-
-        # 1. Mark unselected files as REMOVED (this conditionally decrements remaining if not already terminal)
-        for f in all_files:
-            if f.file_id not in selected_set:
-                files_repo.transition_file_terminal(
-                    job_id=job_id,
-                    file_id=f.file_id,
-                    terminal_status=FileStatus.REMOVED.value,
-                    error_message="Excluded from analysis",
-                )
-
-        # 2. For selected files currently waiting in S1_DONE, enqueue them to Stage 2 fallback
-        adapter = get_queue_adapter()
-        for f in all_files:
-            if f.file_id in selected_set and f.status == FileStatus.S1_DONE:
-                msg = QueueMessage(
-                    job_id=job_id,
-                    session_id=job_id,
-                    document_id=f.file_id,
-                    org_id="org_default",
-                    job_version=1,
-                    s3_key=f.s3_raw_key,
-                    stage="ODL_BATCH",
-                )
-                adapter.send_message(ODL_BATCH_QUEUE, msg)
-                logger.info("Enqueued file %s/%s to Stage 2 fallback queue", job_id, f.file_id)
-
-        # 3. Update job metadata
         now = _utcnow_iso()
+
+        # 1. Update job metadata first so any racing Stage 1 workers see analyze_requested = True immediately
         job_resp = self._table.update_item(
             Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
             UpdateExpression="SET #ar = :true, #afids = :afids, #upd = :now",
@@ -234,9 +208,38 @@ class JobsRepository:
         )
         updated_job = JobItem.from_dynamodb_item(job_resp["Attributes"])
 
-        # 4. Check if remaining reached 0
-        if updated_job.remaining == 0:
-            if updated_job.usable_files == 0:
+        # 2. Mark unselected files as REMOVED (conditionally decrements remaining)
+        for f in all_files:
+            if f.file_id not in selected_set and not f.is_terminal:
+                files_repo.transition_file_terminal(
+                    job_id=job_id,
+                    file_id=f.file_id,
+                    terminal_status=FileStatus.REMOVED.value,
+                    error_message="Excluded from analysis",
+                )
+
+        # 3. For selected files currently waiting in S1_DONE, record durable Stage 2 outbox dispatch
+        for f in all_files:
+            if f.file_id in selected_set and f.status == FileStatus.S1_DONE:
+                files_repo.record_outbox_event(
+                    job_id=job_id,
+                    outbox_sk=f"OUTBOX#STAGE2#{f.file_id}",
+                    event_type="STAGE2_DISPATCH",
+                    payload={
+                        "job_id": job_id,
+                        "file_id": f.file_id,
+                        "s3_key": f.s3_raw_key,
+                    },
+                )
+
+        # 4. Reconcile outbox to flush pending messages to SQS
+        files_repo.reconcile_outbox(job_id)
+
+        # 5. Fetch fresh job state to evaluate terminal barrier
+        fresh_job = self.get(job_id) or updated_job
+
+        if fresh_job.remaining == 0:
+            if fresh_job.usable_files == 0:
                 logger.warning("Job %s analyze requested but 0 usable files -> DONE_WITH_ERRORS", job_id)
                 self._table.update_item(
                     Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
@@ -247,7 +250,7 @@ class JobsRepository:
                         ":now": now,
                     },
                 )
-                updated_job.status = JobStatus.DONE_WITH_ERRORS
+                fresh_job.status = JobStatus.DONE_WITH_ERRORS
             else:
                 logger.info("Job %s analyze requested and remaining == 0 -> SCORING", job_id)
                 self._table.update_item(
@@ -259,20 +262,17 @@ class JobsRepository:
                         ":now": now,
                     },
                 )
-                updated_job.status = JobStatus.SCORING
-                # Enqueue scoring event
-                score_msg = QueueMessage(
+                fresh_job.status = JobStatus.SCORING
+                # Record durable scoring outbox event and reconcile
+                files_repo.record_outbox_event(
                     job_id=job_id,
-                    session_id=job_id,
-                    document_id=job_id,
-                    org_id="org_default",
-                    job_version=updated_job.job_version,
-                    stage="FINAL_RANK",
+                    outbox_sk="OUTBOX#SCORING",
+                    event_type="SCORING_DISPATCH",
+                    payload={"job_id": job_id, "session_id": job_id, "stage": "FINAL_RANK"},
                 )
-                adapter.send_message(FINAL_RANK_QUEUE, score_msg)
+                files_repo.reconcile_outbox(job_id)
         else:
-            # Active processing
-            if updated_job.status not in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS, JobStatus.FAILED):
+            if fresh_job.status not in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS, JobStatus.FAILED):
                 self._table.update_item(
                     Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
                     UpdateExpression="SET #st = :proc, #upd = :now",
@@ -282,6 +282,6 @@ class JobsRepository:
                         ":now": now,
                     },
                 )
-                updated_job.status = JobStatus.PROCESSING
+                fresh_job.status = JobStatus.PROCESSING
 
-        return updated_job
+        return fresh_job

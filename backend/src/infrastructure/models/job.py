@@ -180,8 +180,9 @@ class JobItem(BaseModel):
         remaining = int(item.get("remaining", total_files))
         usable_files = int(item.get("usable_files", 0))
 
+        job_id = item.get("job_id") or item.get("PK", "").replace("JOB#", "")
         return cls(
-            job_id=item["job_id"],
+            job_id=job_id,
             org_id=item.get("org_id", "org_default"),
             session_id=item.get("session_id"),
             entity_type=item.get("entity_type", "JOB"),

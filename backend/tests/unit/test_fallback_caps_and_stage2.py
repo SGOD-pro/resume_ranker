@@ -57,6 +57,8 @@ def test_job_llm_fallback_cap_reached():
     }
 
     with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", return_value=current_file), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.pipeline.stage2_worker.parse_batch", return_value=MagicMock(results={}, failed={})), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.list_files_for_job", return_value=existing_files), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.update_file_non_terminal"), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.transition_file_terminal") as mock_terminal, \
@@ -93,6 +95,8 @@ def test_global_daily_llm_cap_reached():
     }
 
     with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", return_value=current_file), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.pipeline.stage2_worker.parse_batch", return_value=MagicMock(results={}, failed={})), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.list_files_for_job", return_value=[]), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.check_and_increment_daily_llm_cap", return_value=False), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.update_file_non_terminal"), \

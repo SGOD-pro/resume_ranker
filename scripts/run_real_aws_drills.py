@@ -121,6 +121,7 @@ def drill_a_analyze_before_stage1():
     assert final_st.get("remaining") == 0
     return {
         "drill": "(a) Analyze before stage1 finishes",
+        "execution_type": "real end-to-end",
         "job_id": job_id,
         "final_status": final_st.get("status"),
         "remaining": final_st.get("remaining"),
@@ -163,6 +164,7 @@ def drill_b_analyze_midway():
     assert final_st.get("remaining") == 0
     return {
         "drill": "(b) Analyze mid-way",
+        "execution_type": "real end-to-end",
         "job_id": job_id,
         "final_status": final_st.get("status"),
         "remaining": final_st.get("remaining"),
@@ -203,6 +205,7 @@ def drill_c_analyze_after_all_stage1():
     assert final_st.get("remaining") == 0
     return {
         "drill": "(c) Analyze after all stage 1",
+        "execution_type": "real end-to-end",
         "job_id": job_id,
         "final_status": final_st.get("status"),
         "remaining": final_st.get("remaining"),
@@ -269,6 +272,7 @@ def drill_d_duplicate_sqs_message():
 
     return {
         "drill": "(d) Duplicate SQS message idempotency",
+        "execution_type": "real DynamoDB/helper integration",
         "job_id": job_id,
         "final_status": fresh_job.get("status"),
         "remaining": rem,
@@ -315,6 +319,7 @@ def drill_e_corrupt_pdf():
 
     return {
         "drill": "(e) Corrupt PDF handling",
+        "execution_type": "real end-to-end",
         "job_id": job_id,
         "final_status": final_st.get("status"),
         "remaining": final_st.get("remaining"),
@@ -367,6 +372,7 @@ def drill_f_stage2_worker_failure():
 
     return {
         "drill": "(f) Stage 2 worker timeout / failure",
+        "execution_type": "real DynamoDB/helper integration",
         "job_id": job_id,
         "final_status": st,
         "remaining": rem,
@@ -399,6 +405,7 @@ def drill_g_bedrock_throttling():
     assert is_retryable is True
     return {
         "drill": "(g) Bedrock throttling retryable backoff",
+        "execution_type": "local simulation",
         "job_id": "N/A (worker retry semantics)",
         "final_status": "RETRYABLE_BACKOFF",
         "remaining": 0,
@@ -458,6 +465,7 @@ def drill_h_dlq_consumer_path():
 
     return {
         "drill": "(h) DLQ consumer terminal accounting",
+        "execution_type": "real DynamoDB/helper integration",
         "job_id": job_id,
         "final_status": st,
         "remaining": rem,
