@@ -37,7 +37,16 @@ def process_nova_message(message: QueueMessage) -> None:
         return
 
     doc = docs_repo.get(job_id, doc_id)
-    if not doc or doc.status not in (DocumentStatus.NOVA_QUEUED, DocumentStatus.NEEDS_NOVA):
+    if not doc:
+        from src.infrastructure.repositories.files_repository import FilesRepository
+        if FilesRepository().get_file(job_id, doc_id):
+            logger.info("Message is for v2 FileItem %s/%s; skipping delete in nova_queue_worker", job_id, doc_id)
+            return
+        if message.receipt_handle:
+            queue_adapter.delete_message(NOVA_QUEUE, message.receipt_handle)
+        return
+
+    if doc.status not in (DocumentStatus.NOVA_QUEUED, DocumentStatus.NEEDS_NOVA):
         if message.receipt_handle:
             queue_adapter.delete_message(NOVA_QUEUE, message.receipt_handle)
         return

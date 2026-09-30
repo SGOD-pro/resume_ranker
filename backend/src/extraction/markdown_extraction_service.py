@@ -1,9 +1,14 @@
+import logging
 from typing import Dict, Any, List
 from src.extractors.contact.contact_parser import ContactParser
 from src.extractors.skills.skills_parser import SkillsParser
 from src.extractors.experience.experience_parser import ExperienceParser
 from src.extractors.education.education_parser import EducationParser
 from src.extractors.projects.project_parser import ProjectParser
+
+logger = logging.getLogger(__name__)
+
+
 class MarkdownExtractionService:
     """
     Applies deterministic regex parsers to clean Markdown text.
@@ -40,6 +45,8 @@ class MarkdownExtractionService:
         if not experience and pymupdf_markdown:
             experience = self.experience_parser.parse(pymupdf_markdown, elements=[])
         education = self.edu_parser.parse(markdown_text)
+        if not education and pymupdf_markdown:
+            education = self.edu_parser.parse(pymupdf_markdown)
         projects = self.project_parser.parse(markdown_text)
         
         fields = {
@@ -60,6 +67,14 @@ class MarkdownExtractionService:
             flags.append("missing_contact_info")
             
         fields["flags"] = flags
+        
+        logger.info(
+            "|PYMUPDF| Extracted fields for candidate='%s': %d experience, %d education, %d skills",
+            fields.get("name"),
+            len(experience or []),
+            len(education or []),
+            len(skills or []),
+        )
         
         # Only trigger LLM if un-scorable.
         # Un-scorable: experience AND skills are missing.

@@ -15,7 +15,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 class AWSSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(str(BACKEND_DIR / ".env"), ".env"),
+        env_file=str(BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -54,6 +54,7 @@ class AWSSettings(BaseSettings):
 
     # Queue execution mode (False = use deterministic LocalQueueAdapter)
     USE_REAL_SQS: bool = False
+    RUN_LOCAL_WORKERS: bool = False
 
     # Upload session guardrails & limits
     MAX_DOCS_PER_SESSION: int = 100

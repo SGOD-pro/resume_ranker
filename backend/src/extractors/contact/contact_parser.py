@@ -530,6 +530,23 @@ class ContactParser:
                             "page": el.get('page number') or el.get('page_number', 1),
                         })
 
+        # 2b. Visual header lines (top non-empty lines of page 1)
+        visual_header_lines = []
+        top_candidates = []
+        for src in [full_width_text, pymupdf_text, main_text, raw_text]:
+            if src:
+                for l in src.split('\n')[:5]:
+                    s_line = l.strip()
+                    if s_line and s_line not in top_candidates:
+                        top_candidates.append(s_line)
+        for cand_line in top_candidates[:3]:
+            visual_header_lines.append({
+                "text": cand_line,
+                "page": 1,
+                "font_size": 14.0,
+                "is_bold": True,
+            })
+
         # 3. Adjacent lines to contact anchor
         adjacent_lines = []
         all_lines = [l.strip() for l in (full_width_text + "\n" + main_text + "\n" + raw_text).split('\n') if l.strip()]
@@ -537,8 +554,8 @@ class ContactParser:
         if contact_anchor:
             for idx, line in enumerate(all_lines):
                 if contact_anchor in line:
-                    start_idx = max(0, idx - 2)
-                    end_idx = min(len(all_lines), idx + 3)
+                    start_idx = max(0, idx - 6)
+                    end_idx = min(len(all_lines), idx + 5)
                     for j in range(start_idx, end_idx):
                         if j != idx and all_lines[j]:
                             adjacent_lines.append(all_lines[j])
@@ -555,6 +572,7 @@ class ContactParser:
 
         return self.identity_resolver.resolve(
             tagged_name=tagged_name,
+            visual_header_lines=visual_header_lines,
             odl_headings=odl_headings,
             adjacent_lines=adjacent_lines,
             text_lines=text_lines,

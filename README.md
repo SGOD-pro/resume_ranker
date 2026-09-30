@@ -68,6 +68,73 @@ Previous prototype documents cited unvalidated claims, including a "97.8% domain
 
 ---
 
+## ⚡ Architecture Power & Empirical Benchmark (1,000 Resumes)
+
+Empirical benchmark conducted on **1,000 real-world PDF resumes** sampled from the 3,850-resume corpus (`data/resumes/`) on a 16-core workstation running on `127.0.0.1:8000`. Raw data and full JSON results are tracked in [`backend/benchmark_1k_results.json`](backend/benchmark_1k_results.json).
+
+### 1. Latency & Throughput Benchmark (1,000 Resumes)
+
+| Metric | Measured Value | Operational Significance |
+| :--- | :--- | :--- |
+| **Evaluated Corpus** | **1,000 Resumes** | 2,729 total pages (avg **2.73 pages/resume**), avg **118.5 KB/file** |
+| **Total Wall-Clock Time** | **292.75 seconds** (~4.88 min) | Complete end-to-end stage 1 parsing across 16 worker threads |
+| **Effective Throughput** | **3.42 resumes / second** | **~205 resumes / minute** sustained extraction rate |
+| **Mean Latency per Doc** | **4,659.03 ms** | Per-thread turnaround under 16-worker thread saturation |
+| **Median (P50) Latency** | **3,909.08 ms** | Standard single/dual-page resume processing time |
+| **P90 Latency** | **8,761.19 ms** | 3–4 page dense structured resumes |
+| **P95 Latency** | **10,246.24 ms** | Heavy multi-column documents |
+| **P99 Latency** | **15,657.46 ms** | Long-form multi-page CVs (5+ pages) |
+| **Min / Max Latency** | **232.56 ms / 42.43 s** | From ultra-fast 1-pagers to complex scanned documents |
+| **Standard Deviation** | **3,436.27 ms** | Distribution driven by visual block density and page count |
+
+### 2. Field Extraction Coverage & Quality Gate
+
+Deterministic extraction evaluated across all 1,000 resumes with strict identity validation to eliminate noisy extractions:
+
+| Extracted Field | Extracted Count | Coverage Rate | Details |
+| :--- | :---: | :---: | :--- |
+| **Skills** | **969 / 1,000** | **96.9%** | Average **9.3 verified skills** per resume |
+| **Experience** | **843 / 1,000** | **84.3%** | Average **2.6 past roles** per resume (titles, companies, dates) |
+| **Education** | **590 / 1,000** | **59.0%** | Average **1.7 degrees/programs** per resume |
+| **Email Address** | **723 / 1,000** | **72.3%** | Validated email regex matching |
+| **Phone Number** | **763 / 1,000** | **76.3%** | E.164 and international phone patterns |
+| **Location** | **577 / 1,000** | **57.7%** | City, state, or country detected |
+| **Human Name** | **548 / 1,000** | **54.8%** | Passes strict identity resolution (45.2% safely gated for fallback) |
+
+> [!TIP]
+> **Candidate Name Guardrails**: Rather than guessing names from job titles (`Staff Pharmacist`), addresses (`Ooty Road`), hobbies (`Passion`), or placeholders (`Candidate`), Sortlist strictly validates candidate names. Resumes with unverified identity headers are gated for Stage 2 ODL / Nova LLM fallback to preserve data integrity and prevent hallucinated records.
+
+### 3. Tiered Pipeline Routing & Fallback Gating
+
+```mermaid
+flowchart TD
+    A["1,000 PDF Resumes Uploaded"] --> B["Stage 1: |PYMUPDF| In-Memory Parsing"]
+    B --> C{"Layout Quality Gate"}
+    C -->|"Clean Single-Column (13.8%)"| D["Fast-Path Complete (138 Docs)<br/>Directly Available for Scoring"]
+    C -->|"Fallback Required (86.2%)"| E["Stage 2 Routing Gate (862 Docs)"]
+    E -->|"Multi-Column / Tabular (36.5%)"| F["|ODL-PARSER| Microbatches<br/>(20 docs / 20MB budget)"]
+    E -->|"Missing Name / Low Quality (49.7%)"| G["|LLM| Nova Fallback Queue<br/>Atomic Field Infill"]
+    F --> H["Final Scorer Engine"]
+    G --> H
+    D --> H
+```
+
+- **Clean Fast-Path (`S2_DONE`): 13.8% (138 / 1,000)** — Handled instantly in-memory by `|PYMUPDF|` with clean single-column layouts and zero cloud/LLM costs.
+- **Microbatched ODL Fallback (`|ODL-PARSER|`): 36.5% (365 / 1,000)** — Multi-column, table-heavy, or non-linear reading orders routed in bounded batches (max 20 docs / 20MB budget) to the JVM layout parser.
+- **Targeted LLM Infill (`|LLM|`): 49.7%** — Atomic field infill (Bedrock Nova) invoked only for missing critical fields rather than entire documents.
+
+### 4. Ranking Scorer Throughput (1,000 Candidates)
+
+| Metric | Measured Value |
+| :--- | :--- |
+| **Candidates Scored** | **1,000 candidates** |
+| **Total Scoring Wall-Clock** | **11.37 seconds (11,374 ms)** |
+| **Per-Candidate Scoring Latency** | **11.37 ms / candidate** |
+| **Scoring Throughput** | **88 candidates / second** |
+| **Algorithmic Engine** | Single-pass pre-computed BM25 IDF ($O(N)$), TF-IDF role title cosine similarity, and zero prohibited attributes |
+
+---
+
 ## 🛠️ Quick Start
 
 ### Prerequisites

@@ -90,6 +90,18 @@ def dlq_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             body_str = record.get("body", "")
             if "raw/" in body_str:
                 process_stage1_dlq_message(record)
-            else:
-                process_stage2_dlq_message(record)
     return {"statusCode": 200, "processed": len(records)}
+
+
+def recovery_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Lambda handler invoked periodically (e.g. EventBridge scheduled rule) to recover outbox events and stranded jobs.
+    
+    Provides guaranteed downstream progress completely independent of browser polling.
+    """
+    from src.infrastructure.repositories.files_repository import FilesRepository
+    repo = FilesRepository()
+    relayed_events, recovered_jobs = repo.reconcile_all_pending_outboxes()
+    logger.info("Independent outbox recovery complete: %d outbox events, %d stranded jobs recovered",
+                relayed_events, recovered_jobs)
+    return {"statusCode": 200, "relayed_events": relayed_events, "recovered_jobs": recovered_jobs}
+

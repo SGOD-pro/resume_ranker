@@ -44,7 +44,7 @@ export const useCandidateStore = create<CandidateStore>((set) => ({
   filterSignal: 'all',
   sortField: 'score',
   searchQuery: '',
-  showKnockouts: false,
+  showKnockouts: true,
   upload: {
     totalFiles: 0,
     analyzedFiles: 0,

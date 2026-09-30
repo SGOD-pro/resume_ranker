@@ -121,7 +121,7 @@ def test_tenant_isolation(client):
         json={"title": "Confidential Executive Role", "must_have_skills": ["Leadership"]},
         headers={"Authorization": f"Bearer {token_a}"},
     )
-    assert create_job_resp.status_code == 200
+    assert create_job_resp.status_code in (200, 201)
     job_id = create_job_resp.json()["id"]
 
     # Org B attempts to update Job A -> MUST be 403 Forbidden

@@ -109,6 +109,8 @@ class ScoredCandidate:
     best_title_match: str = ""
     degree_level: str = ""
     degree_field: str = ""
+    experience: List[Dict[str, Any]] = field(default_factory=list)
+    education: List[Dict[str, Any]] = field(default_factory=list)
 
     anomalies: List[str] = field(default_factory=list)
     extraction_quality: float = 0.0

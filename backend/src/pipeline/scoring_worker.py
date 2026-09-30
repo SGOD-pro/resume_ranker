@@ -82,6 +82,8 @@ def process_scoring_message(message: Any) -> bool:
             data = storage.get_stage2_json(job_id, f.file_id)
             data["document_id"] = f.file_id
             data["candidate_id"] = f.file_id
+            data["file_id"] = f.file_id
+            data["_document_id"] = f.file_id
             if "name" not in data or not data["name"]:
                 data["name"] = f.candidate_name or f.filename
             data["low_confidence_extraction"] = bool(getattr(f, "low_confidence_extraction", False)) or bool(data.get("low_confidence_extraction", False))
@@ -115,8 +117,15 @@ def process_scoring_message(message: Any) -> bool:
         scorer = CandidateScorer()
         ranked_candidates = scorer.rank(jd, candidates)
 
-        # Convert to serializable dicts
-        scored_dicts = [asdict(c) for c in ranked_candidates]
+        # Convert to serializable dicts with job_id and canonical pdf_url
+        scored_dicts = []
+        for c in ranked_candidates:
+            cd = asdict(c)
+            cd["job_id"] = job_id
+            cd["document_id"] = c.document_id
+            if not cd.get("pdf_url"):
+                cd["pdf_url"] = f"/api/v2/jobs/{job_id}/resumes/{c.document_id}/download"
+            scored_dicts.append(cd)
 
         scoring_id = str(uuid.uuid4())
         storage.upload_ranking(job_id, scoring_id, scored_dicts)

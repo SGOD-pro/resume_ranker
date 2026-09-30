@@ -24,6 +24,7 @@ from src.infrastructure.models.file import (
 )
 from src.infrastructure.models.job import JobStatus
 from src.infrastructure.queue.queue_manager import (
+    FAST_PARSE_QUEUE,
     FINAL_RANK_QUEUE,
     ODL_BATCH_QUEUE,
     get_queue_adapter,
@@ -129,7 +130,16 @@ class FilesRepository:
             expr_names["#err"] = "error_message"
             expr_values[":err"] = error_message
 
+        remove_parts = []
+        if status_val == FileStatus.S1_DONE.value:
+            remove_parts.extend(["#claim_exp", "#claim_w"])
+            expr_names["#claim_exp"] = "claim_expires_at"
+            expr_names["#claim_w"] = "claim_worker_id"
+
         update_expr = "SET " + ", ".join(set_parts)
+        if remove_parts:
+            update_expr += " REMOVE " + ", ".join(remove_parts)
+
         condition_expr = "attribute_not_exists(#st) OR NOT (#st IN (:s1_f, :s2_d, :s2_f, :rem))"
 
         try:
@@ -166,10 +176,13 @@ class FilesRepository:
         def _deser(val_dict: Any) -> Any:
             if not isinstance(val_dict, dict):
                 return val_dict
-            val = deserializer.deserialize(val_dict)
-            if isinstance(val, Decimal):
-                return int(val) if val % 1 == 0 else float(val)
-            return val
+            try:
+                val = deserializer.deserialize(val_dict)
+                if isinstance(val, Decimal):
+                    return int(val) if val % 1 == 0 else float(val)
+                return val
+            except Exception:
+                return val_dict
 
         for item in transact_items:
             if "Update" in item:
@@ -209,7 +222,7 @@ class FilesRepository:
                 UpdateExpression="SET #st = :proc_st, #claim_w = :w_id, #claim_exp = :claim_exp, #upd = :now",
                 ConditionExpression=(
                     "attribute_exists(PK) AND "
-                    "(attribute_not_exists(#claim_exp) OR #claim_exp < :now OR #claim_w = :w_id) AND "
+                    "(attribute_not_exists(#claim_exp) OR #claim_exp < :now OR #claim_w = :w_id OR #st = :s1_d) AND "
                     "NOT (#st IN (:s1_f, :s2_d, :s2_f, :rem))"
                 ),
                 ExpressionAttributeNames={
@@ -223,6 +236,7 @@ class FilesRepository:
                     ":w_id": worker_id,
                     ":claim_exp": expires_at,
                     ":now": now,
+                    ":s1_d": FileStatus.S1_DONE.value,
                     ":s1_f": FileStatus.S1_FAILED.value,
                     ":s2_d": FileStatus.S2_DONE.value,
                     ":s2_f": FileStatus.S2_FAILED.value,
@@ -279,7 +293,6 @@ class FilesRepository:
 
         # 4. Atomically reserve slot on job metadata and record reservation item
         now = _utcnow_iso()
-        serializer = TypeSerializer()
         table_name = getattr(self._table, "name", "ResumePlatformDev")
         
         transact_items = [
@@ -287,10 +300,10 @@ class FilesRepository:
                 "Put": {
                     "TableName": table_name,
                     "Item": {
-                        "PK": {"S": f"JOB#{job_id}"},
-                        "SK": {"S": f"LLM_RESERVE#{file_id}"},
-                        "attempt_id": {"S": attempt_id},
-                        "created_at": {"S": now},
+                        "PK": f"JOB#{job_id}",
+                        "SK": f"LLM_RESERVE#{file_id}",
+                        "attempt_id": attempt_id,
+                        "created_at": now,
                     },
                     "ConditionExpression": "attribute_not_exists(PK)",
                 }
@@ -298,14 +311,14 @@ class FilesRepository:
             {
                 "Update": {
                     "TableName": table_name,
-                    "Key": {"PK": {"S": f"JOB#{job_id}"}, "SK": {"S": "METADATA"}},
+                    "Key": {"PK": f"JOB#{job_id}", "SK": "METADATA"},
                     "UpdateExpression": "ADD #res :one SET #upd = :now",
                     "ConditionExpression": "attribute_exists(PK) AND (attribute_not_exists(#res) OR #res < :max_cap)",
                     "ExpressionAttributeNames": {"#res": "llm_reservations", "#upd": "updated_at"},
                     "ExpressionAttributeValues": {
-                        ":one": serializer.serialize(1),
-                        ":max_cap": serializer.serialize(max_per_job),
-                        ":now": serializer.serialize(now),
+                        ":one": 1,
+                        ":max_cap": max_per_job,
+                        ":now": now,
                     },
                 }
             },
@@ -386,6 +399,15 @@ class FilesRepository:
                 elif event_type == "SCORING_DISPATCH":
                     self._trigger_scoring(job_id)
                     dispatched_count += 1
+                    try:
+                        self._table.update_item(
+                            Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+                            UpdateExpression="SET #st = :scoring, #upd = :now",
+                            ExpressionAttributeNames={"#st": "status", "#upd": "updated_at"},
+                            ExpressionAttributeValues={":scoring": JobStatus.SCORING.value, ":now": now},
+                        )
+                    except Exception as st_err:
+                        logger.warning("Could not set SCORING status for job %s: %s", job_id, st_err)
 
                 # Mark dispatched
                 self._table.update_item(
@@ -397,13 +419,83 @@ class FilesRepository:
             except Exception as dispatch_err:
                 logger.error("Failed to publish outbox event %s for job %s: %s", sk, job_id, dispatch_err)
 
-        # Also check if job remaining == 0 and analyze_requested == True, but status is not terminal or scoring
+        # Also check if job has files stuck in S1_DONE that need Stage 2, or if remaining == 0
         job_item = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"}).get("Item")
         if job_item:
             rem = int(job_item.get("remaining", 0))
             usable = int(job_item.get("usable_files", 0))
             analyze_req = bool(job_item.get("analyze_requested", False))
             current_st = job_item.get("status")
+
+            if analyze_req and current_st == JobStatus.PROCESSING.value and rem > 0:
+                all_files = self.list_files_for_job(job_id)
+                now_str = _utcnow_iso()
+                non_terminal_files = [f for f in all_files if not f.is_terminal]
+
+                if not non_terminal_files and len(all_files) > 0:
+                    # All files are already terminal, but remaining was > 0 (counter self-healing)
+                    logger.warning("Job %s has remaining=%d but all %d files are terminal. Auto-completing barrier.", job_id, rem, len(all_files))
+                    usable_count = sum(1 for f in all_files if f.status == FileStatus.S2_DONE)
+                    self._table.update_item(
+                        Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+                        UpdateExpression="SET #rem = :zero, #usable = :usable, #upd = :now",
+                        ExpressionAttributeNames={"#rem": "remaining", "#usable": "usable_files", "#upd": "updated_at"},
+                        ExpressionAttributeValues={":zero": 0, ":usable": usable_count, ":now": now_str},
+                    )
+                    self._handle_zero_remaining(job_id, usable_count, analyze_req, now_str)
+                else:
+                    for f in non_terminal_files:
+                        claim_exp = getattr(f, "claim_expires_at", None) or ""
+                        is_lease_expired = not claim_exp or claim_exp < now_str
+
+                        if f.status in (FileStatus.UPLOADED, FileStatus.S1_PROCESSING):
+                            if is_lease_expired:
+                                logger.info("reconcile_outbox: re-dispatching stranded %s file %s/%s (lease expired: %s) to Stage 1",
+                                            f.status, job_id, f.file_id, claim_exp)
+                                msg = QueueMessage(
+                                    job_id=job_id,
+                                    session_id=job_id,
+                                    document_id=f.file_id,
+                                    org_id="org_default",
+                                    job_version=1,
+                                    s3_key=f.s3_raw_key,
+                                    stage="FAST_PARSE",
+                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                                )
+                                adapter.send_message(FAST_PARSE_QUEUE, msg)
+                                dispatched_count += 1
+                        elif f.status == FileStatus.S1_DONE and f.needs_fallback:
+                            if is_lease_expired:
+                                logger.info("reconcile_outbox: re-dispatching stuck S1_DONE file %s/%s to Stage 2", job_id, f.file_id)
+                                msg = QueueMessage(
+                                    job_id=job_id,
+                                    session_id=job_id,
+                                    document_id=f.file_id,
+                                    org_id="org_default",
+                                    job_version=1,
+                                    s3_key=f.s3_raw_key,
+                                    stage="ODL_BATCH",
+                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                                )
+                                adapter.send_message(ODL_BATCH_QUEUE, msg)
+                                dispatched_count += 1
+                        elif f.status == FileStatus.S2_PROCESSING:
+                            if is_lease_expired:
+                                logger.info("reconcile_outbox: re-dispatching stranded S2_PROCESSING file %s/%s (lease expired: %s) to Stage 2",
+                                            job_id, f.file_id, claim_exp)
+                                msg = QueueMessage(
+                                    job_id=job_id,
+                                    session_id=job_id,
+                                    document_id=f.file_id,
+                                    org_id="org_default",
+                                    job_version=1,
+                                    s3_key=f.s3_raw_key,
+                                    stage="ODL_BATCH",
+                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                                )
+                                adapter.send_message(ODL_BATCH_QUEUE, msg)
+                                dispatched_count += 1
+
             if rem == 0 and analyze_req and current_st not in (
                 JobStatus.DONE.value,
                 JobStatus.DONE_WITH_ERRORS.value,
@@ -439,7 +531,6 @@ class FilesRepository:
             raise ValueError(f"Invalid terminal status: {terminal_status}. Must be one of {TERMINAL_FILE_STATUSES}")
 
         now = _utcnow_iso()
-        serializer = TypeSerializer()
 
         # Step 1: Prepare atomic File update
         set_parts = ["#st = :status", "#upd = :now"]
@@ -480,7 +571,6 @@ class FilesRepository:
 
         file_update_expr = "SET " + ", ".join(set_parts)
         file_condition_expr = "attribute_exists(PK) AND (attribute_not_exists(#st) OR NOT (#st IN (:s1_f, :s2_d, :s2_f, :rem)))"
-        serialized_file_values = {k: serializer.serialize(v) for k, v in expr_values.items()}
 
         # Step 2: Prepare atomic Job decrement
         is_usable = 1 if terminal_status == FileStatus.S2_DONE.value else 0
@@ -492,10 +582,10 @@ class FilesRepository:
             "#usable": "usable_files",
         }
         job_expr_values = {
-            ":one": serializer.serialize(1),
-            ":usable_inc": serializer.serialize(is_usable),
-            ":now": serializer.serialize(now),
-            ":zero": serializer.serialize(0),
+            ":one": 1,
+            ":usable_inc": is_usable,
+            ":now": now,
+            ":zero": 0,
         }
 
         table_name = getattr(self._table, "name", "ResumePlatformDev")
@@ -503,17 +593,17 @@ class FilesRepository:
             {
                 "Update": {
                     "TableName": table_name,
-                    "Key": {"PK": {"S": f"JOB#{job_id}"}, "SK": {"S": f"FILE#{file_id}"}},
+                    "Key": {"PK": f"JOB#{job_id}", "SK": f"FILE#{file_id}"},
                     "UpdateExpression": file_update_expr,
                     "ConditionExpression": file_condition_expr,
                     "ExpressionAttributeNames": expr_names,
-                    "ExpressionAttributeValues": serialized_file_values,
+                    "ExpressionAttributeValues": expr_values,
                 }
             },
             {
                 "Update": {
                     "TableName": table_name,
-                    "Key": {"PK": {"S": f"JOB#{job_id}"}, "SK": {"S": "METADATA"}},
+                    "Key": {"PK": f"JOB#{job_id}", "SK": "METADATA"},
                     "UpdateExpression": job_update_expr,
                     "ConditionExpression": job_condition_expr,
                     "ExpressionAttributeNames": job_expr_names,
@@ -561,6 +651,12 @@ class FilesRepository:
             "File %s/%s -> %s (job remaining: %d, usable: %d, analyze_requested: %s)",
             job_id, file_id, terminal_status, new_remaining, usable_count, analyze_requested,
         )
+
+        # Clean up ODL collector buffer on terminal transition
+        try:
+            self.remove_from_odl_collector(job_id, [file_id])
+        except Exception:
+            pass
 
         if new_remaining == 0:
             self._handle_zero_remaining(job_id, usable_count, analyze_requested, now)
@@ -654,3 +750,171 @@ class FilesRepository:
                 logger.warning("Global daily LLM cap reached (%d/day for %s)", limit, today)
                 return False
             raise
+
+    def reconcile_all_pending_outboxes(self, max_jobs: int = 50) -> Tuple[int, int]:
+        """Independent background recovery worker: scan for pending outbox items and stranded jobs.
+        
+        Runs completely independent of browser polling (/status route).
+        Returns:
+            Tuple[int, int]: (total_outbox_events_relayed, total_stranded_jobs_recovered)
+        """
+        relayed_events = 0
+        recovered_jobs = 0
+        pending_job_ids = set()
+
+        # 1. Scan for any undispatched OUTBOX records across all jobs
+        try:
+            resp = self._table.scan(
+                FilterExpression="begins_with(SK, :outbox_prefix) AND #d = :false",
+                ExpressionAttributeNames={"#d": "dispatched"},
+                ExpressionAttributeValues={":outbox_prefix": "OUTBOX#", ":false": False},
+                Limit=max_jobs * 5,
+            )
+            for item in resp.get("Items", []):
+                jid = item.get("job_id")
+                if not jid and "PK" in item and item["PK"].startswith("JOB#"):
+                    jid = item["PK"].replace("JOB#", "")
+                if jid:
+                    pending_job_ids.add(jid)
+        except Exception as scan_err:
+            logger.warning("reconcile_all_pending_outboxes: outbox scan failed: %s", scan_err)
+
+        # 2. Scan for any active or stranded jobs: analyze_requested == True, status == PROCESSING
+        try:
+            resp_jobs = self._table.scan(
+                FilterExpression="SK = :meta AND #ar = :true AND #st = :proc",
+                ExpressionAttributeNames={
+                    "#ar": "analyze_requested",
+                    "#st": "status",
+                },
+                ExpressionAttributeValues={
+                    ":meta": "METADATA",
+                    ":true": True,
+                    ":proc": JobStatus.PROCESSING.value,
+                },
+                Limit=max_jobs,
+            )
+            for item in resp_jobs.get("Items", []):
+                jid = item.get("job_id")
+                if not jid and "PK" in item and item["PK"].startswith("JOB#"):
+                    jid = item["PK"].replace("JOB#", "")
+                if jid:
+                    pending_job_ids.add(jid)
+                    recovered_jobs += 1
+        except Exception as scan_jobs_err:
+            logger.warning("reconcile_all_pending_outboxes: stranded job scan failed: %s", scan_jobs_err)
+
+        # 3. For each identified job, reconcile its outbox and stranded state
+        for jid in list(pending_job_ids)[:max_jobs]:
+            try:
+                relayed = self.reconcile_outbox(jid)
+                relayed_events += relayed
+            except Exception as jid_err:
+                logger.error("Failed to reconcile outbox for job %s: %s", jid, jid_err)
+
+        return relayed_events, recovered_jobs
+
+    def add_to_odl_collector(self, job_id: str, file_id: str, s3_key: str, file_size: int = 0) -> None:
+        """Add a document descriptor to the durable ODL collector for the job."""
+        now = _utcnow_iso()
+        self._table.put_item(
+            Item={
+                "PK": f"JOB#{job_id}",
+                "SK": f"ODL_BUFFER#{file_id}",
+                "entity_type": "ODL_BUFFER",
+                "job_id": job_id,
+                "file_id": file_id,
+                "s3_key": s3_key,
+                "file_size": file_size,
+                "status": "BUFFERED",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    def get_odl_collector_items(self, job_id: str) -> List[Dict[str, Any]]:
+        """Get all buffered (unclaimed or expired claim) documents in the collector for a job."""
+        resp = self._table.query(
+            KeyConditionExpression=Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("ODL_BUFFER#")
+        )
+        items = resp.get("Items", [])
+        now_epoch = datetime.now(timezone.utc).timestamp()
+        valid = []
+        for it in items:
+            st = it.get("status", "BUFFERED")
+            expires_at = float(it.get("claim_expires_at", 0) or 0)
+            if st == "BUFFERED" or (st == "CLAIMED" and expires_at < now_epoch):
+                valid.append(it)
+        return valid
+
+    def claim_odl_collector_batch(
+        self,
+        job_id: str,
+        worker_id: str,
+        max_items: int = 20,
+        max_bytes: int = 20 * 1024 * 1024,
+    ) -> List[Dict[str, Any]]:
+        """Assemble and atomically claim a microbatch of up to max_items and max_bytes.
+        
+        Enforces both document count (<= 20) and cumulative byte limits (<= 20MB).
+        Returns the claimed items.
+        """
+        all_pending = self.get_odl_collector_items(job_id)
+        if not all_pending:
+            return []
+
+        all_pending.sort(key=lambda x: x.get("file_id", ""))
+
+        selected = []
+        current_bytes = 0
+        for item in all_pending:
+            sz = int(item.get("file_size", 0) or 0)
+            if sz <= 0:
+                sz = 100 * 1024
+            if selected and (len(selected) >= max_items or (current_bytes + sz > max_bytes)):
+                break
+            selected.append(item)
+            current_bytes += sz
+
+        now_epoch = datetime.now(timezone.utc).timestamp()
+        now_iso = _utcnow_iso()
+        lease_expires = now_epoch + 180.0
+
+        claimed_items = []
+        for item in selected:
+            fid = item["file_id"]
+            try:
+                self._table.update_item(
+                    Key={"PK": f"JOB#{job_id}", "SK": f"ODL_BUFFER#{fid}"},
+                    UpdateExpression="SET #st = :claimed, #cw = :worker, #exp = :expires, #upd = :now",
+                    ConditionExpression="attribute_not_exists(#st) OR #st = :buffered OR #exp < :now_epoch",
+                    ExpressionAttributeNames={
+                        "#st": "status",
+                        "#cw": "claim_worker_id",
+                        "#exp": "claim_expires_at",
+                        "#upd": "updated_at",
+                    },
+                    ExpressionAttributeValues={
+                        ":claimed": "CLAIMED",
+                        ":buffered": "BUFFERED",
+                        ":worker": worker_id,
+                        ":expires": Decimal(str(lease_expires)),
+                        ":now": now_iso,
+                        ":now_epoch": Decimal(str(now_epoch)),
+                    },
+                )
+                claimed_items.append(item)
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+
+        return claimed_items
+
+    def remove_from_odl_collector(self, job_id: str, file_ids: List[str]) -> None:
+        """Remove processed items from the ODL collector."""
+        for fid in file_ids:
+            try:
+                self._table.delete_item(Key={"PK": f"JOB#{job_id}", "SK": f"ODL_BUFFER#{fid}"})
+            except Exception as e:
+                logger.warning("Could not delete ODL collector item for %s/%s: %s", job_id, fid, e)
+

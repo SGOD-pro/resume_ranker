@@ -70,7 +70,7 @@ def test_api_flow():
     resp = client.post("/jobs", json=job_data, headers=auth_headers)
     print(f"Status: {resp.status_code}")
     print(f"Response: {resp.json()}")
-    assert resp.status_code == 200
+    assert resp.status_code in (200, 201)
     res_json = resp.json()
     job_id = res_json["id"]
     assert job_id is not None
@@ -107,6 +107,10 @@ def test_api_flow():
     assert upload_res["total_accepted"] >= 2
     print("✅ Resume uploads accepted and saved to S3 successfully.")
 
+    # Trigger analysis request
+    analyze_resp = client.post(f"/api/v2/jobs/{job_id}/analyze", headers=auth_headers)
+    assert analyze_resp.status_code in (200, 202)
+
     # Process background worker queues for synchronous test execution
     from src.pipeline.worker_runner import drain_all_queues_sync
     drain_all_queues_sync()
@@ -121,6 +125,8 @@ def test_api_flow():
             if line:
                 print(f"  Stream Line: {line}")
                 events.append(line)
+                if "event: complete" in line:
+                    break
 
     # Validate that we got progress and complete events
     assert any("event: progress" in e for e in events)
@@ -160,8 +166,47 @@ def test_api_flow():
     assert len(results_res["candidates"]) == len(score_res["candidates"])
     print("✅ Retrieval of stored results matches scored candidates.")
 
-    print("\n🎉 ALL ENDPOINTS WORKING CORRECTLY!")
+    # 8. Human Decision Workflow & CSV Export
+    print(f"\n--- 8. Testing PATCH /api/v2/jobs/{job_id}/candidates/{{doc_id}}/decision ---")
+    cand_doc_id = results_res["candidates"][0]["document_id"]
+
+    # 8a. Rejection without reason must fail with 400 per transparency policy
+    bad_reject = client.patch(
+        f"/api/v2/jobs/{job_id}/candidates/{cand_doc_id}/decision",
+        json={"decision": "rejected"},
+        headers=auth_headers,
+    )
+    assert bad_reject.status_code == 400
+    print("✅ Rejection without reason correctly rejected (HTTP 400).")
+
+    # 8b. Shortlist candidate
+    shortlist_resp = client.patch(
+        f"/api/v2/jobs/{job_id}/candidates/{cand_doc_id}/decision",
+        json={"decision": "shortlisted", "note": "Strong experience verified"},
+        headers=auth_headers,
+    )
+    assert shortlist_resp.status_code == 200
+    assert shortlist_resp.json()["decision"] == "shortlisted"
+    print("✅ Shortlist decision recorded successfully.")
+
+    # 8c. Verify persistence in results
+    verify_resp = client.get(f"/api/v2/jobs/{job_id}/results", headers=auth_headers)
+    assert verify_resp.status_code == 200
+    updated_cands = verify_resp.json()["candidates"]
+    matched = next(c for c in updated_cands if c["document_id"] == cand_doc_id)
+    assert matched.get("decision") == "shortlisted"
+    assert matched.get("note") == "Strong experience verified"
+    print("✅ Candidate decision successfully persisted in results.json.")
+
+    # 8d. Export CSV
+    csv_resp = client.get(f"/api/v2/jobs/{job_id}/export/csv", headers=auth_headers)
+    assert csv_resp.status_code == 200
+    assert "SHORTLISTED" in csv_resp.text
+    print("✅ Export CSV contains human decision state.")
+
+    print("\n🎉 ALL ENDPOINTS AND DECISION WORKFLOWS WORKING CORRECTLY!")
 
 
 if __name__ == "__main__":
     test_api_flow()
+

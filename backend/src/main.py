@@ -61,30 +61,21 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_check_health_async())
 
-    # Start queue background worker daemon only when RUN_LOCAL_WORKERS=true
+    # Start queue background worker daemon in local mode or when RUN_LOCAL_WORKERS=true
     daemon = None
-    run_local = os.environ.get("RUN_LOCAL_WORKERS", "false").lower() in ("true", "1", "yes")
+    run_local = settings.is_local() or settings.RUN_LOCAL_WORKERS or os.environ.get("RUN_LOCAL_WORKERS", "false").lower() in ("true", "1", "yes")
     if run_local:
         try:
             from src.pipeline.worker_runner import get_worker_daemon
             daemon = get_worker_daemon()
             daemon.start()
-            logger.info("BackgroundWorkerDaemon started (RUN_LOCAL_WORKERS=true) ✅")
+            logger.info("BackgroundWorkerDaemon started (local worker mode active) ✅")
         except Exception as e:
             logger.warning("Failed to start BackgroundWorkerDaemon: %s", e)
     else:
         logger.info("BackgroundWorkerDaemon disabled (managed worker / production mode)")
 
 
-    # Configure S3 CORS for direct browser PUTs
-    try:
-        from src.infrastructure.storage.storage_service import StorageService
-        cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
-        if settings.frontend_url:
-            cors_origins.extend([o.strip() for o in settings.frontend_url.split(",") if o.strip()])
-        StorageService().configure_s3_cors(cors_origins)
-    except Exception as e:
-        logger.warning("Could not configure S3 CORS: %s", e)
 
     logger.info("Server ready — health checks running in background")
 

@@ -14,8 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
 import { useJobStore } from '@/store/job-store';
-import { uploadResumes, createJob } from '@/lib/api';
-import type { UploadResult } from '@/lib/api';
+import { createJob, uploadResumesToBackend } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -30,9 +29,8 @@ export function ResumeUploadZone() {
   const resetUploadProgress = useAppStore((s) => s.resetUploadProgress);
   const jobId = useAppStore((s) => s.jobId);
   const setJobId = useAppStore((s) => s.setJobId);
-  const setSessionId = useAppStore((s) => s.setSessionId);
+  const setFileIdMap = useAppStore((s) => s.setFileIdMap);
   const job = useJobStore((s) => s.job);
-
 
   /** Client-side validation — returns only valid PDF files */
   const validateFiles = useCallback((fileList: FileList | File[]): File[] => {
@@ -63,7 +61,7 @@ export function ResumeUploadZone() {
     return valid;
   }, []);
 
-  /** Upload valid files to the backend */
+  /** Upload valid files via Frontend -> Backend -> S3 */
   const handleUpload = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
@@ -77,37 +75,43 @@ export function ResumeUploadZone() {
       });
 
       try {
-        // Ensure we have a job ID
+        // 1. Create or retrieve job
         let currentJobId = jobId;
         if (!currentJobId) {
           const jobRes = await createJob({
             title: job.title || 'Untitled Job',
+            department: job.department,
+            description: job.description,
+            must_have_skills: job.mustHaveSkills,
+            nice_to_have_skills: job.niceToHaveSkills,
+            min_years: job.minYears,
+            max_years: job.maxYears,
+            education_level: job.educationLevel,
+            education_field: job.educationField,
+            keywords: job.keywords,
+            weights: job.weights,
           });
-          currentJobId = jobRes.id;
+          currentJobId = jobRes.job_id || jobRes.id;
           setJobId(currentJobId);
-          toast.success('Job created');
         }
 
-        // Upload files one at a time — onFileComplete fires after the server
-        // confirms each file, giving accurate per-file progress tracking.
-        const result: UploadResult = await uploadResumes(
+        // 2. Upload files via Frontend -> Backend -> S3 (POST /api/v2/jobs/{job_id}/resumes)
+        const result = await uploadResumesToBackend(
           currentJobId,
           files,
-          (uploaded, total, filename) => {
-            const percent = Math.round((uploaded / total) * 100);
+          (uploaded: number, total: number, filename: string, percent?: number) => {
+            const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
             setUploadProgress({
               filesUploaded: uploaded,
               filesTotal: total,
-              percent,
+              percent: pct,
               currentFile: filename,
             });
           },
         );
 
-        // Persist session_id for refresh recovery and downstream polling
-        if (result.session_id) {
-          setSessionId(result.session_id);
-        }
+        // Save fileId mapping in store for explicit analyze barrier submission
+        setFileIdMap(result.fileIdMap);
 
         // Toast server-side rejections individually
         for (const rejected of result.rejected) {
@@ -125,25 +129,29 @@ export function ResumeUploadZone() {
         });
 
         if (result.accepted.length > 0) {
-          // Transition to fast_preprocessing immediately — PyMuPDF is running in background.
-          // The AnalyzeButton will poll and advance to ready_to_analyze once parsing finishes.
-          setAppPhase('fast_preprocessing');
+          setUploadProgress({
+            filesUploaded: result.total_accepted,
+            filesTotal: result.total_accepted,
+            percent: 100,
+            currentFile: `${result.total_accepted} resumes uploaded. Ready to analyze!`,
+          });
+          setAppPhase('ready_to_analyze');
           toast.success(
-            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} stored. Parsing in background…`,
+            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded. Ready to analyze!`,
           );
         } else {
+          resetUploadProgress();
           setAppPhase('idle');
         }
       } catch (err) {
+        resetUploadProgress();
         toast.error('Upload failed', {
           description: err instanceof Error ? err.message : 'An unexpected error occurred',
         });
         setAppPhase('error');
-      } finally {
-        resetUploadProgress();
       }
     },
-    [jobId, setJobId, setSessionId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job.title],
+    [jobId, setJobId, setFileIdMap, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job],
   );
 
 
@@ -215,6 +223,7 @@ export function ResumeUploadZone() {
 
       {/* Drop zone */}
       <div
+        onClick={handleBrowseClick}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -230,8 +239,12 @@ export function ResumeUploadZone() {
           {isDragging ? 'Drop PDFs here' : 'Drop PDFs here or click browse'}
         </p>
         <Button
+          type="button"
           variant="outline"
-          onClick={handleBrowseClick}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleBrowseClick();
+          }}
           disabled={isDisabled}
           className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 py-sp-1 h-8 hover:bg-foreground hover:text-background transition-colors"
         >

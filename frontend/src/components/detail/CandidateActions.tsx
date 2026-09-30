@@ -15,6 +15,7 @@ import { updateCandidateDecision } from '@/lib/api';
 import type { Candidate, CandidateStatus } from '@/store/types';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { SendHorizonalIcon, X, Check, NotebookPen, RotateCcw } from 'lucide-react';
 
 const statusLabels: Record<CandidateStatus, { label: string; classes: string }> = {
   'under-review': { label: 'Under Review', classes: 'border-foreground text-foreground bg-secondary' },
@@ -34,7 +35,7 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const status = statusLabels[candidate.status];
+  const status = statusLabels[candidate.status] || statusLabels['under-review'];
 
   useEffect(() => {
     setNoteInput(candidate.note || '');
@@ -108,19 +109,37 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
     }
   };
 
+  const handleResetToReview = async () => {
+    setStatus(candidate.id, 'under-review');
+    toast.info(`${candidate.name} returned to Under Review.`);
+    if (jobId) {
+      try {
+        await updateCandidateDecision(jobId, candidate.id, { decision: 'reviewing' });
+      } catch {
+        // Optimistic UI
+      }
+    }
+  };
+
   return (
     <div>
       <h4 className="font-heading text-sm uppercase tracking-brutal mb-sp-3 text-foreground">
-        Actions
+        Recruiter Actions
       </h4>
 
       <div className="flex flex-wrap gap-sp-2 mb-sp-3">
+        {/* Shortlist Button */}
         <Button
           onClick={handleShortlist}
           aria-label={`Shortlist ${candidate.name}`}
-          className="border-thick border-foreground bg-foreground text-background uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-background hover:text-foreground transition-colors"
+          className={cn(
+            'border-thick border-success uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 transition-colors flex items-center justify-center gap-1.5 grow',
+            candidate.status === 'shortlisted'
+              ? 'bg-success text-background hover:bg-success/90'
+              : 'bg-secondary text-success hover:bg-success hover:text-background'
+          )}
         >
-          ✓ Shortlist
+          <Check size={16} /> {candidate.status === 'shortlisted' ? 'Shortlisted ✓' : 'Shortlist'}
         </Button>
 
         {/* Reject Button with Mandatory Reason Dialog */}
@@ -128,9 +147,14 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
           <DialogTrigger asChild>
             <Button
               aria-label={`Reject ${candidate.name}`}
-              className="border-thick border-error bg-error text-background uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-background hover:text-error transition-colors"
+              className={cn(
+                'border-thick border-error uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 transition-colors flex items-center justify-center gap-1.5 grow',
+                candidate.status === 'rejected'
+                  ? 'bg-error text-background hover:bg-error/90'
+                  : 'bg-secondary text-error hover:bg-error hover:text-background'
+              )}
             >
-              ✗ Reject
+              <X size={16} /> {candidate.status === 'rejected' ? 'Rejected ✗' : 'Reject'}
             </Button>
           </DialogTrigger>
           <DialogContent className="border-heavy border-border bg-card p-sp-4 max-w-md text-foreground">
@@ -167,27 +191,42 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
           </DialogContent>
         </Dialog>
 
+        {/* Send Assessment / Interview Button */}
+        <Button
+          onClick={handleSendAssessment}
+          aria-label={`Send assessment to ${candidate.name}`}
+          className={cn(
+            'border-thick border-info uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 transition-colors flex items-center justify-center gap-1.5 grow',
+            candidate.status === 'assessment-sent'
+              ? 'bg-info text-background hover:bg-info/90'
+              : 'bg-secondary text-info hover:bg-info hover:text-background'
+          )}
+        >
+          <SendHorizonalIcon size={16} /> {candidate.status === 'assessment-sent' ? 'Assessment Sent ✓' : 'Assessment'}
+        </Button>
+
+        {/* Note Dialog Button */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button
               variant="outline"
               aria-label="Add note"
-              className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-foreground hover:text-background transition-colors"
+              className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-foreground hover:text-background transition-colors flex items-center justify-center gap-1.5"
             >
-              📝 Note
+              <NotebookPen size={16} /> {candidate.note ? 'Edit Note' : 'Note'}
             </Button>
           </DialogTrigger>
 
           <DialogContent className="border-heavy border-border bg-card p-sp-4 max-w-md text-foreground">
             <DialogHeader>
               <DialogTitle className="font-heading text-lg uppercase tracking-brutal text-foreground">
-                Add Note — {candidate.name}
+                Internal Note — {candidate.name}
               </DialogTitle>
             </DialogHeader>
             <Textarea
               value={noteInput}
               onChange={(e) => setNoteInput(e.target.value)}
-              placeholder="Internal HR note..."
+              placeholder="Internal recruiter notes, feedback from technical team..."
               rows={4}
               className="border-thick border-border bg-surface-sunken font-mono text-mono-base p-3 mt-sp-2 text-foreground placeholder:text-muted-foreground focus:border-heavy focus:border-foreground focus:outline-none"
             />
@@ -209,18 +248,22 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
           </DialogContent>
         </Dialog>
 
-        <Button
-          onClick={handleSendAssessment}
-          aria-label={`Send assessment to ${candidate.name}`}
-          variant="outline"
-          className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-foreground hover:text-background transition-colors"
-        >
-          📧 Send Assessment
-        </Button>
+        {/* Reversible workflow: Reset to Review if already decided */}
+        {candidate.status && candidate.status !== 'under-review' && (
+          <Button
+            variant="outline"
+            onClick={handleResetToReview}
+            aria-label={`Reset decision for ${candidate.name} to under review`}
+            className="border-thick border-muted-foreground bg-secondary text-muted-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 h-9 hover:bg-foreground hover:text-background transition-colors flex items-center justify-center gap-1.5"
+            title="Revert decision back to Under Review"
+          >
+            <RotateCcw size={14} /> Reset
+          </Button>
+        )}
       </div>
 
       <div className="flex items-center gap-sp-2">
-        <span className="text-tiny uppercase tracking-chip font-bold text-muted-foreground">Status:</span>
+        <span className="text-tiny uppercase tracking-chip font-bold text-muted-foreground">Current Status:</span>
         <Badge
           className={cn(
             'border-2 px-3 py-0.5 text-[11px] uppercase tracking-chip font-bold',
@@ -232,9 +275,11 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
       </div>
 
       {candidate.note && (
-        <div className="mt-sp-3 border-2 border-muted-foreground p-sp-2">
-          <p className="text-tiny uppercase tracking-chip font-bold mb-sp-1 text-muted-foreground">Note:</p>
-          <p className="text-small font-mono text-muted-foreground">{candidate.note}</p>
+        <div className="mt-sp-3 border-2 border-border bg-secondary/30 p-sp-2">
+          <p className="text-tiny uppercase tracking-chip font-bold mb-sp-1 text-muted-foreground">
+            Recruiter Note / Reason:
+          </p>
+          <p className="text-small font-mono text-foreground whitespace-pre-wrap">{candidate.note}</p>
         </div>
       )}
     </div>

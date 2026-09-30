@@ -134,7 +134,72 @@ TITLE_INDICATOR_WORDS = {
     'director', 'head', 'vp', 'executive', 'assistant', 'associate', 'intern',
     'designer', 'instructor', 'teacher', 'professor', 'nurse', 'physician',
     'attorney', 'counsel', 'accountant', 'auditor', 'administrator', 'operator',
-    'scientist', 'researcher', 'programmer', 'strategist', 'representative'
+    'scientist', 'researcher', 'programmer', 'strategist', 'representative',
+    'trainer', 'practitioner', 'therapist', 'hygienist', 'mechanic', 'electrician',
+    'plumber', 'teller', 'barista', 'cashier', 'clerk', 'counselor', 'advisor',
+    'broker', 'agent', 'worker', 'laborer', 'helper', 'attendant', 'apprentice',
+    'trainee', 'fellow', 'driver', 'pilot', 'guard', 'custodian', 'carpenter',
+    'builder', 'craftsman', 'president', 'staff', 'pharmacist', 'principal'
+}
+
+# Country, city, state, or regional names that look like candidate names
+LOCATION_NAMES = {
+    'united states', 'united kingdom', 'new york', 'los angeles',
+    'san francisco', 'san antonio', 'new delhi', 'hong kong',
+    'south africa', 'new zealand', 'sri lanka', 'saudi arabia',
+    'costa rica', 'puerto rico', 'el salvador', 'san jose',
+    'north america', 'south america', 'great britain', 'west indies',
+    'united arab emirates', 'district columbia', 'washington dc',
+    'kuala lumpur', 'buenos aires', 'cape town', 'rio de janeiro',
+    'sao paulo', 'mexico city', 'tel aviv', 'adelaide', 'brisbane',
+    'melbourne', 'sydney', 'auckland', 'wellington', 'toronto',
+    'vancouver', 'montreal', 'chicago', 'houston', 'philadelphia',
+    'phoenix', 'san diego', 'dallas', 'austin', 'seattle', 'denver',
+    'boston', 'miami', 'atlanta', 'detroit', 'minneapolis', 'las vegas',
+    'portland', 'orlando', 'cleveland', 'columbus', 'charlotte',
+    'london', 'paris', 'berlin', 'madrid', 'rome', 'amsterdam',
+    'dublin', 'singapore', 'tokyo', 'mumbai', 'bangalore', 'hyderabad',
+    'united states of america', 'usa', 'uk', 'uae'
+}
+
+# Address and street suffixes/indicators
+ADDRESS_INDICATOR_WORDS = {
+    'road', 'rd', 'street', 'st', 'lane', 'ln', 'avenue', 'ave', 'nagar',
+    'colony', 'enclave', 'sector', 'block', 'layout', 'dist', 'district',
+    'village', 'po', 'near', 'opposite', 'opp', 'cross', 'main', 'floor',
+    'flat', 'apartment', 'house', 'plot', 'bldg', 'building'
+}
+
+# Placeholder / template artifact names
+PLACEHOLDER_NAMES = {
+    'first last', 'first lastname', 'firstname last', 'first name last name',
+    'firstname lastname', 'your name', 'candidate name', 'full name', 'name here',
+    'john doe', 'jane doe', 'applicant name', 'enter name', 'your full name'
+}
+
+# Hobbies, passions, sports, personal interests
+HOBBY_INTEREST_WORDS = {
+    'cricket', 'rugby', 'athletics', 'football', 'soccer', 'basketball',
+    'baseball', 'volleyball', 'tennis', 'badminton', 'hockey', 'swimming',
+    'cycling', 'running', 'marathon', 'hiking', 'trekking', 'climbing',
+    'camping', 'chess', 'reading', 'traveling', 'travelling', 'travel',
+    'photography', 'music', 'singing', 'dancing', 'gaming', 'cooking',
+    'baking', 'gardening', 'blogging', 'writing', 'painting', 'drawing',
+    'sketching', 'fitness', 'workout', 'yoga', 'pilates', 'hobbies',
+    'interests', 'passions', 'volunteer', 'volunteering', 'biking',
+    'fishing', 'hunting', 'skiing', 'snowboarding', 'surfing', 'sailing',
+    'passion', 'passionate', 'hobby', 'interest', 'enthusiast', 'enthusiastic',
+    'focus', 'career focus', 'career objective', 'personal trainer', 'creative',
+    'motivated', 'driven'
+}
+
+# Resume boilerplate and template artifacts that must never become candidate names
+RESUME_METADATA_PHRASES = {
+    'place of birth', 'date of birth', 'driving license', 'driver license',
+    'driving licence', 'driver licence', 'make this resume', 'build this resume',
+    'resume templates', 'date place', 'place birth', 'date birth',
+    'nationality', 'american', 'canadian', 'british', 'indian', 'australian',
+    'german', 'french', 'spanish', 'italian', 'chinese', 'japanese'
 }
 
 # Corporate legal entities
@@ -451,7 +516,37 @@ class CandidateIdentityResolver:
                 return False, f"Contains multiple technical skill terms ({', '.join(tech_matches)})"
 
 
-        # 7. Capitalization Quality:
+        # 7. Geographic location names
+        if lower_name in LOCATION_NAMES:
+            return False, f"Matches geographic location name ('{name}')"
+        for w in words:
+            if w.lower() in LOCATION_NAMES:
+                return False, f"Contains geographic location name '{w}'"
+
+        # 8. Resume metadata / boilerplate phrases
+        if lower_name in RESUME_METADATA_PHRASES:
+            return False, f"Matches resume template/metadata phrase ('{name}')"
+        for phrase in RESUME_METADATA_PHRASES:
+            if phrase in lower_name:
+                return False, f"Contains resume metadata phrase '{phrase}'"
+
+        # 9. Hobby, sport, or personal interest words
+        for w in words:
+            clean_w = w.lower().rstrip('s')
+            if clean_w in HOBBY_INTEREST_WORDS or w.lower() in HOBBY_INTEREST_WORDS:
+                return False, f"Contains hobby, sports, or interest keyword '{w}'"
+
+        # 10. Placeholder template names
+        if lower_name in PLACEHOLDER_NAMES:
+            return False, f"Matches template placeholder name ('{name}')"
+
+        # 11. Address or street indicators
+        for w in words:
+            clean_w = w.lower().rstrip('.,')
+            if clean_w in ADDRESS_INDICATOR_WORDS:
+                return False, f"Contains address or street indicator '{w}'"
+
+        # 12. Capitalization Quality:
         # Require ALL words to start with an uppercase letter UNLESS they are recognized name particles.
         # This permanently closes the 'Insights possible sub-space' lowercase loophole.
         for idx, w in enumerate(words):

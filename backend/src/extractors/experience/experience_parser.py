@@ -144,6 +144,9 @@ def _is_bullet_or_description(text: str) -> bool:
     if not text:
         return False
     t = text.strip()
+    # Starts with bullet character
+    if t[0] in '•·▪▸►✓✔*-':
+        return True
     # Starts with lowercase letter (roles/companies are title-case)
     if t[0].islower():
         return True
@@ -151,14 +154,20 @@ def _is_bullet_or_description(text: str) -> bool:
     if re.search(r'\d+\s*%', t):
         return True
     # Too long for a role or company name
-    if len(t) > 100:
+    if len(t) > 85:
         return True
-    # Starts with bullet character
-    if t[0] in '•·▪▸►✓✔*-' and len(t) > 2:
+    # Starts with action verbs common in resume descriptions
+    if re.match(r'^(?:Tracking|Preparing|Assisting|Leading|Developing|Designing|Demonstrating|Providing|Advising|Managing|Managed|Created|Built|Developed|Maintained|Performed|Worked|Collaborated|Coordinated|Supervised|Spearheaded|Implemented|Organized|Trained|Oversaw|Handled|Saved|Cut|Achieved|Assisted|Led|Introduced|Ensuring|Participating|Picked|Filled)\b', t, re.I):
         return True
-    # Looks like a full sentence (contains multiple verbs/objects)
+    # Ends with period (descriptions end with periods, roles/companies don't)
+    if t.endswith('.'):
+        return True
+    # Contains phrases typical of descriptions
+    if re.search(r'\b(?:activities include|responsible for|tasked with|duties include|proven track record|experience in)\b', t, re.I):
+        return True
+    # Looks like a full sentence (contains multiple words)
     word_count = len(t.split())
-    if word_count > 12:
+    if word_count > 10:
         return True
     return False
 
@@ -287,17 +296,38 @@ class ExperienceParser:
                 r'\s*:?\s*\n',
                 re.I,
             )
-            _NEXT_SECTION_RE = re.compile(
-                r'\n(?:#{1,3}\s*\S|\n[A-Z][A-Z &/]{3,}\s*:?\s*\n)',
+            _SECTION_KEYWORDS_RE = re.compile(
+                r'\n\s*(?:Education|Educational\s+Background|Academic(?:\s+Background|\s+History)?|Academics|'
+                r'Courses|Coursework|Certifications?|Certificates?|'
+                r'Skills|Technical\s+Skills|Core\s+Competencies|'
+                r'Projects?|Personal\s+Projects?|Key\s+Projects?|'
+                r'Languages?|Hobbies|Interests|Details|Personal\s+Info|Links|'
+                r'Achievements|Awards|References|Publications|Summary|Profile)'
+                r'\s*:?\s*\n',
+                re.I
             )
+            _ALL_CAPS_HEADING_RE = re.compile(r'\n[A-Z][A-Z\s&/]{2,35}:?\s*\n')
+            _MD_HEADING_PAT = re.compile(r'\n#{1,3}\s*\S')
+
             m = _EXP_FLAT_RE.search(text)
             if m:
                 # If PyMuPDF scrambled the order, the text might be before the heading.
                 # Try the text after the heading first.
                 candidate = text[m.end():]
-                nm = _NEXT_SECTION_RE.search(candidate)
-                if nm and nm.start() > 50:
-                    candidate = candidate[:nm.start()]
+                indices = []
+                m1 = _SECTION_KEYWORDS_RE.search(candidate)
+                if m1:
+                    indices.append(m1.start())
+                m2 = _ALL_CAPS_HEADING_RE.search(candidate)
+                if m2:
+                    indices.append(m2.start())
+                m3 = _MD_HEADING_PAT.search(candidate)
+                if m3:
+                    indices.append(m3.start())
+                if indices:
+                    end_idx = min(indices)
+                    if end_idx > 50:
+                        candidate = candidate[:end_idx]
                 
                 # If the candidate actually contains date ranges, try parsing it first
                 if candidate.strip() and DATE_RANGE_RE.search(candidate):
@@ -370,13 +400,14 @@ class ExperienceParser:
         - Rejects lines that look like bullet points or descriptions
         - Handles both Role/Company and Company/Role orderings
         """
-        lines = [l.strip() for l in before.split('\n') if l.strip()]
-        # Strip PUA icon-font bullets, markdown bullets, and markdown heading markers before filtering
-        lines = [_MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip() for l in lines if l.strip()]
-        lines = [l for l in lines if l]  # drop lines that became empty after stripping
-
-        # Filter out lines that are clearly descriptions/bullets
-        clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+        raw_lines = [l.strip() for l in before.split('\n') if l.strip()]
+        clean_lines = []
+        for l in raw_lines:
+            if _is_bullet_or_description(l):
+                continue
+            cleaned = _MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip()
+            if cleaned and not _is_bullet_or_description(cleaned):
+                clean_lines.append(cleaned)
         
         if not clean_lines:
             # Try from after-text

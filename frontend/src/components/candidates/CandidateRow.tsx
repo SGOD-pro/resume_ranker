@@ -29,36 +29,10 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
   const scoreValue = typeof candidate.overallScore === 'number'
     ? candidate.overallScore
     : (candidate.relevanceScore ?? 0);
+  const formattedScore = typeof scoreValue === 'number'
+    ? (scoreValue % 1 === 0 ? `${scoreValue}%` : `${scoreValue.toFixed(1)}%`)
+    : '0%';
 
-  // Derive eligibility badge
-  const eligibility = candidate.eligibilityStatus || (candidate.signal === 'knockout' ? 'DOES_NOT_MEET_CRITERIA' : 'ELIGIBLE');
-  let statusBadge = {
-    label: signal.label,
-    color: signal.color,
-    dot: signal.dot,
-  };
-
-  if (candidate.status && candidate.status !== 'under-review') {
-    if (candidate.status === 'shortlisted') {
-      statusBadge = { label: 'Shortlisted', color: 'text-success', dot: 'bg-success' };
-    } else if (candidate.status === 'rejected') {
-      statusBadge = { label: 'Rejected', color: 'text-error', dot: 'bg-error' };
-    } else if (candidate.status === 'assessment-sent') {
-      statusBadge = { label: 'Assessment Sent', color: 'text-info', dot: 'bg-info' };
-    }
-  } else if (eligibility === 'DOES_NOT_MEET_CRITERIA') {
-    statusBadge = {
-      label: 'Criteria Not Met',
-      color: 'text-error',
-      dot: 'bg-error',
-    };
-  } else if (eligibility === 'REVIEW_REQUIRED') {
-    statusBadge = {
-      label: 'Review Required',
-      color: 'text-warning',
-      dot: 'bg-warning',
-    };
-  }
 
   return (
     <button
@@ -94,17 +68,33 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
           )}
         </div>
         <span className="w-16 text-right font-mono text-sm font-bold">
-          {scoreValue}%
+          {formattedScore}
         </span>
-        <span
-          className={cn(
-            'w-28 text-right text-xs uppercase tracking-chip font-bold flex items-center justify-end gap-1',
-            isSelected ? 'text-current' : statusBadge.color
+        <div className="flex items-center justify-end gap-2 shrink-0">
+          <span
+            className={cn(
+              'text-xs uppercase tracking-chip font-bold flex items-center gap-1',
+              isSelected ? 'text-current' : signal.color
+            )}
+            title={`System relevance: ${signal.label}`}
+          >
+            <span className={cn('inline-block w-2 h-2 rounded-full', isSelected ? 'bg-current' : signal.dot)} />
+            {signal.label}
+          </span>
+          {candidate.status && candidate.status !== 'under-review' && (
+            <span
+              className={cn(
+                'text-[10px] uppercase tracking-chip font-bold px-1.5 py-0.5 border rounded',
+                candidate.status === 'shortlisted' && (isSelected ? 'border-background text-background' : 'border-success text-success bg-success/15'),
+                candidate.status === 'rejected' && (isSelected ? 'border-background text-background' : 'border-error text-error bg-error/15'),
+                candidate.status === 'assessment-sent' && (isSelected ? 'border-background text-background' : 'border-info text-info bg-info/15'),
+              )}
+            >
+              {candidate.status === 'shortlisted' ? 'Shortlisted' :
+               candidate.status === 'rejected' ? 'Rejected' : 'Assessment'}
+            </span>
           )}
-        >
-          <span className={cn('inline-block w-2 h-2 rounded-full', isSelected ? 'bg-current' : statusBadge.dot)} />
-          {statusBadge.label}
-        </span>
+        </div>
       </div>
 
       {/* Skills line */}

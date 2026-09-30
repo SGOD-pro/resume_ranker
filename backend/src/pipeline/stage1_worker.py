@@ -13,6 +13,7 @@ Triggered by S3 s3:ObjectCreated notification on jobs/{job_id}/raw/{file_id}.pdf
 
 import json
 import logging
+import time
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
@@ -152,6 +153,7 @@ def process_stage1_message(message: Any) -> bool:
     s3_raw_key = s3_key or f"jobs/{job_id}/raw/{file_id}.pdf"
 
     try:
+        t0 = time.monotonic()
         # Download PDF bytes directly into memory (NO /tmp)
         pdf_bytes = storage.get_resume(job_id, file_id, s3_key=s3_raw_key)
 
@@ -182,11 +184,27 @@ def process_stage1_message(message: Any) -> bool:
         candidate_name = fields.get("name") or "Candidate"
         unresolved = extracted.get("unresolved_chunks", [])
 
-        # Fallback decision (Amendment 3: extraction quality != candidate match score)
-        needs_fallback = (min_quality < QUALITY_THRESHOLD) or bool(unresolved)
+        # Check if critical candidate fields are missing
+        has_valid_name = bool(fields.get("name")) and str(fields.get("name")).strip().lower() not in ("candidate", "unknown", "")
+        has_experience = bool(fields.get("experience")) and len(fields.get("experience")) > 0
+
+        # Fallback decision: quality threshold, unresolved chunks, OR missing name / experience
+        needs_fallback = (
+            (min_quality < QUALITY_THRESHOLD)
+            or bool(unresolved)
+            or not has_valid_name
+            or not has_experience
+        )
+
+        elapsed_ms = (time.monotonic() - t0) * 1000.0
+        logger.info(
+            "|PYMUPDF| [Job: %s, File: %s] Extracted candidate='%s', quality=%.2f, needs_fallback=%s, time=%.1fms",
+            job_id, file_id, candidate_name, min_quality, needs_fallback, elapsed_ms
+        )
 
         stage1_payload = {
             "fields": fields,
+            "raw_text": raw_text[:50000],
             "quality": {
                 "score": min_quality,
                 "is_clean": is_clean,
@@ -202,6 +220,9 @@ def process_stage1_message(message: Any) -> bool:
 
         if not needs_fallback:
             # Clean layout: fast-path directly satisfies extraction!
+            fields["document_id"] = file_id
+            fields["file_id"] = file_id
+            fields["job_id"] = job_id
             # Upload final structured JSON to stage2 key
             s3_stage2_key = storage.upload_stage2_json(job_id, file_id, fields)
             # Idempotently transition to S2_DONE (terminal, decrements job.remaining)
@@ -212,7 +233,8 @@ def process_stage1_message(message: Any) -> bool:
                 candidate_name=candidate_name,
                 s3_extracted_key=s3_stage2_key,
             )
-            logger.info("Stage1Worker: %s/%s clean fast-path -> S2_DONE (quality %.2f)", job_id, file_id, min_quality)
+            logger.info("|PYMUPDF| [Job: %s, File: %s] Clean fast-path -> S2_DONE (quality %.2f, candidate: '%s')",
+                        job_id, file_id, min_quality, candidate_name)
         else:
             # Needs Stage 2 fallback (ODL / Nova)
             files_repo.update_file_non_terminal(
@@ -223,8 +245,8 @@ def process_stage1_message(message: Any) -> bool:
                 needs_fallback=True,
                 candidate_name=candidate_name,
             )
-            logger.info("Stage1Worker: %s/%s needs fallback -> S1_DONE (quality %.2f, unresolved: %d)",
-                        job_id, file_id, min_quality, len(unresolved))
+            logger.info("|PYMUPDF| [Job: %s, File: %s] Fallback required -> S1_DONE (quality %.2f, unresolved: %d, candidate: '%s')",
+                        job_id, file_id, min_quality, len(unresolved), candidate_name)
 
             # If recruiter already requested analysis, handle routing to Stage 2
             job = jobs_repo.get(job_id)

@@ -146,6 +146,57 @@ def test_company_names_rejected(resolver: CandidateIdentityResolver):
         assert res.status == IdentityStatus.UNRESOLVED
 
 
+def test_location_and_hobby_phrases_rejected(resolver: CandidateIdentityResolver):
+    """Locations and hobbies must never be extracted as candidate names."""
+    bad_phrases = [
+        "United States",
+        "New York",
+        "Cricket",
+        "Rugby Football",
+        "Photography Music",
+        "Personal Trainer",
+        "Amazon Associate",
+    ]
+    for phrase in bad_phrases:
+        res = resolver.resolve(text_lines=[phrase])
+        assert res.display_name is None, f"Phrase {phrase!r} should be rejected, got {res.display_name!r}"
+        assert res.status == IdentityStatus.UNRESOLVED
+
+
+def test_resume_10_and_12_names_resolved_correctly():
+    """Verify that 10.pdf (Charly Dolman) and 12.pdf (Jason Miller) resolve accurately with ContactParser."""
+    from src.extractors.contact.contact_parser import ContactParser
+    parser = ContactParser()
+
+    # Case 10: Charly Dolman, Personal Trainer, 9 Wall St..., email@email.com
+    text_10 = (
+        "Charly Dolman\n"
+        "Personal Trainer\n"
+        "9 Wall St, New York, 10005, USA\n"
+        "890-555-0401  ·  email@email.com\n"
+        "Make this resume:,\n"
+        "Date / Place of birth\n"
+        "1989/20/03, New York\n"
+    )
+    res_10 = parser.parse(raw_text=text_10, pymupdf_text=text_10)
+    assert res_10["name"] == "Charly Dolman"
+    assert res_10["identity"]["status"] in ("VERIFIED", "PLAUSIBLE")
+
+    # Case 12: Jason Miller, Amazon Associate, Profile, ...
+    text_12 = (
+        "Jason Miller\n"
+        "Amazon Associate\n"
+        "Profile\n"
+        "Experienced Amazon Associate with five years tenure\n"
+        "3868683442\n"
+        "email@email.com\n"
+        "United States\n"
+    )
+    res_12 = parser.parse(raw_text=text_12, pymupdf_text=text_12)
+    assert res_12["name"] == "Jason Miller"
+    assert res_12["identity"]["status"] in ("VERIFIED", "PLAUSIBLE")
+
+
 def test_clean_name_not_discarded(resolver: CandidateIdentityResolver):
     """Legitimate candidate names must not be discarded by overly aggressive filters."""
     valid_names = [

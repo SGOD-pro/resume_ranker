@@ -7,8 +7,10 @@
  * knockout checks.
  */
 
+import { useAppStore } from '@/store/app-store';
 import type {
   Candidate,
+  CandidateStatus,
   Signal,
   ScoreBreakdown,
   SkillMatch,
@@ -30,7 +32,7 @@ function deriveSignal(finalScore: number, knockedOut: boolean): Signal {
 
 /** Map a single backend ScoredCandidate dict to the frontend Candidate shape */
 export function mapScoredCandidate(raw: any, index: number, defaultJobId?: string): Candidate {
-  const id = raw.document_id || `candidate-${index}`;
+  const id = raw.document_id || raw.file_id || raw.candidate_id || raw._document_id || `candidate-${index}`;
   const rawName = raw.name;
   const identityStatus = raw.identity_status || (rawName && rawName !== 'Unknown' ? 'VERIFIED' : 'UNRESOLVED');
   const isUnresolvedName = !rawName || rawName === 'Unknown' || identityStatus === 'UNRESOLVED';
@@ -102,12 +104,24 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
       : 'Not specified',
   });
 
-  // Experience entries — we don't have full structured experience from scorer,
-  // but we can provide what's available
+  // Experience entries
   const experience: ExperienceEntry[] = [];
-  // The scorer's ScoredCandidate has best_title_match but not full experience list.
-  // We'll show what's available from the best match.
-  if (raw.best_title_match) {
+  if (Array.isArray(raw.experience) && raw.experience.length > 0) {
+    raw.experience.forEach((e: any, idx: number) => {
+      let dur = 0;
+      if (typeof e.duration_years === 'number') {
+        dur = e.duration_years;
+      }
+      experience.push({
+        id: `exp-${index}-${idx}`,
+        role: e.role || raw.best_title_match || 'Role',
+        company: e.company || '',
+        startDate: e.start || '',
+        endDate: e.end || '',
+        durationYears: dur,
+      });
+    });
+  } else if (raw.best_title_match) {
     experience.push({
       id: `exp-${index}-0`,
       role: raw.best_title_match,
@@ -120,7 +134,20 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
 
   // Education entries
   const education: EducationEntry[] = [];
-  if (raw.degree_level) {
+  if (Array.isArray(raw.education) && raw.education.length > 0) {
+    raw.education.forEach((edu: any, idx: number) => {
+      const yr = edu.end
+        ? (edu.start ? `${edu.start} — ${edu.end}` : edu.end)
+        : (edu.start || edu.year || '');
+      education.push({
+        id: `edu-${index}-${idx}`,
+        degree: edu.degree || raw.degree_level || 'Degree',
+        field: edu.field || raw.degree_field || '',
+        institution: edu.institution || '',
+        yearRange: yr,
+      });
+    });
+  } else if (raw.degree_level) {
     education.push({
       id: `edu-${index}-0`,
       degree: raw.degree_level,
@@ -141,12 +168,25 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
 
   // ── Contact info & PDF URL from backend extraction ──────────────────────────────
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  const effectiveJobId = raw.job_id || defaultJobId || '';
+  const effectiveJobId = raw.job_id || defaultJobId || useAppStore.getState().jobId || '';
+  
+  let docId = raw.document_id || '';
+  const jobFiles = useAppStore.getState().jobFiles || [];
+  const matchedFile = jobFiles.find(
+    (f) =>
+      f.file_id === docId ||
+      (f.candidate_name && f.candidate_name.toLowerCase() === name.toLowerCase()) ||
+      f.filename === name
+  );
+  if (matchedFile) {
+    docId = matchedFile.file_id;
+  }
+
   let pdfUrl = '';
-  if (raw.pdf_url) {
+  if (effectiveJobId && docId && docId !== 'Unknown') {
+    pdfUrl = `${apiBase}/api/v2/jobs/${effectiveJobId}/resumes/${docId}/download`;
+  } else if (raw.pdf_url) {
     pdfUrl = raw.pdf_url.startsWith('http') ? raw.pdf_url : `${apiBase}${raw.pdf_url}`;
-  } else if (raw.document_id && effectiveJobId) {
-    pdfUrl = `${apiBase}/api/v2/jobs/${effectiveJobId}/resumes/${raw.document_id}/download`;
   }
 
   const mapped: Candidate = {
@@ -161,7 +201,7 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
     overallScore: finalScore,
     relevanceScore,
     eligibilityStatus: raw.eligibility_status || (knockedOut ? 'DOES_NOT_MEET_CRITERIA' : (isUnresolvedName ? 'REVIEW_REQUIRED' : 'ELIGIBLE')),
-    humanDecision: raw.human_decision || 'NEW',
+    humanDecision: raw.human_decision || (raw.decision ? raw.decision.toUpperCase() : 'NEW'),
     identityStatus,
     identityConfidence: typeof raw.identity_confidence === 'number' ? raw.identity_confidence : (isUnresolvedName ? 0.0 : 1.0),
     identityProvenance: raw.identity_provenance || raw.identity || {},
@@ -180,8 +220,12 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
     flags,
     topSkills,
     totalYears,
-    status: 'under-review',
-    note: '',
+    status: (raw.status as CandidateStatus) ||
+      (raw.decision === 'shortlisted' ? 'shortlisted' :
+       raw.decision === 'rejected' ? 'rejected' :
+       (raw.decision === 'interview' || raw.decision === 'assessment-sent') ? 'assessment-sent' :
+       'under-review'),
+    note: raw.note || raw.decision_reason || '',
   };
 
   return mapped;

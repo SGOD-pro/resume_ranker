@@ -65,7 +65,7 @@ export function CandidateListPanel() {
     return filtered;
   }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts, jobWeights]);
 
-  const showLoader = appPhase === 'extracting' || appPhase === 'scoring';
+  const showLoader = appPhase === 'extracting' || appPhase === 'processing' || appPhase === 'scoring';
 
   return (
     <div className="flex h-full flex-col">
@@ -97,7 +97,7 @@ export function CandidateListPanel() {
             <span className="w-8 text-tiny uppercase tracking-chip font-bold">#</span>
             <span className="flex-1 text-tiny uppercase tracking-chip font-bold">Name</span>
             <span className="w-16 text-tiny uppercase tracking-chip font-bold text-right">Score</span>
-            <span className="w-20 text-tiny uppercase tracking-chip font-bold text-right">Signal</span>
+            <span className="min-w-[120px] text-tiny uppercase tracking-chip font-bold text-right">Status / Signal</span>
           </div>
 
           <ScrollArea className="flex-1 scrollbar-brutal pb-10 h-full">

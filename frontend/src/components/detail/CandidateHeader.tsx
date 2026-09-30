@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Candidate } from '@/store/types';
+import { useAppStore } from '@/store/app-store';
 import { MapPin, MailIcon, PhoneIcon, HelpCircle, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -149,20 +150,45 @@ export function CandidateHeader({ candidate }: CandidateHeaderProps) {
           </p>
         </div>
 
-        {candidate.pdfUrl ? (
-          <a
-            href={candidate.pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-info underline text-small font-mono hover:text-foreground transition-colors"
-          >
-            ↗ PDF
-          </a>
-        ) : (
-          <span className="text-muted-foreground/50 text-small font-mono">
-            No PDF
-          </span>
-        )}
+        {(() => {
+          const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+          const { jobId: storeJobId, jobFiles } = useAppStore.getState();
+
+          // Resolve true file UUID from store jobFiles if possible
+          let realFileId = candidate.id;
+          const matchedFile = (jobFiles || []).find(
+            (f) =>
+              f.file_id === candidate.id ||
+              (f.candidate_name && f.candidate_name.toLowerCase() === candidate.name.toLowerCase()) ||
+              f.filename === candidate.name
+          );
+          if (matchedFile) {
+            realFileId = matchedFile.file_id;
+          }
+
+          let href = '';
+          const targetJobId = storeJobId || '';
+          if (targetJobId && realFileId && realFileId !== 'Unknown') {
+            href = `${apiBase}/api/v2/jobs/${targetJobId}/resumes/${realFileId}/download`;
+          } else if (candidate.pdfUrl) {
+            href = candidate.pdfUrl.startsWith('http') ? candidate.pdfUrl : `${apiBase}${candidate.pdfUrl}`;
+          }
+
+          return href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-info underline text-small font-mono hover:text-foreground transition-colors"
+            >
+              ↗ PDF
+            </a>
+          ) : (
+            <span className="text-muted-foreground/50 text-small font-mono">
+              No PDF
+            </span>
+          );
+        })()}
       </div>
 
       {hasContactInfo && (

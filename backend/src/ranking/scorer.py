@@ -549,10 +549,29 @@ class CandidateScorer:
         name = candidate.get('name') or pi.get('name')
         if name is not None and not str(name).strip():
             name = None
-        doc_id = candidate.get('_document_id') or (name if name else 'Unknown')
+        doc_id = (
+            candidate.get('document_id')
+            or candidate.get('file_id')
+            or candidate.get('candidate_id')
+            or candidate.get('_document_id')
+            or (name if name else 'Unknown')
+        )
         c_skills = candidate.get('skills', [])
         experience = candidate.get('experience', [])
         total_years = _compute_total_experience_years(experience)
+
+        # Enrich experience entries with duration_years if not present
+        enriched_exp = []
+        for exp_entry in experience:
+            e_copy = dict(exp_entry)
+            if "duration_years" not in e_copy:
+                s_dt = _parse_date(e_copy.get("start"))
+                e_dt = _parse_date(e_copy.get("end"))
+                if s_dt and e_dt and e_dt > s_dt:
+                    e_copy["duration_years"] = round((e_dt - s_dt).days / 365.25, 1)
+                else:
+                    e_copy["duration_years"] = 0.0
+            enriched_exp.append(e_copy)
 
         result = ScoredCandidate(
             name=name,
@@ -566,6 +585,8 @@ class CandidateScorer:
             phone=candidate.get('phone') or pi.get('phone') or '',
             location=candidate.get('location') or pi.get('location') or pi.get('address') or '',
             total_exp_years=total_years,
+            experience=enriched_exp,
+            education=candidate.get('education', []),
             extraction_quality=candidate.get('extraction_quality', 0.0),
             low_confidence_extraction=bool(candidate.get('low_confidence_extraction', False)),
             fallback_reason=candidate.get('fallback_reason'),

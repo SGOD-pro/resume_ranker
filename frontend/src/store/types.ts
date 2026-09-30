@@ -168,4 +168,90 @@ export type UploadSessionStatus =
   | 'FAILED'
   | 'EXPIRED';
 
+// ── Phase 2 Direct Presigned S3 POST & Pipeline Status Types ────────────────
+
+export type FileProcessingStatus =
+  | 'PENDING_UPLOAD'
+  | 'S1_PROCESSING'
+  | 'S1_DONE'
+  | 'S2_PROCESSING'
+  | 'S2_DONE'
+  | 'S1_FAILED'
+  | 'S2_FAILED'
+  | 'REMOVED';
+
+export type JobPipelineStatus =
+  | 'UPLOADING'
+  | 'READY_TO_ANALYZE'
+  | 'PROCESSING'
+  | 'SCORING'
+  | 'DONE'
+  | 'DONE_WITH_ERRORS'
+  | 'FAILED';
+
+export interface JobFileStatus {
+  file_id: string;
+  filename: string;
+  status: FileProcessingStatus;
+  candidate_name?: string | null;
+  needs_fallback?: boolean;
+  low_confidence_extraction?: boolean;
+  fallback_reason?: string | null;
+  error_message?: string | null;
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  status: JobPipelineStatus;
+  total_files: number;
+  remaining: number;
+  usable_files: number;
+  analyze_requested: boolean;
+  is_stalled: boolean;
+  updated_at?: string;
+  files: JobFileStatus[];
+}
+
+export interface PresignedPostInfo {
+  url: string;
+  fields: Record<string, string>;
+}
+
+export interface CreateJobFileSpec {
+  filename: string;
+  file_size: number;
+}
+
+export interface CreateJobFileResponse {
+  file_id: string;
+  filename: string;
+  s3_key: string;
+  presigned_post: PresignedPostInfo;
+}
+
+export interface CreateJobResponseV2 {
+  job_id: string;
+  id: string;
+  title: string;
+  status: string;
+  total_files: number;
+  remaining: number;
+  page?: number;
+  page_size?: number;
+  total_pages?: number;
+  has_more?: boolean;
+  next_page?: number | null;
+  files: CreateJobFileResponse[];
+}
+
+export interface AnalyzeResponseV2 {
+  job_id: string;
+  status: string;
+  analyze_requested: boolean;
+  remaining: number;
+  usable_files: number;
+  message?: string;
+}
+
+
 

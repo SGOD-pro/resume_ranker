@@ -1,10 +1,10 @@
 /**
- * AnalyzeButton.tsx — Phase-aware analyze trigger
- * ==================================================
- * - During 'extracting': disabled, tooltip "Extraction in progress"
- * - During 'scoring': disabled, tooltip "Scoring in progress"
- * - On click: validates weights, calls scoring API
- * - On scoring 500/validation error: blocking Alert (not toast)
+ * AnalyzeButton.tsx — Phase 2 barrier trigger and short-polling status
+ * ====================================================================
+ * - Submits explicit file_ids and JD criteria via POST /api/v2/jobs/{job_id}/analyze
+ * - Polls GET /api/v2/jobs/{job_id}/status using ETag / 304 Not Modified
+ * - Updates per-file progress and handles is_stalled detection
+ * - Fetches final rankings from GET /api/v2/jobs/{job_id}/results upon terminal DONE
  */
 
 import { useCallback, useEffect, useRef } from 'react';
@@ -15,7 +15,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useJobStore } from '@/store/job-store';
 import { useAppStore } from '@/store/app-store';
 import { useCandidateStore } from '@/store/candidate-store';
-import { requestAnalysis, getAnalysisStatus, getResults, updateJob, scoreJob } from '@/lib/api';
+import {
+  triggerAnalysis,
+  pollJobStatus,
+  getResults,
+  subscribeToJobExtraction,
+} from '@/lib/api';
 import { mapScoredCandidates } from '@/lib/mapScoredCandidate';
 
 export function AnalyzeButton() {
@@ -23,18 +28,27 @@ export function AnalyzeButton() {
   const appPhase = useAppStore((s) => s.appPhase);
   const setAppPhase = useAppStore((s) => s.setAppPhase);
   const jobId = useAppStore((s) => s.jobId);
+  const fileIdMap = useAppStore((s) => s.fileIdMap);
+  const etag = useAppStore((s) => s.etag);
+  const setEtag = useAppStore((s) => s.setEtag);
+  const setJobFiles = useAppStore((s) => s.setJobFiles);
+  const jobFiles = useAppStore((s) => s.jobFiles);
+  const setIsStalled = useAppStore((s) => s.setIsStalled);
   const setBlockingError = useAppStore((s) => s.setBlockingError);
+  const resetUploadProgress = useAppStore((s) => s.resetUploadProgress);
   const setCandidates = useCandidateStore((s) => s.setCandidates);
   const setUpload = useCandidateStore((s) => s.setUpload);
-  const handleClickRef = useRef<(() => Promise<void>) | null>(null);
-  // Track whether user clicked Analyze while fast_preprocessing is still running
-  const analyzeRequestedRef = useRef(false);
+  const etagRef = useRef<string | null>(etag);
 
+  useEffect(() => {
+    etagRef.current = etag;
+  }, [etag]);
 
   const isDisabled =
     isAnalyzing ||
     appPhase === 'uploading' ||
     appPhase === 'analysis_queued' ||
+    appPhase === 'processing' ||
     appPhase === 'fallback_processing' ||
     appPhase === 'final_ranking' ||
     appPhase === 'scoring' ||
@@ -47,72 +61,126 @@ export function AnalyzeButton() {
     switch (appPhase) {
       case 'uploading':
         return 'Upload in progress';
-      case 'analysis_queued':
-        return 'Analysis queued';
-      case 'fast_preprocessing':
-        return 'Click to analyze — parsing continues in background';
+      case 'processing':
       case 'fallback_processing':
-        return 'Deeper extraction in progress';
-      case 'final_ranking':
+        return 'Analysis and deep extraction in progress';
       case 'scoring':
+      case 'final_ranking':
         return 'Scoring in progress';
       default:
         return null;
     }
   };
 
-  /** Poll durable upload session progress until terminal state */
-  const pollAnalysisProgress = useCallback(
-    async (currentJobId: string): Promise<void> => {
-      const maxAttempts = 180;
-      for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        try {
-          const statusRes = await getAnalysisStatus(currentJobId);
-          const st = statusRes.status;
+  /** Stream job status via Server-Sent Events (SSE) without continuous hard short-polling */
+  const monitorAnalysisProgress = useCallback(
+    (currentJobId: string): Promise<void> => {
+      return new Promise<void>((resolve, reject) => {
+        let isDone = false;
+        let unsubscribe: (() => void) | null = null;
+        let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-          if (st === 'FAST_PREPROCESSING' || st === 'FAST_PARSING') {
-            setAppPhase('fast_preprocessing');
-          } else if (st === 'ANALYSIS_REQUESTED') {
-            setAppPhase('analysis_queued');
-          } else if (st === 'FALLBACK_PROCESSING') {
-            setAppPhase('fallback_processing');
-          } else if (st === 'FINAL_RANKING') {
-            setAppPhase('final_ranking');
-          } else if (st === 'READY_TO_ANALYZE') {
-            // Fast-parse complete, waiting for Analyze click — transition UI
-            setAppPhase('ready_to_analyze');
-            // If user had already clicked Analyze (race), re-trigger immediately
-            if (analyzeRequestedRef.current) {
-              handleClickRef.current?.();
-            }
-            return;
-          } else if (st === 'READY' || st === 'READY_WITH_WARNINGS') {
+        const cleanup = () => {
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+          }
+          if (fallbackTimer) {
+            clearTimeout(fallbackTimer);
+            fallbackTimer = null;
+          }
+        };
+
+        const handleSuccess = async (totalCandidates?: number) => {
+          if (isDone) return;
+          isDone = true;
+          cleanup();
+          try {
             const results = await getResults(currentJobId);
-            const mapped = mapScoredCandidates(results.candidates, currentJobId);
+            const mapped = mapScoredCandidates(results.candidates || [], currentJobId);
             setCandidates(mapped);
             setUpload({
-              totalFiles: results.total_candidates,
-              analyzedFiles: results.total_candidates,
+              totalFiles: totalCandidates ?? results.total_candidates ?? mapped.length,
+              analyzedFiles: results.total_candidates ?? mapped.length,
               processingFiles: 0,
             });
             setAppPhase('complete');
             toast.success('Analysis complete');
-            return;
-          } else if (st === 'FAILED') {
-            const errDoc = statusRes.documents?.find((d) => d.error_reason);
-            throw new Error(errDoc?.error_reason || 'Analysis processing failed.');
+            resolve();
+          } catch (err) {
+            reject(err);
           }
-        } catch (pollErr: unknown) {
-          // If status route not ready or error, continue polling unless terminal
-          if (i > 5 && pollErr instanceof Error && pollErr.message.includes('failed')) {
-            throw pollErr;
+        };
+
+        const handleFallbackPoll = async () => {
+          if (isDone) return;
+          try {
+            const pollRes = await pollJobStatus(currentJobId, etagRef.current);
+            if (pollRes.etag) {
+              setEtag(pollRes.etag);
+              etagRef.current = pollRes.etag;
+            }
+            const statusRes = pollRes.status;
+            if (statusRes) {
+              if (statusRes.files) {
+                setJobFiles(statusRes.files);
+              }
+              if (statusRes.status === 'DONE' || statusRes.status === 'DONE_WITH_ERRORS') {
+                await handleSuccess(statusRes.usable_files);
+                return;
+              }
+              if (statusRes.status === 'FAILED') {
+                cleanup();
+                reject(new Error('Analysis processing failed on server.'));
+                return;
+              }
+            }
+          } catch {
+            // ignore network glitch on single poll
           }
-        }
-      }
-      throw new Error('Analysis timed out. Please refresh to check results.');
+
+          if (!isDone) {
+            // Adaptive retry: check again in 8s if still processing
+            fallbackTimer = setTimeout(handleFallbackPoll, 8000);
+          }
+        };
+
+        unsubscribe = subscribeToJobExtraction(currentJobId, {
+          onProgress: (data) => {
+            if (isDone) return;
+            if (data.files) {
+              setJobFiles(data.files);
+            }
+            if (data.is_stalled) {
+              setIsStalled(true);
+            }
+            const st = data.job_status || data.status;
+            if (st === 'PROCESSING') {
+              setAppPhase('processing');
+            } else if (st === 'SCORING') {
+              setAppPhase('scoring');
+            }
+            if (data.total_files !== undefined) {
+              setUpload({
+                totalFiles: data.total_files,
+                analyzedFiles: data.usable_files ?? (data.total_files - (data.remaining ?? 0)),
+                processingFiles: data.remaining ?? 0,
+              });
+            }
+          },
+          onComplete: async (data) => {
+            await handleSuccess(data.usable);
+          },
+          onError: () => {
+            // On SSE disconnection, smoothly activate gentle fallback poll without spamming
+            if (!isDone && !fallbackTimer) {
+              fallbackTimer = setTimeout(handleFallbackPoll, 3000);
+            }
+          },
+        });
+      });
     },
-    [setAppPhase, setCandidates, setUpload],
+    [setAppPhase, setCandidates, setUpload, setEtag, setJobFiles, setIsStalled],
   );
 
   const handleClick = useCallback(async () => {
@@ -133,119 +201,59 @@ export function AnalyzeButton() {
     }
 
     setAnalyzing(true);
-    // Mark intent in case we're still in fast_preprocessing
-    analyzeRequestedRef.current = true;
+    resetUploadProgress();
+    setAppPhase('processing');
 
     try {
-      // Phase 0: Push current JD form state to backend
-      try {
-        await updateJob(jobId, {
-          title: job.title || 'Untitled Job',
-          department: job.department,
-          description: job.description,
-          must_have_skills: job.mustHaveSkills,
-          nice_to_have_skills: job.niceToHaveSkills,
-          min_years: job.minYears,
-          max_years: job.maxYears,
-          education_level: job.educationLevel,
-          education_field: job.educationField,
-          keywords: job.keywords,
-        });
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to update job configuration.';
-        setBlockingError({
-          title: 'Config Update Failed',
-          message,
-          onRetry: () => handleClickRef.current?.(),
-        });
-        setAppPhase('ready_to_analyze');
-        setAnalyzing(false);
-        analyzeRequestedRef.current = false;
-        return;
+      // Submit explicit file IDs and finalized criteria directly to analysis barrier
+      const resolvedFileIds =
+        Object.values(fileIdMap).length > 0
+          ? Object.values(fileIdMap)
+          : (jobFiles || []).map((f) => f.file_id);
+
+      const analysisPayload: Parameters<typeof triggerAnalysis>[1] = {
+        title: job.title || 'Untitled Job',
+        department: job.department,
+        description: job.description,
+        must_have_skills: job.mustHaveSkills,
+        nice_to_have_skills: job.niceToHaveSkills,
+        min_years: job.minYears,
+        max_years: job.maxYears,
+        education_level: job.educationLevel,
+        education_field: job.educationField,
+        keywords: job.keywords,
+        weights: job.weights,
+      };
+
+      if (resolvedFileIds.length > 0) {
+        analysisPayload.file_ids = resolvedFileIds;
       }
 
-      // Phase 1: Request analysis authorization.
-      // If we're still in fast_preprocessing, the backend will persist analysis_requested=True
-      // and the coordinator will dispatch ODL/final-rank as soon as fast-parse completes.
-      setAppPhase('analysis_queued');
-      try {
-        await requestAnalysis(jobId, { weights: job.weights });
-      } catch (reqErr) {
-        console.warn('Direct analysis trigger failed, falling back to synchronous score:', reqErr);
-        // Fallback to synchronous score endpoint if legacy backend
-        const response = await scoreJob(jobId, { weights: job.weights });
-        const mapped = mapScoredCandidates(response.candidates, jobId);
-        setCandidates(mapped);
-        setUpload({
-          totalFiles: response.total_candidates,
-          analyzedFiles: response.total_candidates,
-          processingFiles: 0,
-        });
-        setAppPhase('complete');
-        toast.success('Analysis complete');
-        analyzeRequestedRef.current = false;
-        return;
-      }
+      await triggerAnalysis(jobId, analysisPayload);
 
-      // Phase 2: Poll durable pipeline progress through barrier and ranking
-      await pollAnalysisProgress(jobId);
+      // Stream real-time progress via SSE
+      await monitorAnalysisProgress(jobId);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred during analysis.';
       setBlockingError({
         title: 'Analysis Failed',
         message,
-        onRetry: () => handleClickRef.current?.(),
+        onRetry: () => handleClick(),
       });
       setAppPhase('ready_to_analyze');
     } finally {
       setAnalyzing(false);
-      analyzeRequestedRef.current = false;
     }
-  }, [jobId, job, setAnalyzing, setAppPhase, setBlockingError, pollAnalysisProgress, setCandidates, setUpload]);
-
-
-  useEffect(() => {
-    handleClickRef.current = handleClick;
-  }, [handleClick]);
-
-  // Background polling: while in fast_preprocessing, poll every 3s to detect
-  // when READY_TO_ANALYZE is reached and auto-transition the UI.
-  useEffect(() => {
-    if (appPhase !== 'fast_preprocessing' || !jobId || isAnalyzing) return;
-
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const statusRes = await getAnalysisStatus(jobId);
-        const st = statusRes.status;
-        if (cancelled) return;
-
-        if (st === 'READY_TO_ANALYZE') {
-          setAppPhase('ready_to_analyze');
-          if (analyzeRequestedRef.current) {
-            handleClickRef.current?.();
-          }
-        } else if (st === 'READY' || st === 'READY_WITH_WARNINGS') {
-          // Analysis already completed (e.g. after page refresh)
-          setAppPhase('complete');
-        } else if (st === 'FAILED') {
-          setAppPhase('error');
-        }
-        // If still FAST_PREPROCESSING, the interval will poll again
-      } catch {
-        // ignore transient errors — keep polling
-      }
-    };
-
-    const intervalId = setInterval(poll, 3000);
-    poll(); // immediate first check
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [appPhase, jobId, isAnalyzing, setAppPhase]);
+  }, [
+    jobId,
+    job,
+    fileIdMap,
+    setAnalyzing,
+    setAppPhase,
+    setBlockingError,
+    monitorAnalysisProgress,
+  ]);
 
   const tooltipText = getTooltipText();
   const showTooltip = isDisabled && tooltipText;
@@ -259,17 +267,8 @@ export function AnalyzeButton() {
       {isAnalyzing ? (
         <span className="flex items-center gap-sp-2">
           <Spinner className="text-current" />
-          {appPhase === 'analysis_queued'
-            ? 'Analysis queued…'
-            : appPhase === 'fast_preprocessing'
-              ? 'Preprocessing…'
-              : appPhase === 'fallback_processing'
-                ? 'Deep parsing…'
-                : appPhase === 'final_ranking' || appPhase === 'scoring'
-                  ? 'Scoring…'
-                  : 'Analyzing…'}
+          {appPhase === 'scoring' ? 'Scoring…' : 'Analyzing…'}
         </span>
-
       ) : (
         'Analyze Resumes'
       )}

@@ -11,16 +11,25 @@ export function EducationSection({ education }: EducationSectionProps) {
         Education
       </h4>
       <div className="space-y-sp-3">
-        {education.map((entry) => (
-          <div key={entry.id} className="border-l-heavy border-foreground pl-sp-3">
-            <p className="text-sm font-semibold text-foreground">
-              {entry.degree} - {entry.field}
-            </p>
-            <p className="text-tiny font-mono text-muted-foreground mt-sp-1">
-              {entry.institution} · {entry.yearRange}
-            </p>
-          </div>
-        ))}
+        {education.length === 0 ? (
+          <p className="text-tiny font-mono text-muted-foreground italic">No education records detected</p>
+        ) : (
+          education.map((entry) => {
+            const subtitle = [entry.institution, entry.yearRange].filter(Boolean).join(' · ');
+            return (
+              <div key={entry.id} className="border-l-heavy border-foreground pl-sp-3">
+                <p className="text-sm font-semibold text-foreground">
+                  {entry.degree}{entry.field ? ` - ${entry.field}` : ''}
+                </p>
+                {subtitle && (
+                  <p className="text-tiny font-mono text-muted-foreground mt-sp-1">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

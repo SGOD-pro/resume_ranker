@@ -173,6 +173,13 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
             continue
 
         raw_s3_key = file_item.s3_raw_key if file_item else f"jobs/{job_id}/raw/{file_id}.pdf"
+        file_size = getattr(file_item, "file_size", 0) or stage1_data.get("file_size", 0)
+        # Register document into durable ODL collector
+        try:
+            files_repo.add_to_odl_collector(job_id, file_id, raw_s3_key, file_size)
+        except Exception as coll_err:
+            logger.warning("Stage2Worker: Failed to buffer to ODL collector for %s/%s: %s", job_id, file_id, coll_err)
+
         eligible_docs.append({
             "job_id": job_id,
             "file_id": file_id,
@@ -182,7 +189,36 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
             "fields": stage1_data.get("fields", {}),
             "quality": stage1_data.get("quality", {}),
             "unresolved": stage1_data.get("unresolved_chunks", []),
+            "file_size": file_size,
         })
+
+    # Assemble any previously buffered documents from the durable collector across separate invocations
+    discovered_job_ids = {d["job_id"] for d in eligible_docs}
+    for jid in discovered_job_ids:
+        try:
+            buffered = files_repo.get_odl_collector_items(jid)
+            for b_item in buffered:
+                b_fid = b_item["file_id"]
+                if not any(d["file_id"] == b_fid for d in eligible_docs):
+                    b_file = files_repo.get_file(jid, b_fid)
+                    if b_file and not b_file.is_terminal:
+                        try:
+                            b_s1 = storage.get_stage1_json(jid, b_fid)
+                            eligible_docs.append({
+                                "job_id": jid,
+                                "file_id": b_fid,
+                                "msg_id": b_fid,
+                                "raw_s3_key": b_item.get("s3_key") or b_file.s3_raw_key,
+                                "stage1_data": b_s1,
+                                "fields": b_s1.get("fields", {}),
+                                "quality": b_s1.get("quality", {}),
+                                "unresolved": b_s1.get("unresolved_chunks", []),
+                                "file_size": b_item.get("file_size", 0),
+                            })
+                        except Exception as b_err:
+                            logger.warning("Stage2Worker: Could not load stage1 for buffered doc %s: %s", b_fid, b_err)
+        except Exception as coll_err:
+            logger.warning("Stage2Worker: Failed to query ODL collector for job %s: %s", jid, coll_err)
 
     if not eligible_docs:
         return {"processed": 0, "succeeded": 0, "failed_items": []}
@@ -194,14 +230,38 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         if q.get("score", 1.0) < 0.90 or q.get("looks_tabular", False):
             odl_candidates.append(doc)
 
-    # Step 3: Execute real bounded ODL microbatches (up to 20 documents per invocation)
+    # Step 3: Execute real bounded ODL microbatches (up to 20 documents AND 20 MB budget)
     if odl_candidates:
-        logger.info("Stage2Worker: %d/%d documents require ODL fallback. Microbatching up to %d per call...",
-                    len(odl_candidates), len(eligible_docs), MAX_ODL_MICROBATCH_SIZE)
+        logger.info(
+            "Stage2Worker: %d/%d documents require ODL fallback. Microbatching up to %d documents and %d bytes per call...",
+            len(odl_candidates), len(eligible_docs), MAX_ODL_MICROBATCH_SIZE, MAX_ODL_BYTE_BUDGET
+        )
 
-        # Partition into microbatches of max 20
-        for i in range(0, len(odl_candidates), MAX_ODL_MICROBATCH_SIZE):
-            chunk = odl_candidates[i : i + MAX_ODL_MICROBATCH_SIZE]
+        # Partition into microbatches enforcing BOTH max 20 documents AND max 20 MB cumulative payload
+        microbatches: List[List[Dict[str, Any]]] = []
+        current_chunk: List[Dict[str, Any]] = []
+        current_bytes = 0
+
+        for doc in odl_candidates:
+            doc_size = doc.get("file_size") or 0
+            if doc_size <= 0:
+                doc_size = 100 * 1024  # Default 100KB if unspecified
+
+            if current_chunk and (
+                len(current_chunk) >= MAX_ODL_MICROBATCH_SIZE
+                or (current_bytes + doc_size > MAX_ODL_BYTE_BUDGET)
+            ):
+                microbatches.append(current_chunk)
+                current_chunk = [doc]
+                current_bytes = doc_size
+            else:
+                current_chunk.append(doc)
+                current_bytes += doc_size
+
+        if current_chunk:
+            microbatches.append(current_chunk)
+
+        for batch_idx, chunk in enumerate(microbatches):
             descriptors = [
                 DocDescriptor(
                     document_id=d["file_id"],
@@ -210,9 +270,11 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 )
                 for d in chunk
             ]
-
-            logger.info("Stage2Worker: Invoking ODL parse_batch for %d documents (microbatch %d-%d)",
-                        len(descriptors), i + 1, i + len(chunk))
+            batch_bytes = sum(d.get("file_size", 0) for d in chunk)
+            logger.info(
+                "|ODL-PARSER| [Job: %s] Processing batch of %d files (total %d bytes, microbatch %d/%d)",
+                chunk[0]["job_id"], len(descriptors), batch_bytes, batch_idx + 1, len(microbatches)
+            )
 
             try:
                 batch_res = parse_batch(descriptors)
@@ -227,18 +289,27 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                             odl_fields = odl_extracted.get("fields", {})
                             d["fields"] = merge_extracted_fields(d["fields"], odl_fields, "ODL")
                             d["unresolved"] = odl_extracted.get("unresolved_chunks", [])
-                            logger.info("Stage2Worker: ODL parse succeeded for %s/%s", d["job_id"], fid)
+                            logger.info("|ODL-PARSER| [Job: %s, File: %s] ODL extraction succeeded for candidate='%s'", d["job_id"], fid, d["fields"].get("name"))
                         except Exception as parse_e:
-                            logger.warning("Stage2Worker: Markdown extraction error on ODL result for %s/%s: %s",
-                                           d["job_id"], fid, parse_e)
+                            logger.warning(
+                                "Stage2Worker: Markdown extraction error on ODL result for %s/%s: %s",
+                                d["job_id"], fid, parse_e
+                            )
                     elif fid in batch_res.failed:
                         odl_err = batch_res.failed[fid]
-                        logger.warning("Stage2Worker: ODL parse failed for %s/%s (isolated): %s",
-                                       d["job_id"], fid, odl_err)
+                        logger.warning(
+                            "Stage2Worker: ODL parse failed for %s/%s (isolated): %s",
+                            d["job_id"], fid, odl_err
+                        )
                         # Retain document for subsequent Nova fallback or error handling
             except Exception as odl_batch_exc:
                 logger.error("Stage2Worker: ODL parse_batch invocation failed: %s", odl_batch_exc)
-                # Keep moving: remaining stages will evaluate fields
+            finally:
+                for d in chunk:
+                    try:
+                        files_repo.remove_from_odl_collector(d["job_id"], [d["file_id"]])
+                    except Exception as coll_err:
+                        logger.warning("Stage2Worker: Failed to remove from ODL collector: %s", coll_err)
 
     # Step 4: Per-document LLM fallback with atomic per-job reservation
     succeeded_count = 0
@@ -249,13 +320,13 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         fields = doc["fields"]
         unresolved = doc["unresolved"]
 
-        has_name = bool(fields.get("name"))
+        has_name = bool(fields.get("name")) and str(fields.get("name")).strip().lower() not in ("candidate", "unknown", "")
         has_skills = bool(fields.get("skills"))
-        has_exp = bool(fields.get("experience"))
+        has_exp = bool(fields.get("experience")) and len(fields.get("experience")) > 0
         low_confidence = False
         fallback_reason = None
 
-        if not (has_name and (has_skills or has_exp)):
+        if not (has_name and has_exp and has_skills):
             # Atomically reserve per-job LLM budget slot
             allowed, cap_reason = files_repo.reserve_llm_slot(
                 job_id=job_id,
@@ -269,14 +340,19 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 low_confidence = True
                 fallback_reason = cap_reason
             else:
-                logger.info("Stage2Worker: Invoking Nova LLM fallback for %s/%s", job_id, file_id)
+                logger.info(
+                    "|LLM| [Job: %s, File: %s] Triggering Nova fallback for missing/unresolved fields (has_name=%s, has_exp=%s, has_skills=%s)",
+                    job_id, file_id, has_name, has_exp, has_skills
+                )
                 try:
                     nova = NovaService()
-                    chunks = unresolved if unresolved else [json.dumps(fields)]
+                    raw_resume_text = doc.get("stage1_data", {}).get("raw_text")
+                    chunks = unresolved if unresolved else ([raw_resume_text] if raw_resume_text else [json.dumps(fields)])
                     nova_fields = nova.resolve_chunks(chunks, existing_fields=fields)
                     doc["fields"] = merge_extracted_fields(fields, nova_fields, "Nova")
                     fields = doc["fields"]
-                    logger.info("Stage2Worker: Nova completed fallback for %s/%s", job_id, file_id)
+                    logger.info("|LLM| [Job: %s, File: %s] Nova fallback completed successfully. Resolved candidate='%s'",
+                                job_id, file_id, fields.get("name"))
                 except NovaThrottlingError as nte:
                     logger.warning("Stage2Worker: Nova throttled for %s/%s (retryable): %s", job_id, file_id, nte)
                     failed_items.append(doc["msg_id"])
@@ -305,6 +381,10 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         if fallback_reason:
             fields["fallback_reason"] = fallback_reason
 
+        fields["document_id"] = file_id
+        fields["file_id"] = file_id
+        fields["job_id"] = job_id
+
         # Upload final structured JSON to stage2/
         try:
             s3_stage2_key = storage.upload_stage2_json(job_id, file_id, fields)
@@ -331,6 +411,13 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 terminal_status=FileStatus.S2_FAILED.value,
                 error_message=str(term_exc),
             )
+
+    # Always ensure processed documents are removed from ODL buffer
+    for doc in eligible_docs:
+        try:
+            files_repo.remove_from_odl_collector(doc["job_id"], [doc["file_id"]])
+        except Exception:
+            pass
 
     return {
         "processed": len(eligible_docs),

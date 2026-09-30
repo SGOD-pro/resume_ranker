@@ -20,8 +20,64 @@ from src.pipeline.fast_parse_worker import process_fast_parse_message
 from src.pipeline.final_rank_worker import process_final_rank_message
 from src.pipeline.nova_queue_worker import process_nova_message
 from src.pipeline.odl_batch_worker import process_odl_batch_message
+from src.pipeline.stage1_worker import extract_job_file_from_message, process_stage1_message
+from src.pipeline.stage2_worker import process_stage2_batch, _extract_job_file_id
+from src.pipeline.scoring_worker import process_scoring_message
 
 logger = logging.getLogger(__name__)
+
+
+def dispatch_fast_parse(msg) -> None:
+    from src.infrastructure.repositories.files_repository import FilesRepository
+    job_id, file_id, _ = extract_job_file_from_message(msg)
+    if job_id and file_id:
+        f_repo = FilesRepository()
+        if f_repo.get_file(job_id, file_id):
+            process_stage1_message(msg)
+            return
+    process_fast_parse_message(msg)
+
+
+def dispatch_odl_batch(msgs) -> None:
+    from src.infrastructure.repositories.files_repository import FilesRepository
+    f_repo = FilesRepository()
+    file_msgs = []
+    doc_msgs = []
+    for m in msgs:
+        jid, fid = _extract_job_file_id(m)
+        if jid and fid and f_repo.get_file(jid, fid):
+            file_msgs.append(m)
+        else:
+            doc_msgs.append(m)
+
+    if file_msgs:
+        process_stage2_batch(file_msgs)
+    for m in doc_msgs:
+        process_odl_batch_message(m)
+
+
+def dispatch_nova(msg) -> None:
+    from src.infrastructure.repositories.files_repository import FilesRepository
+    jid, fid = _extract_job_file_id(msg)
+    if jid and fid:
+        f_repo = FilesRepository()
+        if f_repo.get_file(jid, fid):
+            process_stage2_batch([msg])
+            return
+    process_nova_message(msg)
+
+
+def dispatch_final_rank(msg) -> None:
+    from src.infrastructure.repositories.files_repository import FilesRepository
+    job_id = getattr(msg, "job_id", None)
+    if not job_id and hasattr(msg, "body") and isinstance(msg.body, dict):
+        job_id = msg.body.get("job_id")
+    if job_id:
+        f_repo = FilesRepository()
+        if f_repo.list_files_for_job(job_id):
+            process_scoring_message(msg)
+            return
+    process_final_rank_message(msg)
 
 
 def drain_all_queues_sync(max_rounds: int = 50) -> int:
@@ -40,25 +96,25 @@ def drain_all_queues_sync(max_rounds: int = 50) -> int:
         # 1. Fast parse queue
         fast_msgs = adapter.receive_messages(FAST_PARSE_QUEUE, max_messages=10, wait_time_seconds=1)
         for msg in fast_msgs:
-            process_fast_parse_message(msg)
+            dispatch_fast_parse(msg)
             processed_in_round += 1
 
         # 2. ODL batch queue
-        odl_msgs = adapter.receive_messages(ODL_BATCH_QUEUE, max_messages=5, wait_time_seconds=1)
-        for msg in odl_msgs:
-            process_odl_batch_message(msg)
-            processed_in_round += 1
+        odl_msgs = adapter.receive_messages(ODL_BATCH_QUEUE, max_messages=10, wait_time_seconds=1)
+        if odl_msgs:
+            dispatch_odl_batch(odl_msgs)
+            processed_in_round += len(odl_msgs)
 
         # 3. Nova queue
         nova_msgs = adapter.receive_messages(NOVA_QUEUE, max_messages=5, wait_time_seconds=1)
         for msg in nova_msgs:
-            process_nova_message(msg)
+            dispatch_nova(msg)
             processed_in_round += 1
 
         # 4. Final rank queue
         rank_msgs = adapter.receive_messages(FINAL_RANK_QUEUE, max_messages=5, wait_time_seconds=1)
         for msg in rank_msgs:
-            process_final_rank_message(msg)
+            dispatch_final_rank(msg)
             processed_in_round += 1
 
         total_processed += processed_in_round
@@ -90,27 +146,27 @@ class BackgroundWorkerDaemon:
 
         while self._running:
             try:
-                # 1. Fast parse
-                fast_msgs = adapter.receive_messages(FAST_PARSE_QUEUE, max_messages=4)
-                for msg in fast_msgs:
-                    await asyncio.to_thread(process_fast_parse_message, msg)
+                # 1. Fast parse (multithreaded concurrent execution)
+                fast_msgs = adapter.receive_messages(FAST_PARSE_QUEUE, max_messages=10)
+                if fast_msgs:
+                    await asyncio.gather(*(asyncio.to_thread(dispatch_fast_parse, msg) for msg in fast_msgs))
 
                 # 2. ODL batch
-                odl_msgs = adapter.receive_messages(ODL_BATCH_QUEUE, max_messages=2)
-                for msg in odl_msgs:
-                    await asyncio.to_thread(process_odl_batch_message, msg)
+                odl_msgs = adapter.receive_messages(ODL_BATCH_QUEUE, max_messages=10)
+                if odl_msgs:
+                    await asyncio.to_thread(dispatch_odl_batch, odl_msgs)
 
-                # 3. Nova
-                nova_msgs = adapter.receive_messages(NOVA_QUEUE, max_messages=2)
-                for msg in nova_msgs:
-                    await asyncio.to_thread(process_nova_message, msg)
+                # 3. Nova (concurrent LLM requests)
+                nova_msgs = adapter.receive_messages(NOVA_QUEUE, max_messages=4)
+                if nova_msgs:
+                    await asyncio.gather(*(asyncio.to_thread(dispatch_nova, msg) for msg in nova_msgs))
 
                 # 4. Final rank
                 rank_msgs = adapter.receive_messages(FINAL_RANK_QUEUE, max_messages=2)
                 for msg in rank_msgs:
-                    await asyncio.to_thread(process_final_rank_message, msg)
+                    await asyncio.to_thread(dispatch_final_rank, msg)
 
-                # 5. Outbox relay — periodically flush stuck PENDING outbox records
+                # 5. Outbox relay — periodically flush stuck PENDING outbox records across all jobs
                 import time as _time
                 now = _time.monotonic()
                 if now - last_relay >= _RELAY_INTERVAL:
@@ -122,6 +178,15 @@ class BackgroundWorkerDaemon:
                             logger.info("Outbox relay: re-dispatched %d stuck records", relayed)
                     except Exception as relay_err:
                         logger.warning("Outbox relay error: %s", relay_err)
+
+                    try:
+                        from src.infrastructure.repositories.files_repository import FilesRepository
+                        relayed_outbox, recovered_jobs = await asyncio.to_thread(FilesRepository().reconcile_all_pending_outboxes)
+                        if relayed_outbox or recovered_jobs:
+                            logger.info("Independent outbox relay: %d events relayed, %d stranded jobs recovered",
+                                        relayed_outbox, recovered_jobs)
+                    except Exception as repo_relay_err:
+                        logger.warning("FilesRepository outbox relay error: %s", repo_relay_err)
 
             except Exception as e:
                 logger.error("BackgroundWorkerDaemon iteration error: %s", e)

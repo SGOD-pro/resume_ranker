@@ -6,6 +6,7 @@
  */
 
 import { create } from 'zustand';
+import type { JobFileStatus } from './types';
 
 export type BackendStatus = 'checking' | 'waking-up' | 'ready' | 'unreachable';
 export type AppPhase =
@@ -14,6 +15,7 @@ export type AppPhase =
   | 'ready_to_analyze'
   | 'analysis_queued'
   | 'fast_preprocessing'
+  | 'processing'
   | 'fallback_processing'
   | 'final_ranking'
   | 'extracting'
@@ -45,6 +47,10 @@ interface AppStore {
   blockingError: BlockingError | null;
   jobId: string | null;
   sessionId: string | null;
+  jobFiles: JobFileStatus[];
+  fileIdMap: Record<string, string>;
+  isStalled: boolean;
+  etag: string | null;
 
   setBackendStatus: (status: BackendStatus) => void;
   setAppPhase: (phase: AppPhase) => void;
@@ -54,6 +60,10 @@ interface AppStore {
   setBlockingError: (error: BlockingError | null) => void;
   setJobId: (id: string | null) => void;
   setSessionId: (id: string | null) => void;
+  setJobFiles: (files: JobFileStatus[]) => void;
+  setFileIdMap: (map: Record<string, string>) => void;
+  setIsStalled: (stalled: boolean) => void;
+  setEtag: (etag: string | null) => void;
 }
 
 const defaultUploadProgress: UploadProgress = {
@@ -73,6 +83,10 @@ export const useAppStore = create<AppStore>((set) => ({
   blockingError: null,
   jobId: null,
   sessionId: null,
+  jobFiles: [],
+  fileIdMap: {},
+  isStalled: false,
+  etag: null,
 
   setBackendStatus: (status) => set({ backendStatus: status }),
   setAppPhase: (phase) => set({ appPhase: phase }),
@@ -86,5 +100,9 @@ export const useAppStore = create<AppStore>((set) => ({
   setBlockingError: (error) => set({ blockingError: error }),
   setJobId: (id) => set({ jobId: id }),
   setSessionId: (id) => set({ sessionId: id }),
+  setJobFiles: (files) => set({ jobFiles: files }),
+  setFileIdMap: (map) => set({ fileIdMap: map }),
+  setIsStalled: (stalled) => set({ isStalled: stalled }),
+  setEtag: (etag) => set({ etag }),
 }));
 

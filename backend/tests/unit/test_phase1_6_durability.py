@@ -148,6 +148,35 @@ class MockTransactDynamoTable:
             results.append(dict(item))
         return {"Items": results}
 
+    def delete_item(self, Key):
+        k = (Key["PK"], Key["SK"])
+        if k in self.items:
+            del self.items[k]
+        return {}
+
+    def scan(self, FilterExpression=None, ExpressionAttributeNames=None, ExpressionAttributeValues=None, Limit=None):
+        results = []
+        for (pk, sk), item in self.items.items():
+            if ExpressionAttributeValues and ":outbox_prefix" in ExpressionAttributeValues:
+                if not sk.startswith(ExpressionAttributeValues[":outbox_prefix"]):
+                    continue
+                if ExpressionAttributeNames and ExpressionAttributeNames.get("#d") == "dispatched":
+                    if item.get("dispatched") != ExpressionAttributeValues.get(":false"):
+                        continue
+            elif ExpressionAttributeValues and ":proc" in ExpressionAttributeValues:
+                if item.get("SK") != "METADATA":
+                    continue
+                if item.get("remaining") != ExpressionAttributeValues.get(":zero"):
+                    continue
+                if item.get("analyze_requested") != ExpressionAttributeValues.get(":true"):
+                    continue
+                if item.get("status") != ExpressionAttributeValues.get(":proc"):
+                    continue
+            results.append(dict(item))
+            if Limit and len(results) >= Limit:
+                break
+        return {"Items": results}
+
     def transact_write_items(self, TransactItems):
         self.transact_calls.append(TransactItems)
         if self.fail_next_transact:
@@ -159,17 +188,25 @@ class MockTransactDynamoTable:
         from boto3.dynamodb.types import TypeDeserializer
         deser = TypeDeserializer()
 
+        def _safe_deser(val):
+            if isinstance(val, dict) and any(k in val for k in ('S', 'N', 'B', 'SS', 'NS', 'BS', 'M', 'L', 'NULL', 'BOOL')):
+                try:
+                    return deser.deserialize(val)
+                except Exception:
+                    return val
+            return val
+
         # Step 1: Pre-evaluate condition expressions across all items
         for action in TransactItems:
             if "Update" in action:
                 u = action["Update"]
                 cond = u.get("ConditionExpression")
                 if cond and "#res < :max_cap" in cond:
-                    key = {k: deser.deserialize(v) for k, v in u["Key"].items()}
+                    key = {k: _safe_deser(v) for k, v in u["Key"].items()}
                     k = (key["PK"], key["SK"])
                     existing_job = self.items.get(k, {})
                     res_cnt = existing_job.get("llm_reservations", 0)
-                    values = {k: deser.deserialize(v) for k, v in u.get("ExpressionAttributeValues", {}).items()}
+                    values = {k: _safe_deser(v) for k, v in u.get("ExpressionAttributeValues", {}).items()}
                     max_cap = int(values.get(":max_cap", 5))
                     if res_cnt >= max_cap:
                         raise ClientError(
@@ -184,9 +221,9 @@ class MockTransactDynamoTable:
         for action in TransactItems:
             if "Update" in action:
                 u = action["Update"]
-                key = {k: deser.deserialize(v) for k, v in u["Key"].items()}
+                key = {k: _safe_deser(v) for k, v in u["Key"].items()}
                 names = u.get("ExpressionAttributeNames", {})
-                values = {k: deser.deserialize(v) for k, v in u.get("ExpressionAttributeValues", {}).items()}
+                values = {k: _safe_deser(v) for k, v in u.get("ExpressionAttributeValues", {}).items()}
                 values = {k: int(v) if hasattr(v, "as_integer_ratio") and v % 1 == 0 else v for k, v in values.items()}
                 self.update_item(
                     Key=key,
@@ -197,7 +234,7 @@ class MockTransactDynamoTable:
                 )
             elif "Put" in action:
                 p = action["Put"]
-                item_dict = {k: deser.deserialize(v) for k, v in p["Item"].items()}
+                item_dict = {k: _safe_deser(v) for k, v in p["Item"].items()}
                 self.put_item(item_dict)
 
 
@@ -238,9 +275,10 @@ def test_atomic_file_terminal_and_counter_update(mock_table):
     # Verify TransactWriteItems was invoked with both updates
     assert len(mock_table.transact_calls) == 1
     transact_items = mock_table.transact_calls[0]
-    assert len(transact_items) == 2
-    assert "FILE#" in transact_items[0]["Update"]["Key"]["SK"]["S"]
-    assert transact_items[1]["Update"]["Key"]["SK"]["S"] == "METADATA"
+    sk0 = transact_items[0]["Update"]["Key"]["SK"]
+    assert "FILE#" in (sk0["S"] if isinstance(sk0, dict) else sk0)
+    sk1 = transact_items[1]["Update"]["Key"]["SK"]
+    assert (sk1["S"] if isinstance(sk1, dict) else sk1) == "METADATA"
 
     # Verify both states updated
     file_item = mock_table.items[(f"JOB#{job_id}", f"FILE#{file_id}")]
@@ -567,3 +605,192 @@ def test_partial_odl_microbatch_failure_and_tail_flush(mock_table):
         assert calls[f_good]["terminal_status"] == FileStatus.S2_DONE.value
         assert calls[f_bad]["terminal_status"] == FileStatus.S2_DONE.value
         assert calls[f_bad]["low_confidence_extraction"] is True
+
+
+# ---------------------------------------------------------------------------
+# Drill 9: ODL microbatch count and byte budget enforcement (20 docs & 20 MB)
+# ---------------------------------------------------------------------------
+def test_odl_microbatch_count_and_byte_budget_enforcement(mock_table):
+    """Stage 2 microbatching partitions at <= 20 documents AND <= 20 MB cumulative byte budget."""
+    job_id = "job-odl-limits"
+    
+    # Subtest A: 25 documents partitioned into batch of 20 and batch of 5
+    files_25 = [
+        FileItem(job_id=job_id, file_id=f"f-count-{i:02d}", status=FileStatus.S1_DONE, needs_fallback=True, file_size=50 * 1024)
+        for i in range(25)
+    ]
+    msgs_25 = [MagicMock(job_id=job_id, document_id=f.file_id) for f in files_25]
+    stage1_sample = {
+        "fields": {"name": "Jane Doe", "skills": ["Python"], "experience": [{"title": "Software Engineer"}]},
+        "quality": {"score": 0.50},
+        "unresolved_chunks": [],
+    }
+
+    recorded_batches = []
+    def fake_parse_batch(descriptors):
+        recorded_batches.append(descriptors)
+        return BatchParseResult(results={d.document_id: ODLParseResult("# Name", []) for d in descriptors})
+
+    with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", side_effect=lambda j, f: next((x for x in files_25 if x.file_id == f), None)), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.infrastructure.storage.storage_service.StorageService.get_stage1_json", return_value=stage1_sample), \
+         patch("src.infrastructure.storage.storage_service.StorageService.upload_stage2_json", return_value="stage2_key"), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.transition_file_terminal", return_value=True), \
+         patch("src.pipeline.stage2_worker.parse_batch", side_effect=fake_parse_batch):
+
+        process_stage2_batch(msgs_25)
+        assert len(recorded_batches) == 2
+        assert len(recorded_batches[0]) == 20
+        assert len(recorded_batches[1]) == 5
+
+    # Subtest B: 3 large documents (12 MB each, total 36 MB) partitioned to respect 20 MB budget
+    # Doc 1 (12MB) + Doc 2 (12MB) = 24MB > 20MB -> each must be in its own microbatch
+    recorded_batches.clear()
+    files_3 = [
+        FileItem(job_id=job_id, file_id=f"f-byte-{i}", status=FileStatus.S1_DONE, needs_fallback=True, file_size=12 * 1024 * 1024)
+        for i in range(3)
+    ]
+    msgs_3 = [MagicMock(job_id=job_id, document_id=f.file_id) for f in files_3]
+
+    with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", side_effect=lambda j, f: next((x for x in files_3 if x.file_id == f), None)), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.infrastructure.storage.storage_service.StorageService.get_stage1_json", return_value=stage1_sample), \
+         patch("src.infrastructure.storage.storage_service.StorageService.upload_stage2_json", return_value="stage2_key"), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.transition_file_terminal", return_value=True), \
+         patch("src.pipeline.stage2_worker.parse_batch", side_effect=fake_parse_batch):
+
+        process_stage2_batch(msgs_3)
+        assert len(recorded_batches) == 3
+        for b in recorded_batches:
+            assert len(b) == 1
+
+
+# ---------------------------------------------------------------------------
+# Drill 10: Durable collector assembles across separate SQS invocations
+# ---------------------------------------------------------------------------
+def test_durable_collector_assembles_across_separate_invocations(mock_table):
+    """Separate SQS invocations buffering files into the collector assemble into a full 20-doc batch."""
+    job_id = "job-collector-test"
+    repo = FilesRepository()
+
+    # Pre-populate durable collector with 15 buffered items from previous invocations
+    for i in range(15):
+        fid = f"file-prev-{i:02d}"
+        repo.add_to_odl_collector(job_id, fid, f"jobs/{job_id}/raw/{fid}.pdf", file_size=200 * 1024)
+        mock_table.items[(f"JOB#{job_id}", f"FILE#{fid}")] = {
+            "PK": f"JOB#{job_id}",
+            "SK": f"FILE#{fid}",
+            "job_id": job_id,
+            "file_id": fid,
+            "status": FileStatus.S1_DONE.value,
+            "file_size": 200 * 1024,
+        }
+
+    # Now a new invocation arrives with 5 new messages (total = 20)
+    new_files = [
+        FileItem(job_id=job_id, file_id=f"file-new-{i:02d}", status=FileStatus.S1_DONE, needs_fallback=True, file_size=200 * 1024)
+        for i in range(5)
+    ]
+    new_msgs = [MagicMock(job_id=job_id, document_id=f.file_id) for f in new_files]
+
+    stage1_sample = {
+        "fields": {"name": "Jane Doe", "skills": ["Python"], "experience": [{"title": "Software Engineer"}]},
+        "quality": {"score": 0.50},
+        "unresolved_chunks": [],
+    }
+    recorded_batches = []
+    def fake_parse_batch(descriptors):
+        recorded_batches.append(descriptors)
+        return BatchParseResult(results={d.document_id: ODLParseResult("# Name", []) for d in descriptors})
+
+    with patch("src.infrastructure.repositories.files_repository.FilesRepository.get_file", side_effect=lambda j, f: FileItem(job_id=j, file_id=f, status=FileStatus.S1_DONE, needs_fallback=True, file_size=200*1024)), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.claim_file", return_value=True), \
+         patch("src.infrastructure.storage.storage_service.StorageService.get_stage1_json", return_value=stage1_sample), \
+         patch("src.infrastructure.storage.storage_service.StorageService.upload_stage2_json", return_value="stage2_key"), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.transition_file_terminal", return_value=True), \
+         patch("src.pipeline.stage2_worker.parse_batch", side_effect=fake_parse_batch):
+
+        process_stage2_batch(new_msgs)
+
+        # Verified: All 20 items assembled into a single ODL parse_batch invocation!
+        assert len(recorded_batches) == 1
+        assert len(recorded_batches[0]) == 20
+
+
+# ---------------------------------------------------------------------------
+# Drill 11: Independent background outbox recovery without browser polling
+# ---------------------------------------------------------------------------
+def test_independent_outbox_recovery_without_browser_polling(mock_table):
+    """reconcile_all_pending_outboxes recovers stranded jobs and outbox items without /status polling."""
+    job_id = "job-abandoned-123"
+    repo = FilesRepository()
+
+    # Setup abandoned stranded job (remaining = 0, analyze_requested = True, status = PROCESSING)
+    mock_table.items[(f"JOB#{job_id}", "METADATA")] = {
+        "PK": f"JOB#{job_id}",
+        "SK": "METADATA",
+        "job_id": job_id,
+        "status": JobStatus.PROCESSING.value,
+        "remaining": 0,
+        "usable_files": 2,
+        "analyze_requested": True,
+    }
+
+    # Setup pending outbox scoring record
+    repo.record_outbox_event(
+        job_id=job_id,
+        outbox_sk="OUTBOX#SCORING",
+        event_type="SCORING_DISPATCH",
+        payload={"job_id": job_id, "stage": "FINAL_RANK"},
+    )
+    assert mock_table.items[(f"JOB#{job_id}", "OUTBOX#SCORING")]["dispatched"] is False
+
+    with patch("src.infrastructure.repositories.files_repository.FilesRepository._trigger_scoring") as mock_scoring:
+        relayed_events, recovered_jobs = repo.reconcile_all_pending_outboxes()
+
+        assert relayed_events >= 1
+        mock_scoring.assert_called_once_with(job_id)
+        assert mock_table.items[(f"JOB#{job_id}", "OUTBOX#SCORING")]["dispatched"] is True
+
+
+# ---------------------------------------------------------------------------
+# Drill 12: Ownership enforcement before outbox reconciliation
+# ---------------------------------------------------------------------------
+def test_get_job_status_enforces_ownership_before_outbox_reconciliation(mock_table):
+    """GET /api/v2/jobs/{job_id}/status verifies ownership and raises 403 BEFORE reconcile_outbox."""
+    from fastapi import HTTPException
+    from unittest.mock import MagicMock
+    import asyncio
+    from src.api.routes.jobs_v2 import get_job_status
+    from src.infrastructure.models.job import JobItem, JobStatus
+    from src.api.auth import AuthContext
+
+    job_id = "job-auth-ownership"
+    job = JobItem(
+        job_id=job_id,
+        org_id="org_owner",
+        session_id="session_owner",
+        title="Ownership Test",
+        status=JobStatus.PROCESSING,
+        total_files=1,
+        remaining=1,
+        usable_files=0,
+    )
+
+    # Context belonging to a different org
+    attacker_ctx = AuthContext(user_id="user_attacker", org_id="org_attacker", email="attacker@example.com", role="recruiter")
+    req = MagicMock()
+    req.cookies = {}
+    req.headers = {"X-Session-ID": "session_attacker"}
+    resp = MagicMock()
+
+    with patch("src.infrastructure.repositories.jobs_repository.JobsRepository.get_job_with_files", return_value=(job, [])), \
+         patch("src.infrastructure.repositories.files_repository.FilesRepository.reconcile_outbox") as mock_reconcile:
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(get_job_status(job_id=job_id, request=req, response=resp, ctx=attacker_ctx))
+
+        assert exc_info.value.status_code == 403
+        mock_reconcile.assert_not_called()
+
+

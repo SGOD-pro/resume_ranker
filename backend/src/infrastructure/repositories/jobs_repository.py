@@ -127,6 +127,20 @@ class JobsRepository:
         logger.info("Incremented doc count for job: %s", job_id)
         return JobItem.from_dynamodb_item(response["Attributes"])
 
+    def increment_files_count(self, job_id: str, count: int) -> None:
+        """Increment remaining, total_files, and document_count by count."""
+        if count <= 0:
+            return
+        self._table.update_item(
+            Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+            UpdateExpression="SET remaining = remaining + :count, total_files = total_files + :count, document_count = document_count + :count, updated_at = :now",
+            ExpressionAttributeValues={
+                ":count": count,
+                ":now": _utcnow_iso(),
+            },
+        )
+        logger.info("Incremented files count by %d for job: %s", count, job_id)
+
     def delete(self, job_id: str) -> None:
         """Delete a Job and ALL its related items (documents, scoring results).
 
