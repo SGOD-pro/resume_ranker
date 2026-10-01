@@ -15,11 +15,18 @@ from src.infrastructure.queue.sqs_adapter import SqsQueueAdapter
 
 logger = logging.getLogger(__name__)
 
-# Logical Queue Names
+# Canonical 3 Durable Queues
+STAGE1_INGESTION_QUEUE = "stage1_ingestion_queue"
+STAGE2_FALLBACK_QUEUE = "stage2_fallback_queue"
+SCORING_QUEUE = "scoring_queue"
+
+# Logical Queue Aliases for Backwards Compatibility
 FAST_PARSE_QUEUE = "fast_parse_queue"
 ODL_BATCH_QUEUE = "odl_batch_queue"
 NOVA_QUEUE = "nova_queue"
 FINAL_RANK_QUEUE = "final_rank_queue"
+STAGE1_QUEUE = STAGE1_INGESTION_QUEUE
+STAGE2_QUEUE = STAGE2_FALLBACK_QUEUE
 
 # Global adapter instance
 _adapter_instance: Optional[QueueAdapter] = None

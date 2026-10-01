@@ -1,0 +1,384 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Resume Intelligence Platform (Isolated Dev Stack)
+  FastAPI backend on AWS Lambda + S3 Event Notifications + SQS Worker Pipeline + API Gateway HTTP API (v2)
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 120
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        ENVIRONMENT: dev
+        LOG_LEVEL: INFO
+        USE_REAL_SQS: "true"
+        S3_BUCKET_NAME: !Ref S3BucketName
+        DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+        SQS_STAGE1_QUEUE_URL: !Ref Stage1Queue
+        SQS_STAGE1_DLQ_URL: !Ref Stage1DLQ
+        SQS_STAGE2_QUEUE_URL: !Ref Stage2Queue
+        SQS_STAGE2_DLQ_URL: !Ref Stage2DLQ
+        SQS_SCORING_QUEUE_URL: !Ref ScoringQueue
+        SQS_SCORING_DLQ_URL: !Ref ScoringDLQ
+        SQS_FAST_PARSE_QUEUE_URL: !Ref Stage1Queue
+        SQS_FAST_PARSE_DLQ_URL: !Ref Stage1DLQ
+        SQS_ODL_BATCH_QUEUE_URL: !Ref Stage2Queue
+        SQS_ODL_BATCH_DLQ_URL: !Ref Stage2DLQ
+        SQS_NOVA_QUEUE_URL: !Ref Stage2Queue
+        SQS_NOVA_DLQ_URL: !Ref Stage2DLQ
+        SQS_FINAL_RANK_QUEUE_URL: !Ref ScoringQueue
+        SQS_FINAL_RANK_DLQ_URL: !Ref ScoringDLQ
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test]
+
+  S3BucketName:
+    Type: String
+    Default: resume-ranker-dev-isolated-storage
+    Description: Explicit S3 bucket name (prevents CloudFormation circular dependency)
+
+  DynamoDBTableName:
+    Type: String
+    Default: ResumePlatformDev
+    Description: DynamoDB single table name for dev stack
+
+  BudgetLimitUSD:
+    Type: Number
+    Default: 15
+    Description: Monthly budget limit in USD for AWS Budgets alarm
+
+  EnableBudget:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Whether to create AWS Budgets resource (requires budgets:ModifyBudget IAM permission)
+
+Conditions:
+  ShouldCreateBudget: !Equals [!Ref EnableBudget, "true"]
+
+Resources:
+
+  # ── SQS Dead-Letter Queues (DLQs) ──────────────────────────────────────────
+  Stage1DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage1-dlq-${Environment}"
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  Stage2DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage2-dlq-${Environment}"
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 1209600
+
+  ScoringDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-scoring-dlq-${Environment}"
+      VisibilityTimeout: 120
+      MessageRetentionPeriod: 1209600
+
+  # ── SQS Main Queues ────────────────────────────────────────────────────────
+  Stage1Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage1-${Environment}"
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt Stage1DLQ.Arn
+        maxReceiveCount: 3
+
+  # Queue Policy referencing bucket via explicit parameter to break circular dependency (Amendment 3)
+  Stage1QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref Stage1Queue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt Stage1Queue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Sub "arn:aws:s3:::${S3BucketName}"
+
+  Stage2Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage2-${Environment}"
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt Stage2DLQ.Arn
+        maxReceiveCount: 5
+
+  ScoringQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-scoring-${Environment}"
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ScoringDLQ.Arn
+        maxReceiveCount: 3
+
+  # ── S3 Storage Bucket ──────────────────────────────────────────────────────
+  ResumeStorageBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: Stage1QueuePolicy
+    Properties:
+      BucketName: !Ref S3BucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: ["POST", "PUT", "GET", "HEAD"]
+            AllowedOrigins: ["*"]
+            ExposedHeaders: ["ETag"]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: PurgeTemporaryJobs
+            Status: Enabled
+            Prefix: jobs/
+            ExpirationInDays: 7
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Queue: !GetAtt Stage1Queue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: jobs/
+                  - Name: suffix
+                    Value: .pdf
+
+  # ── DynamoDB Single Table ──────────────────────────────────────────────────
+  ResumeDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoDBTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # ── API Gateway HTTP API v2 with Throttling (Amendment 1) ──────────────────
+  ResumeRankingHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 20
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - DELETE
+          - PATCH
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+          - If-None-Match
+          - X-Session-ID
+
+  # ── API Lambda Function (Mangum) ───────────────────────────────────────────
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "resume-ranker-api-${Environment}"
+      CodeUri: ../backend
+      Handler: src.lambda_handler.handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt Stage1Queue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt Stage2Queue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScoringQueue.QueueName
+      Events:
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+
+  # ── Stage 1 PyMuPDF Worker Lambda ──────────────────────────────────────────
+  Stage1WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "resume-ranker-stage1-worker-${Environment}"
+      CodeUri: ../backend
+      Handler: src.lambda_handler.stage1_handler
+      Timeout: 120
+      MemorySize: 1024
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt Stage2Queue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScoringQueue.QueueName
+      Events:
+        S3QueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage1Queue.Arn
+            BatchSize: 10
+
+  # ── Stage 2 ODL / Nova Fallback Worker Lambda ──────────────────────────────
+  Stage2WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "resume-ranker-stage2-worker-${Environment}"
+      CodeUri: ../backend
+      Handler: src.lambda_handler.stage2_handler
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScoringQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:Converse
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:odl-parser-lambda-*"
+      Events:
+        Stage2QueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage2Queue.Arn
+            BatchSize: 5
+
+  # ── Scoring / Final Ranking Worker Lambda ──────────────────────────────────
+  ScoringWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "resume-ranker-scoring-worker-${Environment}"
+      CodeUri: ../backend
+      Handler: src.lambda_handler.scoring_handler
+      Timeout: 180
+      MemorySize: 1024
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+      Events:
+        ScoringQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScoringQueue.Arn
+            BatchSize: 1
+
+  # ── DLQ Consumer Lambda (Guarantees Terminal State Accounting) ───────────────
+  DlqConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "resume-ranker-dlq-consumer-${Environment}"
+      CodeUri: ../backend
+      Handler: src.lambda_handler.dlq_handler
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+      Events:
+        Stage1DlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage1DLQ.Arn
+            BatchSize: 10
+        Stage2DlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage2DLQ.Arn
+            BatchSize: 10
+        ScoringDlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScoringDLQ.Arn
+            BatchSize: 10
+
+  # ── AWS Budgets Cost Alarm Resource (Amendment 1) ───────────────────────────
+  DevCostBudget:
+    Type: AWS::Budgets::Budget
+    Condition: ShouldCreateBudget
+    Properties:
+      Budget:
+        BudgetName: !Sub "resume-ranker-budget-${Environment}"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref BudgetLimitUSD
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: "dev-alerts@example.com"
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway HTTP API URL"
+    Value: !Sub "https://${ResumeRankingHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  S3Bucket:
+    Description: "S3 Storage Bucket for Dev Stack"
+    Value: !Ref ResumeStorageBucket
+
+  Stage1QueueArn:
+    Description: "Stage 1 SQS Queue ARN"
+    Value: !GetAtt Stage1Queue.Arn

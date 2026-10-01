@@ -1,158 +1,183 @@
 # SWYRA Sortlist v2 — Architecture Specification
 
-> **Note:** This document replaces all previous architecture documents and serves as the authoritative architecture reference for SWYRA Sortlist v2.
+> **Note:** This is the authoritative architecture reference for SWYRA Sortlist v2.2. It replaces all prior specifications.
 
-## Architecture Pattern
+---
 
-The system follows a **modular monolith** design. There is a single deployable unit per tier.
+## 1. Architecture Pattern: Modular Monolith
 
-- **Frontend**: React 18 + TypeScript + Vite + Zustand + shadcn/ui + Tailwind CSS
-- **Backend**: Python 3.13 + FastAPI + Uvicorn
-- **Database**: DynamoDB single-table design (PAY_PER_REQUEST)
-- **Object Storage**: S3 (PDFs, extracted JSON, scoring JSON)
-- **Optional**: AWS Lambda via Mangum adapter for serverless deployment
+SWYRA Sortlist is built as a **modular monolith**: a single deployable unit per tier that achieves high durability, operational simplicity, and sub-millisecond local latency without the distributed failure modes of microservices.
 
-## Module Map
+- **Frontend:** React 18 + TypeScript + Vite + Zustand + Tailwind CSS + shadcn/ui
+- **Backend:** Python 3.13 + FastAPI + Uvicorn (ASGI)
+- **Database:** DynamoDB single-table design (`PAY_PER_REQUEST` billing mode)
+- **Object Storage:** AWS S3 (raw resume PDFs, extracted JSON artifacts, scoring run snapshots)
+- **Work Queues:** SQS in cloud production; high-throughput in-memory queues in local development
+- **Execution Engines:** PyMuPDF C-engine (fast-path), OpenDataLoader PDF JVM (layout microbatch), Bedrock Nova Micro (infill), deterministic Python ranking algorithms
 
-The backend is structured to separate concerns while remaining a single cohesive unit:
+---
+
+## 2. Module Map
 
 ```text
 backend/src/
-├── api/              # FastAPI routes, middleware, dependencies
-│   ├── routes/       # jobs_v2.py, health.py (future: auth.py)
-│   ├── middleware/   # (future: auth, rate-limit, security headers)
-│   └── dependencies/ # (future: get_current_user, get_db)
-├── ats/              # ATS scoring service, B2B scorer
-├── config/           # Settings, AWS client factory
-├── extraction/       # V2 pipeline: structural parsing → ODL → regex → Nova
-├── extractors/       # Field parsers: contact, skills, experience, education, projects, layout
-├── infrastructure/   # DynamoDB models, repositories, S3 storage, health
-│   ├── models/       # job.py, document.py, scoring.py, upload_session.py
-│   ├── queue/        # sqs_client.py, queue_models.py (durable SQS abstraction)
-│   ├── repositories/ # jobs_repo, docs_repo, upload_sessions_repo
-│   └── storage/      # storage_service.py (S3 presigned PUT, CORS, document storage)
-├── pipeline/         # Durable stage workers & daemon
-│   ├── fast_parse_worker.py  # Stage 1: structural parse & extraction
-│   ├── odl_batch_worker.py   # Stage 2: JVM ODL fallback parser
-│   ├── final_rank_worker.py  # Stage 3: barrier synchronization & scoring
-│   └── worker_daemon.py      # Background worker daemon
-├── ranking/          # Scorer, BM25, TF-IDF, skill inference, domain classifier
-├── registries/       # Skill registry, section registry, skill graph, domain proximity
-├── schemas/          # Pydantic/dataclass DTOs for extraction and scoring
-└── services/         # Supporting services
+├── api/
+│   ├── routes/
+│   │   ├── jobs_v2.py               # Multipart upload, SSE stream, scoring, audit routes
+│   │   └── health.py                # Liveness & readiness probes
+│   └── middleware/
+│       └── rate_limit.py            # Token bucket & session rate limiting
+├── extraction/
+│   ├── extraction_pipeline.py       # Multi-stage extraction orchestrator
+│   ├── structural_parsing_service.py# PyMuPDF fast-path + reading order clustering
+│   ├── markdown_extraction_service.py # Regex field extractors
+│   ├── odl_client.py                # ODL JVM client
+│   └── fallback/nova_service.py     # Bedrock Nova LLM fallback
+├── infrastructure/
+│   ├── models/
+│   │   ├── job.py                   # JobItem & JobStatus
+│   │   ├── document.py              # FileItem & FileStatus
+│   │   └── scoring.py               # ScoringRunItem
+│   ├── repositories/
+│   │   ├── jobs_repository.py       # Job CRUD & atomic barrier counters
+│   │   └── files_repository.py      # File items, lease management, outbox reconciliation
+│   ├── queue/
+│   │   ├── queue_models.py          # QueueMessage schema
+│   │   ├── sqs_client.py            # SQS client adapter
+│   │   └── in_memory_queue.py       # Local in-memory queue adapter
+│   └── storage/
+│       └── storage_service.py       # S3 storage service (proxied file storage)
+├── pipeline/
+│   ├── coordinator.py               # Pipeline state coordinator
+│   ├── fast_parse_worker.py         # Stage 1: PyMuPDF worker
+│   ├── stage2_worker.py             # Stage 2: ODL microbatch worker & buffer management
+│   ├── nova_queue_worker.py         # Stage 3: Nova LLM worker
+│   ├── final_rank_worker.py         # Stage 4: ScoringWorker & barrier synchronization
+│   └── worker_runner.py             # BackgroundWorkerDaemon for local development
+└── ranking/
+    ├── scorer.py                    # CandidateScorer (deterministic multi-signal scoring)
+    ├── bm25_scorer.py               # BM25 scoring with precomputed IDF
+    ├── skill_inference.py           # Skill graph inference
+    └── domain_classifier.py         # Domain classification & guardrails
 ```
 
-## Data Flow
+---
 
-The system processes resumes through a durable, multi-stage pipeline decoupling direct browser uploads, SQS work queues, barrier synchronization, and final ranking.
+## 3. End-to-End Pipeline & Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Client (Browser)
-    participant A as API (FastAPI)
-    participant S3 as S3 Storage
-    participant DB as DynamoDB
-    participant Q as SQS Queues
-    participant W as Pipeline Workers (Daemon)
+    participant C as Client (React Browser)
+    participant A as FastAPI Backend
+    participant S3 as AWS S3 Storage
+    participant DB as AWS DynamoDB
+    participant Q as Work Queues
+    participant W as Durable Workers
 
-    %% 1. Direct Presigned Upload Session
-    C->>A: POST /upload-sessions (filenames, sizes, hashes)
-    A->>DB: Create UploadSessionItem (Status: UPLOADING, pinned job_version)
-    A->>DB: Create DocumentItems (Status: UPLOAD_INITIALIZED)
-    A->>S3: Generate presigned PUT URLs
-    A-->>C: Return upload session & presigned URLs
+    %% 1. Upload via Backend Proxy
+    C->>A: POST /api/v2/jobs/{job_id}/resumes (multipart/form-data)
+    A->>A: Validate %PDF magic bytes & SHA-256 deduplication
+    par Parallel S3 Storage
+        A->>S3: put_object (jobs/{job_id}/raw/{file_id}.pdf)
+    and DynamoDB Registration
+        A->>DB: create_files (status: UPLOADED)
+        A->>DB: increment_files_count (remaining += N)
+    end
+    A->>Q: Enqueue FAST_PARSE_QUEUE messages
+    A-->>C: 200 OK (accepted[], rejected[], file_id_map)
 
-    %% 2. Direct S3 Upload & Completion
-    loop Parallel Uploads (Bounded concurrency = 4)
-        C->>S3: PUT /resumes/{doc_id}.pdf (Direct to S3)
-        C->>A: POST /documents/{doc_id}/complete
-        A->>S3: HEAD object & Range bytes=0-9 check
-        A->>DB: Update DocumentStatus: UPLOADED
-        A->>Q: Enqueue FastParseMessage (doc_id)
-        A-->>C: 202 Accepted
+    %% 2. Stage 1 Fast-Path Parsing
+    W->>Q: Poll FAST_PARSE_QUEUE
+    W->>DB: Claim lease (status: S1_PROCESSING, claim_expires_at)
+    W->>S3: Read raw PDF
+    W->>W: In-memory PyMuPDF text & reading order clustering
+    alt Quality Gate Pass (score >= 0.90)
+        W->>S3: Write extracted JSON (jobs/{job_id}/extracted/{file_id}.json)
+        W->>DB: FileStatus: S2_DONE (Terminal)
+        W->>DB: Decrement barrier (remaining -= 1, usable_files += 1)
+    else Multi-Column / Tabular Layout (score < 0.90)
+        W->>DB: FileStatus: S1_DONE
+        W->>Q: Enqueue ODL_BATCH_QUEUE
     end
 
-    %% 3. Finalize & Fast Preprocessing
-    C->>A: POST /upload-sessions/{id}/finalize
-    A->>DB: Transition UploadSession: FAST_PREPROCESSING
-    A-->>C: 202 Accepted
-
-    %% 4. Stage 1: Fast Parse Worker & Barrier
-    W->>Q: Poll fast-parse queue
-    W->>S3: Fetch PDF & calculate SHA-256
-    W->>W: Duplicate check (mark REJECTED_DUPLICATE if duplicate)
-    W->>W: Structural parsing & quality gate
-    alt Quality Gate Pass
+    %% 3. Stage 2 ODL JVM Microbatching
+    opt Layout Fallback
+        W->>Q: Poll ODL_BATCH_QUEUE
+        W->>DB: Claim lease (status: S2_PROCESSING)
+        W->>W: Run ODL parser (bounded microbatch <= 20 docs / 20MB)
         W->>S3: Write extracted JSON
-        W->>DB: DocumentStatus: STRUCTURED_PARSED
-    else Low Quality / Complex Layout
-        W->>DB: DocumentStatus: NEEDS_ODL
-    end
-    W->>DB: Evaluate Fast-Parse Barrier (session pauses at READY_TO_ANALYZE)
-
-    %% 5. Explicit Analysis Trigger
-    Note over C,A: Recruiter reviews/edits criteria & weights, clicks Analyze
-    C->>A: POST /jobs/{job_id}/analysis (updated criteria/weights)
-    A->>DB: Increment job_version & pin session (analysis_requested = True)
-    A->>DB: Transition UploadSession: ANALYSIS_REQUESTED
-    A-->>C: 202 Accepted
-
-    %% 6. Stage 2: ODL Fallback (if needed)
-    opt Complex Layouts
-        A->>Q: Enqueue bounded ODL batch
-        W->>Q: Poll odl-batch queue
-        W->>W: Run ODL JVM extraction in bounded batches
-        W->>S3: Write extracted JSON
-        W->>DB: DocumentStatus: STRUCTURED_PARSED or REVIEW_REQUIRED
-        W->>DB: Evaluate Barrier
+        W->>DB: FileStatus: S2_DONE (Terminal) & Purge ODL_BUFFER#
+        W->>DB: Decrement barrier (remaining -= 1, usable_files += 1)
     end
 
-    %% 7. Barrier Synchronization & Stage 3: Final Rank
-    Note over W,DB: When all documents reach terminal parse states:
-    W->>DB: Transition UploadSession: FINAL_RANKING
-    W->>Q: Enqueue FinalRankMessage(job_id, session_id, job_version)
-    W->>Q: Poll final-rank queue
-    W->>DB: Verify job_version matches current job
-    W->>S3: Read all extracted JSONs for job
-    W->>W: Run explainable multi-signal scorer
-    W->>S3: Write scoring run JSON
-    W->>DB: Save ScoringRunItem
-    W->>DB: Transition UploadSession: READY (or READY_WITH_WARNINGS)
+    %% 4. Stage 3 LLM Targeted Infill (if needed)
+    opt Missing Critical Fields
+        W->>Q: Poll NOVA_QUEUE
+        W->>W: Bedrock Nova Micro infill (temperature=0, atomic budget)
+        W->>S3: Write updated JSON
+        W->>DB: FileStatus: S2_DONE (Terminal)
+        W->>DB: Decrement barrier (remaining -= 1, usable_files += 1)
+    end
+
+    %% 5. Barrier Synchronization & Final Ranking
+    Note over DB,W: When all files reach terminal status (remaining == 0):
+    DB->>Q: Enqueue FINAL_RANK_QUEUE
+    W->>Q: Poll FINAL_RANK_QUEUE
+    W->>S3: Load all extracted JSON files for job_id
+    W->>W: CandidateScorer.rank() (BM25 + Multi-Signal)
+    W->>S3: Write scoring run snapshot (jobs/{job_id}/results/scoring_*.json)
+    W->>DB: JobStatus: SCORED
+
+    %% 6. Live SSE Updates
+    C->>A: GET /api/v2/jobs/{job_id}/extract (SSE stream)
+    A-->>C: Stream progress events (stage, completed, total)
+    A-->>C: Stream complete event
+    C->>A: GET /api/v2/jobs/{job_id}/results
+    A-->>C: Return ScoredCandidate[] with factor ledgers
 ```
 
-## Key Design Decisions
+---
 
-1. **Direct Browser-to-S3 Uploads with Presigned PUTs**: Uploads bypass the API server entirely via short-lived, presigned S3 PUT URLs with strict CORS configurations. The API server never buffers 40+ PDFs in memory, eliminating process bottlenecks and 429 rate limit errors.
-2. **Lightweight Upload Completion (Decision Record: *"Upload completion is not analysis completion."*)**:
-   - `POST /documents/{doc_id}/complete` performs an S3 HEAD check and Range-request (`bytes=0-9`) magic-bytes check, marks `UPLOADED`, enqueues `FAST_PARSE_QUEUE`, and returns HTTP 202 immediately. It never downloads the full PDF or runs PyMuPDF on the HTTP request thread.
-   - `POST /upload-sessions/{id}/finalize` transitions the session to `FAST_PREPROCESSING` (HTTP 202). Fast-parse workers process PDFs and pause at `READY_TO_ANALYZE`.
-   - The recruiter can review and adjust criteria/weights, then trigger analysis via `POST /api/v2/jobs/{job_id}/analysis`, which sets `analysis_requested = True`, pins `job_version`, and engages ODL fallback and final ranking.
-3. **Durable Multi-Stage SQS Pipelines**: Extraction and ranking are decoupled into discrete SQS queues (`fast-parse`, `odl-batch`, `final-rank`, and `dlq`). Failed messages undergo exponential backoff with jitter before routing to the DLQ, ensuring zero data loss.
-4. **Barrier Synchronization**: Final ranking is gated by a barrier condition in DynamoDB. Only when all documents in an upload session reach a terminal parse state (`STRUCTURED_PARSED`, `REVIEW_REQUIRED`, `REJECTED_DUPLICATE`, or `FAILED`) and `analysis_requested == True` does the pipeline enqueue the `FinalRankMessage`. Partial failures resolve to `READY_WITH_WARNINGS`.
-5. **Job Version Pinning & Stale Rank Rejection**: Upload sessions and ranking messages pin the exact `job_version` active at analysis initiation. If criteria change before ranking begins, stale ranking runs are dropped without overwriting updated criteria.
-6. **Stateless Resumability & Worker Daemon Discipline**: Process-local locks (`_extraction_locks`) and FastAPI `BackgroundTasks` have been eliminated. Workers are completely stateless and horizontally scalable. `BackgroundWorkerDaemon` is strictly gated behind `RUN_LOCAL_WORKERS=true` in FastAPI lifespan and is never run by default in production. FastAPI HTTP request handlers never invoke `drain_all_queues_sync()`.
-7. **Structured Rate Limiting Diagnostics**: Active session quota breaches return structured 429 JSON payloads (`status_code`, `error_code`, `route`, `job_id`, `session_id`, `org_id`, `client_ip_hash`, `retry_after`) with standard `Retry-After` headers.
-8. **Deterministic Scoring**: All scoring is deterministic given the same inputs. BM25 uses dynamic pool IDF. No LLM or non-deterministic component is used in score computation.
+## 4. Key Design Decisions
 
-## Optional Adapters (Feature-Flagged)
+### 1. Frontend -> Backend -> S3 Upload Proxy
+- Resumes are streamed from the client directly to FastAPI multipart endpoints.
+- FastAPI validates the initial bytes against `%PDF` magic numbers to stop invalid/corrupt files before they touch storage.
+- The server writes the document directly to S3 via `boto3.client('s3').put_object()`.
+- **Zero S3 CORS:** Eliminating direct-from-browser S3 PUTs removes the need for S3 CORS configuration, cutting server boot time from 24+ seconds to sub-50ms.
 
-| Adapter | Purpose | Flag | Default |
-|---------|---------|------|---------|
-| ODL (JVM) | Multi-column PDF parsing | `ENABLE_ODL` | `false` (degrades gracefully) |
-| Bedrock/Nova | LLM field infill | `ENABLE_NOVA` | `false` (degrades gracefully) |
+### 2. Durable Queues & Outbox Pattern
+- Work across extraction stages is decoupled into discrete queues: `FAST_PARSE_QUEUE`, `ODL_BATCH_QUEUE`, `NOVA_QUEUE`, and `FINAL_RANK_QUEUE`.
+- Files are claimed with explicit lease timestamps (`claim_expires_at`).
+- If a worker crashes or is forcefully terminated, `reconcile_outbox()` identifies expired leases and re-enqueues stranded items back to their stage queues, guaranteeing 100% crash durability.
 
-## What Is NOT In This Architecture
+### 3. Barrier Synchronization & Self-Healing
+- Final scoring is strictly barrier-synchronized: all documents in a job must reach terminal status (`S2_DONE`, `FAILED`, `REJECTED_DUPLICATE`) before scoring initiates.
+- If worker crashes or dropped messages leave a job with all files terminal but `remaining > 0`, the outbox reconciler automatically detects the condition, updates `remaining = 0`, syncs `usable_files`, and triggers `ScoringWorker`.
 
-- No microservices
-- No Kubernetes
-- No vector databases or RAG
-- No WebSockets
-- No agent frameworks
-- No new cloud products beyond S3, DynamoDB, and SQS
+### 4. ODL Buffer Lifecycle Purging
+- Documents queued for Stage 2 layout parsing are tracked in DynamoDB under `ODL_BUFFER#`.
+- Items are immediately deleted upon reaching terminal status or upon batch completion, preventing queue skip spam and log noise.
 
-## Deployment Modes
+### 5. Deterministic Scoring & Non-Negotiable Ethics
+- Scoring is 100% deterministic and explainable:
+  - Skills match via BM25 with a fixed reference IDF corpus.
+  - Experience match via TF-IDF role title cosine similarity + duration math.
+  - Keyword and education requirements evaluated with transparent arithmetic.
+- **Prohibited Factors:** Prestige company lists, Ivy League university bonuses, career gap penalties, and demographic attributes are strictly deleted and prohibited.
+- **Client-Side Weight Recalculation:** Adjusting weights in the recruiter UI re-evaluates candidate rankings instantly in the browser without network latency.
 
-1. **Local Dev**: FastAPI + Vite dev server. Uses LocalStack or real AWS for S3/DynamoDB/SQS with sync queue drain fallbacks.
-2. **Docker**: Backend Dockerfile (Python 3.13-slim + uv), frontend served via Vercel/nginx. Worker daemon runs concurrently in the FastAPI lifespan.
-3. **Serverless**: Lambda via Mangum adapter (optional, not the default).
+---
 
+## 5. Deployment Modes
+
+1. **Local Development:**
+   - FastAPI + Vite dev server running on localhost (`127.0.0.1:8000` / `localhost:5173`).
+   - S3 & DynamoDB backed by AWS or LocalStack.
+   - High-throughput in-memory queues managed by `BackgroundWorkerDaemon`.
+2. **Containerized Modular Monolith:**
+   - Backend packaged via `Dockerfile` (Python 3.13-slim + uv).
+   - Frontend served via CDN / static web server (Vercel, nginx, or CloudFront/S3).
+   - Workers run either as standalone background worker containers or embedded in the FastAPI lifespan daemon.
+3. **Serverless (Optional):**
+   - FastAPI app deployed to AWS Lambda via the Mangum ASGI adapter, backed by native AWS SQS queues.

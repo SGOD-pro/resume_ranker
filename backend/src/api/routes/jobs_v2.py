@@ -44,6 +44,7 @@ from src.api.dependencies.auth import enforce_tenant_ownership, get_auth_context
 from src.config.aws import get_settings
 from src.core.lazy_proxy import LazyProxy
 from src.infrastructure.audit import audit_logger
+from src.infrastructure.models.document import DocumentItem, DocumentStatus
 from src.infrastructure.models.file import (
     FileItem,
     FileStatus,
@@ -55,18 +56,20 @@ from src.infrastructure.models.upload_session import (
     UploadSessionItem,
     UploadSessionStatus,
 )
-from concurrent.futures import ThreadPoolExecutor
 from src.infrastructure.queue.message import QueueMessage
 from src.infrastructure.queue.queue_manager import (
     FAST_PARSE_QUEUE,
     FINAL_RANK_QUEUE,
     ODL_BATCH_QUEUE,
+    SCORING_QUEUE,
+    STAGE1_INGESTION_QUEUE,
+    STAGE2_FALLBACK_QUEUE,
     get_queue_adapter,
     enqueue_fast_parse,
 )
+from src.pipeline.coordinator import check_and_progress_session
 from src.pipeline.worker_runner import dispatch_fast_parse
 
-_fast_parse_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="pymupdf-worker")
 from src.infrastructure.repositories.documents_repository import DocumentsRepository
 from src.infrastructure.repositories.files_repository import FilesRepository
 from src.infrastructure.repositories.jobs_repository import JobsRepository
@@ -253,11 +256,66 @@ class AnalyzeRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     job_id: str
+    session_id: Optional[str] = None
+    job_version: int = 1
     status: str
-    remaining: int
-    usable_files: int
-    analyze_requested: bool
-    message: str
+    remaining: int = 0
+    usable_files: int = 0
+    analyze_requested: bool = True
+    message: str = "Analysis requested. Background processing pipeline engaged."
+
+
+class UploadSessionFileSpec(BaseModel):
+    filename: str
+    file_size: int = 0
+    content_type: str = "application/pdf"
+
+
+class CreateUploadSessionRequest(BaseModel):
+    document_count: int
+    files: List[UploadSessionFileSpec]
+
+
+class DocumentPresignedUrlInfo(BaseModel):
+    document_id: str
+    filename: str
+    s3_key: str
+    presigned_url: str
+
+
+class CreateUploadSessionResponse(BaseModel):
+    session_id: str
+    job_id: str
+    job_version: int
+    expected_document_count: int
+    documents: List[DocumentPresignedUrlInfo]
+
+
+class CompleteDocumentUploadResponse(BaseModel):
+    document_id: str
+    session_id: Optional[str] = None
+    job_id: str
+    status: str
+    message: str = "Upload completed successfully."
+
+
+class FinalizeUploadSessionResponse(BaseModel):
+    session_id: str
+    job_id: str
+    status: str
+    message: str = "Upload session finalized. Processing pipeline barrier active."
+
+
+class UploadSessionProgressResponse(BaseModel):
+    session_id: str
+    job_id: str
+    job_version: int
+    status: str
+    expected_document_count: int
+    uploaded_document_count: int
+    fast_parsed_count: int
+    terminal_count: int
+    documents: List[Dict[str, Any]]
 
 
 class FileUploadNotification(BaseModel):
@@ -285,7 +343,7 @@ class DecisionUpdateRequest(BaseModel):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
-@router.post("", response_model=CreateJobResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CreateJobResponse, status_code=status.HTTP_200_OK)
 async def create_job(
     body: CreateJobRequest,
     request: Request,
@@ -309,6 +367,11 @@ async def create_job(
 
     session_id = get_session_id(request, response)
     _check_and_record_daily_job_limit(session_id)
+
+    if body.files:
+        response.status_code = status.HTTP_201_CREATED
+    else:
+        response.status_code = status.HTTP_200_OK
 
     job_id = str(uuid.uuid4())
     total_files = len(body.files)
@@ -603,9 +666,6 @@ async def notify_files_uploaded(
             except Exception as e:
                 logger.warning("Could not enqueue via enqueue_fast_parse: %s", e)
 
-            if run_local:
-                _fast_parse_pool.submit(dispatch_fast_parse, msg)
-
             enqueued_count += 1
 
     logger.info("|PYMUPDF| Enqueued and started %d files for background PyMuPDF extraction for job %s", enqueued_count, job_id)
@@ -692,8 +752,6 @@ async def upload_resumes_multipart(
 
     for msg in messages:
         adapter.send_message(FAST_PARSE_QUEUE, msg)
-        if run_local:
-            _fast_parse_pool.submit(dispatch_fast_parse, msg)
 
     logger.info("|PYMUPDF| Stored %d files in S3 (rejected %d) for job %s", len(file_items), len(rejected), job_id)
 
@@ -704,6 +762,334 @@ async def upload_resumes_multipart(
         "total_accepted": len(file_items),
         "file_id_map": {f.filename: f.file_id for f in file_items},
     }
+
+
+# ── Target Architecture: Direct Presigned S3 Upload Session API ────────────────
+
+
+@router.post(
+    "/{job_id}/upload-sessions",
+    response_model=CreateUploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_upload_session(
+    job_id: str,
+    request: Request,
+    body: CreateUploadSessionRequest,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Create a durable upload session and return presigned S3 PUT URLs."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    settings = get_settings()
+
+    # Guard 1: Concurrency / Quota
+    active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
+    if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "status_code": 429,
+                "error_code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "route": request.url.path,
+                "job_id": job_id,
+                "session_id": None,
+                "org_id": ctx.org_id,
+                "client_ip_hash": ip_hash,
+                "retry_after": 60,
+                "retry_after_seconds": 60,
+                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
+            },
+            headers={"Retry-After": "60"},
+        )
+
+    # Guard 2: Document count limit
+    if body.document_count > settings.MAX_DOCS_PER_SESSION or len(body.files) > settings.MAX_DOCS_PER_SESSION:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SESSION_DOCUMENT_LIMIT_EXCEEDED",
+                "message": f"Requested document count exceeds maximum limit of {settings.MAX_DOCS_PER_SESSION}.",
+            },
+        )
+
+    # Guard 3: Batch bytes & file sizes
+    total_bytes = sum(f.file_size for f in body.files)
+    if total_bytes > settings.MAX_BATCH_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SESSION_BATCH_SIZE_EXCEEDED",
+                "message": f"Total batch size exceeds maximum allowed of {settings.MAX_BATCH_BYTES / (1024*1024):.0f}MB.",
+            },
+        )
+
+    for f in body.files:
+        if f.file_size > settings.MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "FILE_SIZE_LIMIT_EXCEEDED",
+                    "message": f"File '{f.filename}' exceeds maximum file size of {settings.MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB.",
+                },
+            )
+
+    session_id = str(uuid.uuid4())
+    job_version = getattr(job, "job_version", 1)
+
+    session = UploadSessionItem(
+        session_id=session_id,
+        job_id=job_id,
+        org_id=ctx.org_id,
+        job_version=job_version,
+        expected_document_count=len(body.files),
+        uploaded_document_count=0,
+        status=UploadSessionStatus.UPLOADING,
+    )
+    _sessions_repo.create(session)
+
+    doc_infos: List[DocumentPresignedUrlInfo] = []
+    for f in body.files:
+        doc_id = str(uuid.uuid4())
+        s3_key = f"{ctx.org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
+        presigned_url = _storage.generate_presigned_put_url(
+            s3_key=s3_key,
+            content_type=f.content_type or "application/pdf",
+            expires_in=settings.PRESIGNED_URL_EXPIRY_SECONDS,
+        )
+
+        doc_item = DocumentItem(
+            document_id=doc_id,
+            job_id=job_id,
+            session_id=session_id,
+            org_id=ctx.org_id,
+            filename=f.filename,
+            file_size=f.file_size,
+            s3_pdf_key=s3_key,
+            status=DocumentStatus.UPLOAD_INITIALIZED,
+        )
+        _docs_repo.create(doc_item)
+
+        doc_infos.append(
+            DocumentPresignedUrlInfo(
+                document_id=doc_id,
+                filename=f.filename,
+                s3_key=s3_key,
+                presigned_url=presigned_url,
+            )
+        )
+
+    audit_logger.record(
+        ctx.org_id,
+        ctx.user_id,
+        "UPLOAD_SESSION_CREATED",
+        "job",
+        job_id,
+        {"session_id": session_id, "expected_document_count": len(body.files)},
+    )
+
+    return CreateUploadSessionResponse(
+        session_id=session_id,
+        job_id=job_id,
+        job_version=job_version,
+        expected_document_count=len(body.files),
+        documents=doc_infos,
+    )
+
+
+@router.post(
+    "/{job_id}/upload-sessions/{session_id}/documents/{document_id}/complete",
+    response_model=CompleteDocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@router.post(
+    "/{job_id}/documents/{document_id}/complete",
+    response_model=CompleteDocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def complete_document_upload(
+    job_id: str,
+    document_id: str,
+    session_id: Optional[str] = None,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Verify S3 upload completion, validate PDF integrity header, and enqueue for fast-parse."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    doc = _docs_repo.get(job_id, document_id)
+    resolved_session_id = session_id or (doc.session_id if doc else None) or getattr(job, "session_id", "default_session")
+
+    # Idempotency: If already UPLOADED or past that state, return success immediately
+    if doc and doc.status not in (DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING):
+        return CompleteDocumentUploadResponse(
+            document_id=document_id,
+            session_id=resolved_session_id,
+            job_id=job_id,
+            status=doc.status.value,
+        )
+
+    s3_key = (doc.s3_pdf_key if doc else None) or f"jobs/{job_id}/resumes/{document_id}.pdf"
+    settings = get_settings()
+
+    # 1. HEAD request to verify object exists and check size
+    try:
+        head = _storage.head_object(s3_key)
+    except Exception as e:
+        logger.error("HEAD verification failed for s3://%s: %s", s3_key, e)
+        raise HTTPException(status_code=400, detail="S3 object not found or incomplete upload")
+
+    actual_size = head.get("ContentLength", 0)
+    if actual_size > settings.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Uploaded file exceeds 10MB limit")
+
+    # 2. Verify PDF magic bytes (%PDF-) via Range read
+    try:
+        magic_bytes = _storage.get_object_byte_range(s3_key, 0, 10)
+        if not magic_bytes.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="Corrupted file: invalid PDF header (magic bytes mismatch)")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        raise HTTPException(status_code=400, detail="Failed to verify PDF header bytes")
+
+    # 3. Update DocumentItem in DynamoDB to UPLOADED
+    if doc:
+        updated = _docs_repo.update_status_conditional(
+            job_id=job_id,
+            document_id=document_id,
+            new_status=DocumentStatus.UPLOADED,
+            allowed_current_statuses=[DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING],
+            extra_updates={"file_size": actual_size},
+        )
+        if updated and resolved_session_id:
+            fresh_sess = _sessions_repo.get(job_id, resolved_session_id)
+            if fresh_sess:
+                _sessions_repo.increment_uploaded_count(job_id, resolved_session_id, expected_version=fresh_sess.version)
+
+    fresh_job = _jobs_repo.get(job_id)
+    if fresh_job:
+        _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
+
+    # 4. Enqueue to FAST_PARSE_QUEUE
+    job_version = getattr(fresh_job, "job_version", 1) if fresh_job else 1
+    enqueue_fast_parse(
+        job_id=job_id,
+        session_id=resolved_session_id,
+        document_id=document_id,
+        org_id=ctx.org_id,
+        job_version=job_version,
+        s3_key=s3_key,
+        content_hash="",
+    )
+
+    return CompleteDocumentUploadResponse(
+        document_id=document_id,
+        session_id=resolved_session_id,
+        job_id=job_id,
+        status="UPLOADED",
+    )
+
+
+@router.post(
+    "/{job_id}/upload-sessions/{session_id}/finalize",
+    response_model=FinalizeUploadSessionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def finalize_upload_session(
+    job_id: str,
+    session_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Finalize upload session to establish the explicit fast-parse barrier."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    session = _sessions_repo.get(job_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    # Idempotent finalization: transition to FAST_PREPROCESSING
+    # Note: analysis_requested remains False until user clicks Analyze!
+    if session.status == UploadSessionStatus.UPLOADING:
+        _sessions_repo.update_status(
+            job_id,
+            session_id,
+            UploadSessionStatus.FAST_PREPROCESSING,
+            expected_version=session.version,
+        )
+        fresh_job = _jobs_repo.get(job_id)
+        if fresh_job and fresh_job.status == JobStatus.CREATED:
+            _jobs_repo.update_status(job_id, JobStatus.FAST_PARSING, expected_version=fresh_job.version)
+
+    check_and_progress_session(job_id, session_id)
+
+    return FinalizeUploadSessionResponse(
+        session_id=session_id,
+        job_id=job_id,
+        status="FAST_PREPROCESSING",
+        message="Upload session finalized. Processing pipeline barrier active.",
+    )
+
+
+@router.get(
+    "/{job_id}/upload-sessions/{session_id}",
+    response_model=UploadSessionProgressResponse,
+)
+async def get_upload_session(
+    job_id: str,
+    session_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Retrieve upload session state, progress counts, and per-document diagnostics."""
+    job = _jobs_repo.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+
+    session = _sessions_repo.get(job_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    docs = _docs_repo.list_for_session(job_id, session_id)
+    fast_parsed = sum(1 for d in docs if d.status.is_terminal_fast_parse())
+    terminal = sum(1 for d in docs if d.status.is_terminal_extraction())
+
+    doc_list = [
+        {
+            "document_id": d.document_id,
+            "filename": d.filename,
+            "status": d.status.value,
+            "candidate_name": d.candidate_name,
+            "identity_status": d.identity_status,
+            "extraction_quality": d.extraction_quality,
+            "fallback_reason": d.fallback_reason,
+            "error_reason": d.error_reason,
+        }
+        for d in docs
+    ]
+
+    return UploadSessionProgressResponse(
+        session_id=session_id,
+        job_id=job_id,
+        job_version=session.job_version,
+        status=session.status.value,
+        expected_document_count=session.expected_document_count,
+        uploaded_document_count=session.uploaded_document_count,
+        fast_parsed_count=fast_parsed,
+        terminal_count=terminal,
+        documents=doc_list,
+    )
 
 
 @router.post(
@@ -722,12 +1108,11 @@ async def analyze_job(
     body: Optional[AnalyzeRequest] = None,
     ctx: AuthContext = Depends(get_auth_context),
 ):
-    """Recruiter Analyze trigger (Amendment 2).
+    """Recruiter Analyze trigger.
 
     - Payload carries explicit file_ids; unselected files are marked REMOVED.
-    - Ready fallback files enter Stage 2.
     - Sets analyze_requested = True.
-    - Triggers scoring when remaining == 0.
+    - Pins job_version and advances upload session if present.
     - Returns HTTP 202 Accepted in < 1 second.
     """
     job = _jobs_repo.get(job_id)
@@ -766,8 +1151,30 @@ async def analyze_job(
     if req.keywords is not None:
         updates["keywords"] = req.keywords
 
+    current_job_version = getattr(job, "job_version", 1)
     if updates:
+        current_job_version += 1
+        updates["job_version"] = current_job_version
         job = _jobs_repo.update(job_id, updates, expected_version=job.version)
+
+    # Advance upload session if present
+    target_session = None
+    sessions = _sessions_repo.list_for_job(job_id)
+    if sessions:
+        sessions.sort(key=lambda s: s.created_at, reverse=True)
+        target_session = sessions[0]
+        try:
+            _sessions_repo.set_analysis_requested(
+                job_id=job_id,
+                session_id=target_session.session_id,
+                expected_version=target_session.version,
+                analysis_requested=True,
+                new_status=UploadSessionStatus.ANALYSIS_REQUESTED,
+                job_version=current_job_version,
+            )
+            check_and_progress_session(job_id, target_session.session_id)
+        except Exception as e:
+            logger.warning("Could not set analysis_requested on session: %s", e)
 
     # Determine explicit file IDs
     all_files = _files_repo.list_files_for_job(job_id)
@@ -777,34 +1184,20 @@ async def analyze_job(
         selected_file_ids = [f.file_id for f in all_files if f.status != FileStatus.REMOVED]
 
     # Ensure any selected files not yet in S1_DONE or terminal state are enqueued for Stage 1
-    settings = get_settings()
-    run_local = settings.is_local() or settings.RUN_LOCAL_WORKERS
     for f in all_files:
         if f.file_id in selected_file_ids and not f.is_terminal and f.status not in (FileStatus.S1_DONE, FileStatus.S2_DONE):
-            msg = QueueMessage(
-                job_id=job_id,
-                session_id=job.session_id,
-                document_id=f.file_id,
-                org_id=ctx.org_id,
-                job_version=job.job_version,
-                s3_key=f.s3_raw_key,
-                content_hash="",
-                stage="FAST_PARSE",
-            )
             try:
                 enqueue_fast_parse(
                     job_id=job_id,
-                    session_id=job.session_id,
+                    session_id=job.session_id or (target_session.session_id if target_session else "default"),
                     document_id=f.file_id,
                     org_id=ctx.org_id,
-                    job_version=job.job_version,
+                    job_version=current_job_version,
                     s3_key=f.s3_raw_key,
                     content_hash="",
                 )
             except Exception:
                 pass
-            if run_local:
-                _fast_parse_pool.submit(dispatch_fast_parse, msg)
 
     # Execute request_analysis (conditionally marks REMOVED, advances fallback, triggers scoring if remaining == 0)
     updated_job = _jobs_repo.request_analysis(job_id, selected_file_ids)
@@ -815,14 +1208,16 @@ async def analyze_job(
         "ANALYSIS_REQUESTED",
         "job",
         job_id,
-        {"selected_files_count": len(selected_file_ids), "remaining": updated_job.remaining},
+        {"selected_files_count": len(selected_file_ids), "remaining": updated_job.remaining if updated_job else 0},
     )
 
     return AnalyzeResponse(
         job_id=job_id,
-        status=updated_job.status.value,
-        remaining=updated_job.remaining,
-        usable_files=updated_job.usable_files,
+        session_id=target_session.session_id if target_session else None,
+        job_version=current_job_version,
+        status="ANALYSIS_REQUESTED",
+        remaining=updated_job.remaining if updated_job else 0,
+        usable_files=updated_job.usable_files if updated_job else 0,
         analyze_requested=True,
         message="Analysis requested. Pipeline executing.",
     )
@@ -927,8 +1322,30 @@ async def extract_resumes_stream(
                 yield f"event: error\ndata: {json.dumps({'message': 'Job not found'})}\n\n"
                 break
 
+            docs = _docs_repo.list_for_job(job_id)
+            if docs:
+                total_docs = len(docs)
+                fast_parsed = sum(1 for d in docs if d.status.is_terminal_fast_parse())
+                succeeded = sum(1 for d in docs if d.status.is_terminal_fast_parse() and d.status not in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED))
+                failed = sum(1 for d in docs if d.status in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED))
+
+                payload = {
+                    "job_id": job_id,
+                    "status": "extracted" if fast_parsed == total_docs else "extracting",
+                    "total": total_docs,
+                    "current": fast_parsed,
+                    "succeeded": succeeded,
+                    "failed": failed,
+                }
+                yield f"event: progress\ndata: {json.dumps(payload)}\n\n"
+
+                if fast_parsed == total_docs and total_docs > 0:
+                    yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total_docs, 'succeeded': succeeded, 'failed': failed})}\n\n"
+                    break
+
             s2_done_count = sum(1 for f in files if f.status == FileStatus.S2_DONE.value)
             failed_count = sum(1 for f in files if f.status in (FileStatus.S1_FAILED.value, FileStatus.S2_FAILED.value))
+            completed_files = sum(1 for f in files if f.status in (FileStatus.S1_DONE.value, FileStatus.S2_DONE.value, FileStatus.S1_FAILED.value, FileStatus.S2_FAILED.value))
 
             file_summaries = [
                 {
@@ -966,14 +1383,14 @@ async def extract_resumes_stream(
                 yield f"event: progress\ndata: {json.dumps(payload)}\n\n"
 
             # Check terminal states
-            if job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS):
-                yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'status': job.status.value, 'total': job.total_files, 'usable': job.usable_files, 'succeeded': s2_done_count, 'failed': failed_count})}\n\n"
+            if job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS) or (files and completed_files == len(files)):
+                yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'status': job.status.value, 'total': job.total_files or len(files), 'usable': job.usable_files or s2_done_count, 'succeeded': s2_done_count, 'failed': failed_count})}\n\n"
                 break
             elif job.status == JobStatus.FAILED:
                 yield f"event: error\ndata: {json.dumps({'message': 'Job execution failed on server'})}\n\n"
                 break
 
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
 
     return StreamingResponse(
         event_generator(),

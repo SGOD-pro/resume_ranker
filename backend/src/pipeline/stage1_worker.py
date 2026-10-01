@@ -11,8 +11,10 @@ Triggered by S3 s3:ObjectCreated notification on jobs/{job_id}/raw/{file_id}.pdf
 - On error/corrupt PDF: marks S1_FAILED (terminal).
 """
 
+import concurrent.futures
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any, Dict, Optional, Tuple
@@ -30,6 +32,7 @@ from src.infrastructure.models.file import FileStatus
 from src.infrastructure.queue.message import QueueMessage
 from src.infrastructure.queue.queue_manager import (
     ODL_BATCH_QUEUE,
+    STAGE2_FALLBACK_QUEUE,
     get_queue_adapter,
 )
 from src.infrastructure.repositories.files_repository import FilesRepository
@@ -38,8 +41,61 @@ from src.infrastructure.storage.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
-
 from urllib.parse import unquote_plus
+
+_process_pool: Optional[concurrent.futures.ProcessPoolExecutor] = None
+
+
+def _parse_pdf_in_process(pdf_bytes: bytes) -> Dict[str, Any]:
+    """Parse PDF bytes sequentially using PyMuPDF within a single isolated process.
+
+    Official PyMuPDF documentation forbids concurrent multithreaded use.
+    Executing parsing in isolated worker processes ensures memory safety and avoids crashes.
+    """
+    import fitz
+    from src.extraction.structural_parsing_service import pymupdf_layout_quality_signals
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page_texts = []
+    page_signals = []
+    for page in doc:
+        page_texts.append(page.get_text())
+        try:
+            sig = pymupdf_layout_quality_signals(page)
+            page_signals.append(sig)
+        except Exception:
+            pass
+    doc.close()
+    return {
+        "raw_text": "\n\n".join(page_texts),
+        "page_signals": page_signals,
+    }
+
+
+def run_isolated_pdf_parse(pdf_bytes: bytes) -> Dict[str, Any]:
+    """Execute PDF parsing in a bounded process pool, falling back to sequential in-process if pool unavailable."""
+    global _process_pool
+    # If running in serverless / AWS Lambda, execute directly within the isolated Lambda process
+    from src.config.aws import is_running_in_lambda
+    if is_running_in_lambda():
+        return _parse_pdf_in_process(pdf_bytes)
+
+    if _process_pool is None:
+        try:
+            max_workers = max(1, min(4, os.cpu_count() or 1))
+            _process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        except Exception as pool_err:
+            logger.warning("Could not initialize ProcessPoolExecutor: %s; falling back to direct parse", pool_err)
+            _process_pool = None
+
+    if _process_pool is not None:
+        try:
+            future = _process_pool.submit(_parse_pdf_in_process, pdf_bytes)
+            return future.result(timeout=30)
+        except Exception as exc:
+            logger.warning("Process pool submission failed: %s; falling back to sequential parse", exc)
+
+    return _parse_pdf_in_process(pdf_bytes)
 
 
 def parse_s3_key_for_job_and_file(s3_key: str) -> Optional[Tuple[str, str]]:
@@ -157,19 +213,10 @@ def process_stage1_message(message: Any) -> bool:
         # Download PDF bytes directly into memory (NO /tmp)
         pdf_bytes = storage.get_resume(job_id, file_id, s3_key=s3_raw_key)
 
-        # PyMuPDF fast parse directly from in-memory stream
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page_texts = []
-        page_signals = []
-        for page in doc:
-            page_texts.append(page.get_text())
-            try:
-                sig = pymupdf_layout_quality_signals(page)
-                page_signals.append(sig)
-            except Exception:
-                pass
-        doc.close()
-        raw_text = "\n\n".join(page_texts)
+        # PyMuPDF fast parse executed in isolated process
+        parsed_pdf = run_isolated_pdf_parse(pdf_bytes)
+        raw_text = parsed_pdf["raw_text"]
+        page_signals = parsed_pdf["page_signals"]
 
         # Layout quality check
         min_quality = min((p["score"] for p in page_signals), default=1.0) if page_signals else 1.0

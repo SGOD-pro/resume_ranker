@@ -1,0 +1,35 @@
+[Unit]
+Description=Resume Ranker Pipeline Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=app
+WorkingDirectory=/opt/resume_ranker/backend
+EnvironmentFile=/opt/resume_ranker/backend/.env
+
+# The standalone worker — never inside the API process
+ExecStart=/opt/resume_ranker/backend/.venv/bin/python worker.py
+
+# Restart on failure with exponential backoff
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Graceful shutdown: SIGTERM → 30s → SIGKILL
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

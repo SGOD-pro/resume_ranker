@@ -28,9 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 def dispatch_fast_parse(msg) -> None:
+    from src.infrastructure.repositories.documents_repository import DocumentsRepository
     from src.infrastructure.repositories.files_repository import FilesRepository
     job_id, file_id, _ = extract_job_file_from_message(msg)
     if job_id and file_id:
+        docs_repo = DocumentsRepository()
+        if docs_repo.get(job_id, file_id):
+            process_fast_parse_message(msg)
+            return
         f_repo = FilesRepository()
         if f_repo.get_file(job_id, file_id):
             process_stage1_message(msg)
@@ -43,7 +48,18 @@ def dispatch_odl_batch(msgs) -> None:
     f_repo = FilesRepository()
     file_msgs = []
     doc_msgs = []
+    nova_msgs = []
     for m in msgs:
+        stage = getattr(m, "stage", None)
+        if stage == "NOVA" or (not getattr(m, "document_ids", None) and getattr(m, "document_id", None) and getattr(m, "stage", None) != "ODL_BATCH"):
+            # Check if this is a FileItem first
+            jid, fid = _extract_job_file_id(m)
+            if jid and fid and f_repo.get_file(jid, fid):
+                file_msgs.append(m)
+            else:
+                nova_msgs.append(m)
+            continue
+
         jid, fid = _extract_job_file_id(m)
         if jid and fid and f_repo.get_file(jid, fid):
             file_msgs.append(m)
@@ -54,9 +70,16 @@ def dispatch_odl_batch(msgs) -> None:
         process_stage2_batch(file_msgs)
     for m in doc_msgs:
         process_odl_batch_message(m)
+    for m in nova_msgs:
+        dispatch_nova(m)
 
 
 def dispatch_nova(msg) -> None:
+    stage = getattr(msg, "stage", None)
+    if stage == "ODL_BATCH" or getattr(msg, "document_ids", None):
+        process_odl_batch_message(msg)
+        return
+
     from src.infrastructure.repositories.files_repository import FilesRepository
     jid, fid = _extract_job_file_id(msg)
     if jid and fid:
@@ -106,7 +129,7 @@ def drain_all_queues_sync(max_rounds: int = 50) -> int:
             processed_in_round += len(odl_msgs)
 
         # 3. Nova queue
-        nova_msgs = adapter.receive_messages(NOVA_QUEUE, max_messages=5, wait_time_seconds=1)
+        nova_msgs = adapter.receive_messages(NOVA_QUEUE, max_messages=10, wait_time_seconds=1)
         for msg in nova_msgs:
             dispatch_nova(msg)
             processed_in_round += 1

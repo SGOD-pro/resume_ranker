@@ -70,7 +70,7 @@ Previous prototype documents cited unvalidated claims, including a "97.8% domain
 
 ## ⚡ Architecture Power & Empirical Benchmark (1,000 Resumes)
 
-Empirical benchmark conducted on **1,000 real-world PDF resumes** sampled from the 3,850-resume corpus (`data/resumes/`) on a 16-core workstation running on `127.0.0.1:8000`. Raw data and full JSON results are tracked in [`backend/benchmark_1k_results.json`](backend/benchmark_1k_results.json).
+Empirical benchmark conducted on **1,000 real-world PDF resumes** sampled from the 3,850-resume corpus (`data/resumes/`) on a 16-core workstation running on `127.0.0.1:8000`. Full methodology and verified metrics are documented below and in [docs/v2-release/EVALUATION.md](docs/v2-release/EVALUATION.md).
 
 ### 1. Latency & Throughput Benchmark (1,000 Resumes)
 

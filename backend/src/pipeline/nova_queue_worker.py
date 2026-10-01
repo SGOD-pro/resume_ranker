@@ -29,6 +29,13 @@ def process_nova_message(message: QueueMessage) -> None:
 
     job_id = message.job_id
     session_id = message.session_id
+
+    # If this message was sent to the shared Stage 2 queue for ODL batching, hand off immediately
+    if getattr(message, "stage", None) == "ODL_BATCH" or getattr(message, "document_ids", None):
+        from src.pipeline.odl_batch_worker import process_odl_batch_message
+        process_odl_batch_message(message)
+        return
+
     doc_id = message.document_id
 
     if not doc_id:

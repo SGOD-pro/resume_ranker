@@ -1,0 +1,223 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Resume Ranker — SQS queues, DLQ, and SNS topic for durable pipeline"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+  FastParseVisibilityTimeout:
+    Type: Number
+    Default: 300
+    Description: Seconds before an unacknowledged fast-parse message reappears
+  OdlVisibilityTimeout:
+    Type: Number
+    Default: 600
+    Description: Seconds before an unacknowledged ODL batch message reappears
+  NovaVisibilityTimeout:
+    Type: Number
+    Default: 300
+  FinalRankVisibilityTimeout:
+    Type: Number
+    Default: 300
+  MaxReceiveCount:
+    Type: Number
+    Default: 5
+    Description: Number of receive attempts before routing to DLQ
+
+Resources:
+
+  # ── Dead-letter queue ──────────────────────────────────────────────────────
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-dlq-${Environment}"
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Fast-parse queue ───────────────────────────────────────────────────────
+  FastParseQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-fast-parse-${Environment}"
+      VisibilityTimeout: !Ref FastParseVisibilityTimeout
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20  # long-polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Stage
+          Value: fast-parse
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SQS policy to allow SNS to publish to fast-parse queue
+  FastParseQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref FastParseQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt FastParseQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref ResumeRankerEventsTopic
+
+  # ── ODL batch queue ────────────────────────────────────────────────────────
+  OdlBatchQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-odl-batch-${Environment}"
+      VisibilityTimeout: !Ref OdlVisibilityTimeout
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Stage
+          Value: odl-batch
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Nova queue ─────────────────────────────────────────────────────────────
+  NovaQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-nova-${Environment}"
+      VisibilityTimeout: !Ref NovaVisibilityTimeout
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Stage
+          Value: nova
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── Final rank queue ───────────────────────────────────────────────────────
+  FinalRankQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-final-rank-${Environment}"
+      VisibilityTimeout: !Ref FinalRankVisibilityTimeout
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 20
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: !Ref MaxReceiveCount
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Stage
+          Value: final-rank
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ── SNS topic ──────────────────────────────────────────────────────────────
+  ResumeRankerEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "resume-ranker-events-${Environment}"
+      Tags:
+        - Key: Service
+          Value: resume-ranker
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS → fast-parse SQS subscription
+  FastParseSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref ResumeRankerEventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt FastParseQueue.Arn
+      RawMessageDelivery: "false"  # SNS wraps in envelope; sqs_adapter.py unwraps
+
+  # ── CloudWatch Alarms ──────────────────────────────────────────────────────
+
+  # Alert when DLQ receives messages (indicates processing failures)
+  DlqDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "resume-ranker-dlq-depth-${Environment}"
+      AlarmDescription: "Messages landing in DLQ indicate pipeline failures"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DeadLetterQueue.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # Alert when fast-parse queue depth grows large (worker may be down)
+  FastParseDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "resume-ranker-fast-parse-depth-${Environment}"
+      AlarmDescription: "Fast-parse queue depth > 100 may indicate worker is down"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt FastParseQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 100
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  SnsTopicArn:
+    Value: !Ref ResumeRankerEventsTopic
+    Export:
+      Name: !Sub "resume-ranker-sns-arn-${Environment}"
+
+  FastParseQueueUrl:
+    Value: !Ref FastParseQueue
+    Export:
+      Name: !Sub "resume-ranker-fast-parse-url-${Environment}"
+
+  OdlBatchQueueUrl:
+    Value: !Ref OdlBatchQueue
+    Export:
+      Name: !Sub "resume-ranker-odl-batch-url-${Environment}"
+
+  NovaQueueUrl:
+    Value: !Ref NovaQueue
+    Export:
+      Name: !Sub "resume-ranker-nova-url-${Environment}"
+
+  FinalRankQueueUrl:
+    Value: !Ref FinalRankQueue
+    Export:
+      Name: !Sub "resume-ranker-final-rank-url-${Environment}"
+
+  DeadLetterQueueUrl:
+    Value: !Ref DeadLetterQueue
+    Export:
+      Name: !Sub "resume-ranker-dlq-url-${Environment}"

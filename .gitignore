@@ -9,7 +9,7 @@
 *.swp
 *.swo
 mcp_config.json
-
+.playwright-mcp
 # Dependencies & Environments
 node_modules/
 .venv/
@@ -39,3 +39,5 @@ odl/*.json
 .vercel/
 dist/
 build/
+
+scratch_resumes/

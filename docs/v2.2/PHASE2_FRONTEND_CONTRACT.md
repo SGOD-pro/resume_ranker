@@ -13,7 +13,7 @@
    - The frontend never posts multipart file payloads through FastAPI or API Gateway.
    - Files are uploaded directly from the browser to Amazon S3 via presigned `POST` conditions.
 2. **Immediate Fast-Path Stage 1:**
-   - S3 PUT triggers PyMuPDF layout analysis in the background immediately per file.
+   - Direct S3 presigned POST triggers PyMuPDF layout analysis in the background immediately per file via S3 event notifications.
    - The frontend does not wait for all files to upload before extraction begins.
 3. **Analyze Barrier:**
    - Recruiter clicks **Analyze** to submit requirements and explicit `file_ids`.
@@ -66,22 +66,28 @@ Authorization: Bearer <jwt_session_token> (Optional in dev/test)
 ```
 
 #### Constraints
-- `files`: Maximum 100 files per job. If `files > 50`, the response includes pagination with `next_page_token`.
+- `files`: Maximum 100 files per job. If `files > 50`, the response includes pagination with `next_page` (integer or null).
 - Rate limit: 20 job creations per session per 24 hours.
 
 #### Response: `201 Created`
 ```json
 {
   "job_id": "4a71e8bf-4a92-482a-bc91-ec129e928a01",
+  "id": "4a71e8bf-4a92-482a-bc91-ec129e928a01",
+  "title": "Staff Backend Engineer",
   "status": "UPLOADING",
   "total_files": 2,
   "remaining": 2,
-  "usable_files": 0,
+  "page": 1,
+  "page_size": 50,
+  "total_pages": 1,
+  "has_more": false,
+  "next_page": null,
   "files": [
     {
       "file_id": "f101-uuid4",
       "filename": "alex_morgan.pdf",
-      "status": "PENDING_UPLOAD",
+      "s3_key": "jobs/4a71e8bf-4a92-482a-bc91-ec129e928a01/raw/f101-uuid4.pdf",
       "presigned_post": {
         "url": "https://resume-ranker-dev-isolated-445567096027.s3.ap-south-1.amazonaws.com/",
         "fields": {
@@ -99,7 +105,7 @@ Authorization: Bearer <jwt_session_token> (Optional in dev/test)
     {
       "file_id": "f102-uuid4",
       "filename": "marcus_vance.pdf",
-      "status": "PENDING_UPLOAD",
+      "s3_key": "jobs/4a71e8bf-4a92-482a-bc91-ec129e928a01/raw/f102-uuid4.pdf",
       "presigned_post": {
         "url": "https://resume-ranker-dev-isolated-445567096027.s3.ap-south-1.amazonaws.com/",
         "fields": {
@@ -114,8 +120,7 @@ Authorization: Bearer <jwt_session_token> (Optional in dev/test)
         }
       }
     }
-  ],
-  "next_page_token": null
+  ]
 }
 ```
 
@@ -165,7 +170,6 @@ Content-Type: application/json
   "usable_files": 1,
   "analyze_requested": true,
   "is_stalled": false,
-  "created_at": "2026-09-26T00:00:10Z",
   "updated_at": "2026-09-26T00:00:35Z",
   "files": [
     {
@@ -173,9 +177,9 @@ Content-Type: application/json
       "filename": "alex_morgan.pdf",
       "status": "S2_DONE",
       "candidate_name": "Alex Morgan",
+      "needs_fallback": false,
       "low_confidence_extraction": false,
       "fallback_reason": null,
-      "updated_at": "2026-09-26T00:00:25Z",
       "error_message": null
     },
     {
@@ -183,9 +187,9 @@ Content-Type: application/json
       "filename": "marcus_vance.pdf",
       "status": "S2_PROCESSING",
       "candidate_name": "Candidate",
+      "needs_fallback": true,
       "low_confidence_extraction": false,
       "fallback_reason": null,
-      "updated_at": "2026-09-26T00:00:30Z",
       "error_message": null
     }
   ]
@@ -206,7 +210,7 @@ Content-Type: application/json
 #### File States
 | File Status | Terminal? | Meaning |
 |---|---|---|
-| `PENDING_UPLOAD` | No | Presigned URL generated; waiting for browser S3 PUT. |
+| `PENDING_UPLOAD` | No | Presigned POST generated; waiting for browser direct S3 upload. |
 | `S1_PROCESSING` | No | S3 notification triggered; Stage 1 fast-parse active. |
 | `S1_DONE` | No | Fast-parse complete; layout signals evaluated. |
 | `S2_PROCESSING` | No | Leased by Stage 2 worker; microbatching / LLM infill active. |
