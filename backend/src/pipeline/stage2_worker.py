@@ -245,7 +245,12 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         for doc in odl_candidates:
             doc_size = doc.get("file_size") or 0
             if doc_size <= 0:
-                doc_size = 100 * 1024  # Default 100KB if unspecified
+                try:
+                    head = storage._client.head_object(Bucket=storage._bucket, Key=doc["raw_s3_key"])
+                    doc_size = int(head.get("ContentLength", 0))
+                except Exception:
+                    doc_size = 0
+            doc["file_size"] = doc_size
 
             if current_chunk and (
                 len(current_chunk) >= MAX_ODL_MICROBATCH_SIZE

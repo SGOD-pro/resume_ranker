@@ -18,9 +18,12 @@ EXPECTED_CHARS_PER_PAGE = 1500
 QUALITY_THRESHOLD = 0.90
 
 
-def cluster_word_x_positions(page: fitz.Page) -> list:
+def cluster_word_x_positions(page: Optional[fitz.Page] = None, words: Optional[list] = None) -> list:
     """Cluster word left-edge x-positions to detect distinct text columns."""
-    words = page.get_text("words")
+    if words is None:
+        if page is None:
+            return []
+        words = page.get_text("words")
     if not words:
         return []
     xs = sorted(w[0] for w in words if len(w) > 0)
@@ -38,12 +41,15 @@ def cluster_word_x_positions(page: fitz.Page) -> list:
     return clusters
 
 
-def reading_order_monotonicity(page: fitz.Page) -> float:
+def reading_order_monotonicity(page: Optional[fitz.Page] = None, words: Optional[list] = None) -> float:
     """
     Fraction of consecutive word-pairs whose y-coordinates are non-decreasing
     (i.e. the text flows top-to-bottom in reading order).
     """
-    words = page.get_text("words")
+    if words is None:
+        if page is None:
+            return 1.0
+        words = page.get_text("words")
     if len(words) < 2:
         return 1.0
     y_diffs = [words[i][1] - words[i - 1][1] for i in range(1, len(words))]
@@ -51,7 +57,7 @@ def reading_order_monotonicity(page: fitz.Page) -> float:
     return non_negative / len(y_diffs)
 
 
-def looks_tabular(page: fitz.Page) -> bool:
+def looks_tabular(page: Optional[fitz.Page] = None, drawings_count: Optional[int] = None) -> bool:
     """
     Returns True only when the page is dominated by heavy table/grid graphics.
 
@@ -59,63 +65,58 @@ def looks_tabular(page: fitz.Page) -> bool:
     ~5–15 drawings; genuine table-heavy PDFs (scanned forms, spreadsheets)
     produce 30+.
     """
-    drawings = page.get_drawings()
-    return len(drawings) > 30
+    if drawings_count is None:
+        if page is None:
+            return False
+        drawings_count = len(page.get_drawings())
+    return drawings_count > 30
 
 
-def pymupdf_layout_quality(page: fitz.Page) -> float:
+def pymupdf_layout_quality(
+    page: Optional[fitz.Page] = None,
+    text: Optional[str] = None,
+    words: Optional[list] = None,
+    drawings_count: Optional[int] = None,
+) -> float:
     """
     Scores a page 0.0–1.0 for how reliably PyMuPDF can extract its text in
-    reading order.  Answers: 'is the text extractable as-is?' — not 'did regex
-    find a name?'.
-
-    Weight rationale (must sum to 1.0):
-      reading_order (0.40) — the strongest signal for extraction quality.
-          Garbled or scanned PDFs have non-monotone y-coordinates.
-      char_density   (0.35) — low char count → PDF is image-heavy / encrypted.
-      not_table_heavy (0.15) — heavy table grids fragment text into tiny cells.
-      col_penalty    (0.10) — a soft deduction for extreme multi-column layouts
-          (≥4 distinct x-clusters).  Normal 2-column resume layouts lose only ~5 pts.
-
-    Previous weights (single_column 0.35, not_table_heavy 0.15) were too harsh:
-      - single_column=0 for any resume with a sidebar → 35 pts lost unconditionally.
-      - looks_tabular threshold of 10 drawings caught all resumes with HR lines.
-    Result: 90 % of resumes scored <0.60, causing spurious ODL fallback.
+    reading order. Reuses pre-extracted text, words, and drawings when provided.
     """
-    signals: dict = {}
+    if text is None and page is not None:
+        text = page.get_text()
+    if words is None and page is not None:
+        words = page.get_text("words")
+    if drawings_count is None and page is not None:
+        drawings_count = len(page.get_drawings())
 
-    # 1. Reading order — primary signal
-    signals["reading_order"] = reading_order_monotonicity(page)
+    ro = reading_order_monotonicity(page, words=words)
+    cd = min(1.0, len(text or "") / EXPECTED_CHARS_PER_PAGE)
+    nt = 0.0 if looks_tabular(page, drawings_count=drawings_count) else 1.0
+    x_clusters = cluster_word_x_positions(page, words=words)
+    cp = 1.0 if len(x_clusters) <= 1 else 0.0
 
-    # 2. Character density vs expected chars per page
-    signals["char_density"] = min(1.0, len(page.get_text()) / EXPECTED_CHARS_PER_PAGE)
-
-    # 3. Table detection (soft: 0.0 only when truly table-heavy)
-    signals["not_table_heavy"] = 0.0 if looks_tabular(page) else 1.0
-
-    # 4. Column penalty — strict; heavily penalizes any multi-column layout detected
-    x_clusters = cluster_word_x_positions(page)
-    n_cols = len(x_clusters)
-    if n_cols <= 1:
-        signals["col_penalty"] = 1.0        # true 1-col layout
-    else:
-        signals["col_penalty"] = 0.0        # 2+ columns (detected with 50px gap)
-
-    return (
-        signals["col_penalty"] * 0.35
-        + signals["reading_order"]  * 0.30
-        + signals["char_density"] * 0.20
-        + signals["not_table_heavy"] * 0.15
-    )
+    return cp * 0.35 + ro * 0.30 + cd * 0.20 + nt * 0.15
 
 
-def pymupdf_layout_quality_signals(page: fitz.Page) -> dict:
+def pymupdf_layout_quality_signals(
+    page: Optional[fitz.Page] = None,
+    text: Optional[str] = None,
+    words: Optional[list] = None,
+    drawings_count: Optional[int] = None,
+) -> dict:
     """Return all individual signal values (for diagnostic/benchmark logging)."""
-    x_clusters = cluster_word_x_positions(page)
+    if text is None and page is not None:
+        text = page.get_text()
+    if words is None and page is not None:
+        words = page.get_text("words")
+    if drawings_count is None and page is not None:
+        drawings_count = len(page.get_drawings())
+
+    x_clusters = cluster_word_x_positions(page, words=words)
     n_cols = len(x_clusters)
-    ro = reading_order_monotonicity(page)
-    cd = min(1.0, len(page.get_text()) / EXPECTED_CHARS_PER_PAGE)
-    nt = 0.0 if looks_tabular(page) else 1.0
+    ro = reading_order_monotonicity(page, words=words)
+    cd = min(1.0, len(text or "") / EXPECTED_CHARS_PER_PAGE)
+    nt = 0.0 if looks_tabular(page, drawings_count=drawings_count) else 1.0
     cp = 1.0 if n_cols <= 1 else 0.0
     score = cp * 0.35 + ro * 0.30 + cd * 0.20 + nt * 0.15
     return {
@@ -124,8 +125,8 @@ def pymupdf_layout_quality_signals(page: fitz.Page) -> dict:
         "not_table_heavy": round(nt, 3),
         "col_penalty":   round(cp, 3),
         "n_x_clusters":  n_cols,
-        "text_len":      len(page.get_text()),
-        "n_drawings":    len(page.get_drawings()),
+        "text_len":      len(text or ""),
+        "n_drawings":    drawings_count or 0,
         "score":         round(score, 3),
     }
 
@@ -182,19 +183,24 @@ class StructuralParsingService:
         raw_pymupdf_text: List[str] = []
         hyperlinks: List[dict] = []
 
-        for page in doc:
-            page_qualities.append(pymupdf_layout_quality(page))
-            page_text = page.get_text()
-            
-            links_text = ""
-            for link in page.get_links():
-                if 'uri' in link:
-                    hyperlinks.append({"uri": link['uri']})
-                    uri_lower = link['uri'].lower()
-                    if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
-                        links_text += f" {link['uri']} "
-            
-            raw_pymupdf_text.append(page_text + links_text)
+        try:
+            for page in doc:
+                page_text = page.get_text()
+                words = page.get_text("words")
+                drawings_count = len(page.get_drawings())
+                page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
+
+                links_text = ""
+                for link in page.get_links():
+                    if 'uri' in link:
+                        hyperlinks.append({"uri": link['uri']})
+                        uri_lower = link['uri'].lower()
+                        if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                            links_text += f" {link['uri']} "
+
+                raw_pymupdf_text.append(page_text + links_text)
+        finally:
+            doc.close()
 
         # Fix: Use min() instead of average. If ANY page is multi-column (score ~0.50),
         # averaging with 1-column pages (~0.95) pulls the score above 0.70 and skips ODL,
@@ -281,24 +287,28 @@ class StructuralParsingService:
                 raw_pymupdf_text: List[str] = []
                 hyperlinks: List[dict] = []
 
-                for page in fitz_doc:
-                    page_qualities.append(pymupdf_layout_quality(page))
-                    page_text = page.get_text()
-                    
-                    links_text = ""
-                    for link in page.get_links():
-                        if 'uri' in link:
-                            hyperlinks.append({"uri": link['uri']})
-                            uri_lower = link['uri'].lower()
-                            if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
-                                links_text += f" {link['uri']} "
-                    
-                    raw_pymupdf_text.append(page_text + links_text)
+                try:
+                    for page in fitz_doc:
+                        page_text = page.get_text()
+                        words = page.get_text("words")
+                        drawings_count = len(page.get_drawings())
+                        page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
+
+                        links_text = ""
+                        for link in page.get_links():
+                            if 'uri' in link:
+                                hyperlinks.append({"uri": link['uri']})
+                                uri_lower = link['uri'].lower()
+                                if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                                    links_text += f" {link['uri']} "
+
+                        raw_pymupdf_text.append(page_text + links_text)
+                finally:
+                    fitz_doc.close()
 
                 min_quality = (
                     min(page_qualities) if page_qualities else 0.0
                 )
-                fitz_doc.close()
                 t1 = time.time()
                 raw_markdown = "\n".join(raw_pymupdf_text)
                 triggered_fallback = (min_quality < QUALITY_THRESHOLD) or doc.force_odl

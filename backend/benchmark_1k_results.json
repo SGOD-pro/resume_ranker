@@ -1,54 +1,84 @@
 {
-  "dataset": {
-    "total_evaluated": 1000,
-    "corpus_dir": "/home/swyra/projects/resume_ranker/data/resumes",
+  "metadata": {
+    "mode": "cached",
+    "git_commit": "0867b4929e7d3c565dc7c885a2bbe08270df41e8",
+    "manifest_hash": "83790f4af7b1398a",
     "seed": 42,
+    "workers": 6,
+    "peak_memory_mb": 216.56,
+    "platform": "Linux x86_64",
+    "python_version": "3.13.14",
+    "timestamp": "2026-10-01T19:49:26Z"
+  },
+  "dataset": {
+    "total_attempted": 1000,
+    "total_succeeded": 1000,
+    "total_failed": 0,
+    "failures": [],
+    "corpus_dir": "/home/swyra/projects/resume_ranker/data/resumes",
     "avg_page_count": 2.729,
     "avg_file_size_kb": 118.4823271484375
   },
   "latency_metrics": {
-    "wall_clock_seconds": 288.97986456299986,
-    "throughput_resumes_per_sec": 3.4604487115813987,
-    "mean_ms": 4599.150884184008,
-    "median_p50_ms": 3806.1363034998976,
-    "p90_ms": 8517.692931000056,
-    "p95_ms": 10156.552371000544,
-    "p99_ms": 15340.120646999821,
-    "min_ms": 161.8731789994854,
-    "max_ms": 42780.64317700046,
-    "stdev_ms": 3405.3107290470925
+    "wall_clock_seconds": 7.3,
+    "throughput_resumes_per_sec": 137.01,
+    "mean_ms": 42.99,
+    "median_p50_ms": 35.31,
+    "p90_ms": 74.92,
+    "p95_ms": 93.04,
+    "p99_ms": 136.51,
+    "min_ms": 1.93,
+    "max_ms": 398.46,
+    "stdev_ms": 33.17,
+    "mean_open_ms": 0.42,
+    "mean_struct_ms": 17.24,
+    "mean_extract_ms": 23.66
   },
   "extraction_coverage": {
-    "valid_name_rate": 0.548,
+    "valid_name_rate": 0.604,
     "skills_rate": 0.969,
-    "avg_skills_count": 9.259,
+    "avg_skills_count": 9.26,
     "experience_rate": 0.843,
-    "avg_experience_count": 2.598,
+    "avg_experience_count": 2.6,
     "education_rate": 0.59,
-    "avg_education_count": 1.676,
-    "email_rate": 0.723,
+    "avg_education_count": 1.68,
+    "email_rate": 0.731,
     "phone_rate": 0.763,
     "location_rate": 0.577,
-    "linkedin_rate": 0.0,
-    "github_rate": 0.0
+    "linkedin_rate": 0.01,
+    "github_rate": 0.001
   },
   "routing_breakdown": {
-    "clean_fastpath_count": 138,
-    "clean_fastpath_rate": 0.138,
-    "fallback_required_count": 862,
-    "fallback_required_rate": 0.862,
+    "clean_fastpath_count": 171,
+    "clean_fastpath_rate": 0.171,
+    "fallback_required_count": 829,
+    "fallback_required_rate": 0.829,
+    "needs_odl_count": 688,
+    "needs_nova_count": 440,
     "tabular_detected_count": 365
   },
   "scoring_benchmark": {
     "total_candidates": 1000,
-    "duration_ms": 10970.502094999574,
-    "throughput_cands_per_sec": 91.1535307445779,
-    "avg_score": 0.4396,
-    "signal_distribution": {
-      "strong": 0,
-      "good": 0,
-      "fair": 0,
-      "knockout": 1000
+    "case_matched": {
+      "duration_ms": 9624.78,
+      "throughput_cands_per_sec": 103.9,
+      "avg_score": 7.91,
+      "signal_distribution": {
+        "strong": 0,
+        "good": 0,
+        "fair": 184,
+        "knockout": 816
+      }
+    },
+    "case_cross_domain": {
+      "duration_ms": 8074.01,
+      "throughput_cands_per_sec": 123.9,
+      "signal_distribution": {
+        "strong": 0,
+        "good": 0,
+        "fair": 0,
+        "knockout": 1000
+      }
     }
   }
 }

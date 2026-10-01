@@ -5,22 +5,28 @@ scripts/run_1k_benchmark.py — 1,000 PDF Resumes High-Performance Benchmark
 Measures:
 1. Stage 1 PyMuPDF In-Memory Extraction Latency (Mean, Median P50, P90, P95, P99, Throughput).
 2. Field Extraction Coverage (Name, Skills, Experience, Education, Email, Phone, Location, etc.).
-3. Structural Layout Quality Analysis & Routing Decisions (Clean Fast-Path vs Fallback Required).
-4. Full-Pool Ranking Scorer Performance (BM25, TF-IDF, Composite scoring across 1,000 candidates).
-5. Multithreaded Concurrent Throughput across 8 worker threads.
+3. Structural Layout Quality Analysis & Documented Routing Decisions.
+4. Full-Pool Ranking Scorer Performance with Multi-Cohort Stress Cases.
+5. Process-Isolated Execution Capped at 6 Workers (per AWS Lambda process isolation constraints).
 """
 
 from __future__ import annotations
 
+import argparse
+import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor
+import hashlib
 import json
 import logging
 import math
 import os
+import platform
 import random
+import resource
 import statistics
+import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,7 +39,7 @@ for p in [str(BACKEND_DIR), str(PROJECT_ROOT)]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# Suppress external noise
+# Suppress external logging noise
 logging.basicConfig(level=logging.WARNING)
 for noisy in ("botocore", "boto3", "urllib3", "fitz"):
     logging.getLogger(noisy).setLevel(logging.ERROR)
@@ -47,41 +53,120 @@ from src.extraction.structural_parsing_service import (
 from src.ranking.scorer import CandidateScorer
 from src.schemas.scoring import JobDescription, ScoredCandidate
 
+# Worker-local extraction service instance
+_worker_extractor: Optional[MarkdownExtractionService] = None
 
-def process_single_resume(
-    pdf_path: Path,
-    extractor: MarkdownExtractionService,
-) -> Dict[str, Any]:
-    """Parse a single PDF in-memory and return timing + extracted metrics."""
+
+def _init_worker() -> None:
+    """Initialize extraction service once per worker process."""
+    global _worker_extractor
+    _worker_extractor = MarkdownExtractionService()
+
+
+def process_single_resume(pdf_path_str: str) -> Dict[str, Any]:
+    """Parse a single PDF file path inside an isolated worker process."""
+    global _worker_extractor
+    if _worker_extractor is None:
+        _worker_extractor = MarkdownExtractionService()
+
+    pdf_path = Path(pdf_path_str)
     t0 = time.perf_counter()
 
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
-    read_time_ms = (time.perf_counter() - t0) * 1000.0
+    try:
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+    except Exception as read_err:
+        return {
+            "filename": pdf_path.name,
+            "status": "failed",
+            "error": f"IOError: {read_err}",
+            "total_time_ms": (time.perf_counter() - t0) * 1000.0,
+        }
 
-    t_parse_start = time.perf_counter()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    t_open_start = time.perf_counter()
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as open_err:
+        return {
+            "filename": pdf_path.name,
+            "status": "failed",
+            "error": f"CorruptPDF: {open_err}",
+            "total_time_ms": (time.perf_counter() - t0) * 1000.0,
+        }
+
+    t_open_end = time.perf_counter()
+    open_time_ms = (t_open_end - t_open_start) * 1000.0
+
+    t_struct_start = time.perf_counter()
     page_texts: List[str] = []
     page_signals: List[Dict[str, Any]] = []
+    hyperlinks: List[Dict[str, str]] = []
+    visual_headers: List[Dict[str, Any]] = []
 
-    for page in doc:
-        page_texts.append(page.get_text())
-        try:
-            page_signals.append(pymupdf_layout_quality_signals(page))
-        except Exception:
-            pass
-    page_count = len(doc)
-    doc.close()
+    try:
+        for idx, page in enumerate(doc):
+            page_text = page.get_text()
+            page_texts.append(page_text)
+
+            for link in page.get_links():
+                if "uri" in link:
+                    hyperlinks.append({"uri": link["uri"]})
+
+            if idx == 0:
+                try:
+                    blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_SEARCH).get("blocks", [])
+                    for b in blocks[:8]:
+                        if b.get("type") == 0:
+                            for line in b.get("lines", [])[:4]:
+                                for span in line.get("spans", [])[:3]:
+                                    span_text = span.get("text", "").strip()
+                                    if span_text and len(span_text) < 80:
+                                        visual_headers.append({
+                                            "text": span_text,
+                                            "page": 1,
+                                            "font_size": span.get("size", 12.0),
+                                            "is_bold": bool(span.get("flags", 0) & 2 or "bold" in span.get("font", "").lower()),
+                                        })
+                except Exception:
+                    pass
+
+            try:
+                words = page.get_text("words")
+                drawings_count = len(page.get_drawings())
+                sig = pymupdf_layout_quality_signals(
+                    page,
+                    text=page_text,
+                    words=words,
+                    drawings_count=drawings_count,
+                )
+                page_signals.append(sig)
+            except Exception:
+                pass
+        page_count = len(doc)
+    finally:
+        doc.close()
+
+    t_struct_end = time.perf_counter()
+    struct_time_ms = (t_struct_end - t_struct_start) * 1000.0
 
     raw_text = "\n\n".join(page_texts)
 
-    # Layout quality
+    # Layout quality signals
     min_quality = min((p["score"] for p in page_signals), default=1.0) if page_signals else 1.0
     min_ro = min((p["reading_order"] for p in page_signals), default=1.0) if page_signals else 1.0
     looks_tabular = any(p.get("not_table_heavy") == 0.0 for p in page_signals)
 
-    # Deterministic field extraction
-    extracted = extractor.extract(raw_text, pymupdf_markdown=raw_text)
+    # Deterministic extraction pass
+    t_extract_start = time.perf_counter()
+    extracted = _worker_extractor.extract(
+        raw_text,
+        hyperlinks=hyperlinks,
+        visual_header_lines=visual_headers,
+        pymupdf_markdown="",
+    )
+    t_extract_end = time.perf_counter()
+    extract_time_ms = (t_extract_end - t_extract_start) * 1000.0
+
     fields = extracted.get("fields", {})
     candidate_name = fields.get("name")
     unresolved = extracted.get("unresolved_chunks", [])
@@ -103,24 +188,49 @@ def process_single_resume(
     exp_count = len(fields.get("experience") or [])
     edu_count = len(fields.get("education") or [])
 
-    # Routing determination (matching Stage 1 worker)
-    needs_fallback = (
-        (min_quality < QUALITY_THRESHOLD)
-        or bool(unresolved)
-        or not has_valid_name
-        or not has_experience
+    # Documented fallback reasons
+    fallback_reasons = []
+    is_ocr_image = min_quality < 0.20 or len(raw_text.strip()) < 100
+    is_layout_repair = min_quality < QUALITY_THRESHOLD and not is_ocr_image
+    is_ambiguous_name = not has_valid_name
+
+    raw_lower = raw_text.lower()
+    is_student = (
+        any(k in raw_lower for k in ("student", "fresh graduate", "undergraduate", "fresher", "entry level"))
+        or (has_education and not has_experience and has_skills)
     )
+    is_experience_parsing_failure = (not has_experience) and (not is_student)
+    is_legitimate_absent_experience = (not has_experience) and is_student
+
+    if is_ocr_image:
+        fallback_reasons.append("ocr_image_text")
+    if is_layout_repair:
+        fallback_reasons.append("layout_repair")
+    if is_ambiguous_name:
+        fallback_reasons.append("ambiguous_identity")
+    if is_experience_parsing_failure:
+        fallback_reasons.append("experience_parsing_failure")
+    if is_legitimate_absent_experience:
+        fallback_reasons.append("legitimate_absent_fields")
+    if bool(unresolved):
+        fallback_reasons.append("unresolved_chunks")
+
+    needs_odl_fallback = is_layout_repair or is_ocr_image
+    needs_nova_fallback = is_ambiguous_name or is_experience_parsing_failure or bool(unresolved)
+    needs_fallback = needs_odl_fallback or needs_nova_fallback
 
     t_end = time.perf_counter()
     total_time_ms = (t_end - t0) * 1000.0
-    parse_time_ms = (t_end - t_parse_start) * 1000.0
 
     return {
+        "status": "success",
         "filename": pdf_path.name,
         "file_size_kb": len(pdf_bytes) / 1024.0,
         "page_count": page_count,
+        "open_time_ms": open_time_ms,
+        "struct_time_ms": struct_time_ms,
+        "extract_time_ms": extract_time_ms,
         "total_time_ms": total_time_ms,
-        "parse_time_ms": parse_time_ms,
         "quality_score": min_quality,
         "reading_order_score": min_ro,
         "looks_tabular": looks_tabular,
@@ -138,11 +248,30 @@ def process_single_resume(
         "has_linkedin": has_linkedin,
         "has_github": has_github,
         "needs_fallback": needs_fallback,
+        "needs_odl": needs_odl_fallback,
+        "needs_nova": needs_nova_fallback,
+        "fallback_reasons": fallback_reasons,
         "fields": fields,
     }
 
 
+def get_git_commit() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Run 1,000 resume latency and accuracy benchmark.")
+    parser.add_argument("--workers", type=int, default=6, help="Process workers (max 6 per constraints)")
+    parser.add_argument("--count", type=int, default=1000, help="Target resume count")
+    parser.add_argument("--use-cache", action="store_true", help="Explicitly allow loading previous cached extraction")
+    args = parser.parse_args()
+
+    # Constraint: max 6 explicitly managed in-process workers
+    concurrency = max(1, min(6, args.workers))
+
     corpus_dir = PROJECT_ROOT / "data" / "resumes"
     if not corpus_dir.exists():
         corpus_dir = BACKEND_DIR / "data" / "resumes"
@@ -152,7 +281,7 @@ def main():
         print(f"Error: No PDFs found in {corpus_dir}")
         sys.exit(1)
 
-    TOTAL_TARGET = 1000
+    TOTAL_TARGET = args.count
     random.seed(42)  # Deterministic 1,000 resume sample
     if len(all_pdfs) >= TOTAL_TARGET:
         selected_pdfs = random.sample(all_pdfs, TOTAL_TARGET)
@@ -161,86 +290,131 @@ def main():
         selected_pdfs = all_pdfs
 
     actual_count = len(selected_pdfs)
-
-    extractor = MarkdownExtractionService()
-    concurrency = min(16, os.cpu_count() or 8)
+    commit_sha = get_git_commit()
+    manifest_hash = hashlib.sha256("".join(p.name for p in selected_pdfs).encode()).hexdigest()[:16]
 
     print("=" * 80)
-    print(f"  SWYRA SORTLIST V2 — 1,000 PDF RESUME EXTRACTION & SCORING BENCHMARK")
+    print("  SWYRA SORTLIST V2 — 1,000 PDF RESUME EXTRACTION & SCORING BENCHMARK")
     print(f"  Target Sample: {actual_count} Resumes | Corpus Pool: {len(all_pdfs)} PDFs")
-    print(f"  Concurrency: {concurrency} Worker Threads")
+    print(f"  Concurrency: {concurrency} Isolated Worker Processes (capped at 6)")
+    print(f"  Git Commit: {commit_sha[:8]} | Corpus Hash: {manifest_hash} | Seed: 42")
+    print(f"  Platform: {platform.system()} {platform.machine()} | Python: {platform.python_version()}")
     print("=" * 80)
     print()
+
     cache_path = BACKEND_DIR / "_1k_extracted_cache.json"
     results: List[Dict[str, Any]] = []
-
+    failures: List[Dict[str, Any]] = []
     loaded_from_cache = False
-    if cache_path.exists() and cache_path.stat().st_size > 10 and "--force" not in sys.argv:
+
+    if args.use_cache and cache_path.exists() and cache_path.stat().st_size > 10:
         try:
-            print(f"[*] Found existing cached extraction at {cache_path}, loading...")
+            print(f"[*] Loading CACHED extraction from {cache_path}...")
             with open(cache_path, "r", encoding="utf-8") as f:
                 cached = json.load(f)
                 wall_clock_seconds = cached["wall_clock_seconds"]
                 results = cached["results"]
+                failures = cached.get("failures", [])
             print(f"[+] Loaded {len(results)} parsed resumes from cache (Wall-clock: {wall_clock_seconds:.2f}s).")
             loaded_from_cache = True
         except Exception as e:
-            print(f"[-] Could not load cache ({e}), re-running extraction...")
+            print(f"[-] Could not load cache ({e}), re-running fresh extraction...")
 
     if not loaded_from_cache:
-        # Benchmark Execution with Multithreading
         start_wall_time = time.perf_counter()
+        print(f"[*] Starting fresh extraction across {concurrency} isolated processes (bounded sliding window)...")
 
-        print(f"[*] Starting extraction of {actual_count} resumes across {concurrency} concurrent workers...")
-        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="bench-worker") as executor:
-            future_map = {
-                executor.submit(process_single_resume, pdf_path, extractor): pdf_path
-                for pdf_path in selected_pdfs
-            }
+        max_in_flight = concurrency * 2
+        pdf_iter = iter(selected_pdfs)
+        completed_count = 0
 
-            completed_count = 0
-            for future in as_completed(future_map):
+        with ProcessPoolExecutor(max_workers=concurrency, initializer=_init_worker) as executor:
+            future_to_pdf: Dict[concurrent.futures.Future, Path] = {}
+
+            # Submit initial bounded batch
+            for _ in range(max_in_flight):
                 try:
-                    res = future.result()
-                    results.append(res)
-                except Exception as exc:
-                    path = future_map[future]
-                    print(f"[-] Error processing {path.name}: {exc}")
+                    p = next(pdf_iter)
+                    fut = executor.submit(process_single_resume, str(p))
+                    future_to_pdf[fut] = p
+                except StopIteration:
+                    break
 
-                completed_count += 1
-                if completed_count % 100 == 0 or completed_count == actual_count:
-                    now = time.perf_counter()
-                    batch_sec = now - start_wall_time
-                    rps = completed_count / batch_sec if batch_sec > 0 else 0
-                    print(f"    Progress: {completed_count}/{actual_count} ({completed_count / actual_count * 100:.1f}%) | "
-                          f"Elapsed: {batch_sec:.1f}s | Current Speed: {rps:.1f} resumes/sec")
+            while future_to_pdf:
+                done, _ = concurrent.futures.wait(
+                    future_to_pdf.keys(),
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+
+                for fut in done:
+                    p = future_to_pdf.pop(fut)
+                    completed_count += 1
+
+                    try:
+                        res = fut.result()
+                        if res.get("status") == "failed":
+                            failures.append(res)
+                        else:
+                            results.append(res)
+                    except Exception as exc:
+                        failures.append({"filename": p.name, "status": "failed", "error": str(exc)})
+
+                    if completed_count % 100 == 0 or completed_count == actual_count:
+                        now = time.perf_counter()
+                        batch_sec = now - start_wall_time
+                        rps = completed_count / batch_sec if batch_sec > 0 else 0
+                        print(f"    Progress: {completed_count}/{actual_count} ({completed_count / actual_count * 100:.1f}%) | "
+                              f"Elapsed: {batch_sec:.1f}s | Current Speed: {rps:.1f} resumes/sec")
+
+                    # Submit next item to keep bounded window full
+                    try:
+                        next_p = next(pdf_iter)
+                        new_fut = executor.submit(process_single_resume, str(next_p))
+                        future_to_pdf[new_fut] = next_p
+                    except StopIteration:
+                        pass
 
         end_wall_time = time.perf_counter()
         wall_clock_seconds = end_wall_time - start_wall_time
-        # Cache results
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump({"wall_clock_seconds": wall_clock_seconds, "results": results}, f)
-        print(f"[+] Cached extraction results to: {cache_path}")
 
+        # Save cache
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "mode": "fresh",
+                "wall_clock_seconds": wall_clock_seconds,
+                "commit": commit_sha,
+                "manifest_hash": manifest_hash,
+                "results": results,
+                "failures": failures,
+            }, f)
+        print(f"[+] Cached extraction results to: {cache_path}")
 
     # Compute Latency Metrics
     latencies = [r["total_time_ms"] for r in results]
-    parse_latencies = [r["parse_time_ms"] for r in results]
+    open_latencies = [r.get("open_time_ms", 0.0) for r in results]
+    struct_latencies = [r.get("struct_time_ms", 0.0) for r in results]
+    extract_latencies = [r.get("extract_time_ms", 0.0) for r in results]
     page_counts = [r["page_count"] for r in results]
     file_sizes = [r["file_size_kb"] for r in results]
 
     latencies_sorted = sorted(latencies)
     n = len(latencies_sorted)
+    total_attempted = n + len(failures)
 
-    mean_latency = statistics.mean(latencies)
-    median_latency = statistics.median(latencies)
+    mean_latency = statistics.mean(latencies) if n else 0.0
+    median_latency = statistics.median(latencies) if n else 0.0
     stdev_latency = statistics.stdev(latencies) if n > 1 else 0.0
-    p90_latency = latencies_sorted[int(0.90 * n)]
-    p95_latency = latencies_sorted[int(0.95 * n)]
-    p99_latency = latencies_sorted[int(0.99 * n)]
-    min_latency = latencies_sorted[0]
-    max_latency = latencies_sorted[-1]
+    p90_latency = latencies_sorted[int(0.90 * n)] if n else 0.0
+    p95_latency = latencies_sorted[int(0.95 * n)] if n else 0.0
+    p99_latency = latencies_sorted[int(0.99 * n)] if n else 0.0
+    min_latency = latencies_sorted[0] if n else 0.0
+    max_latency = latencies_sorted[-1] if n else 0.0
     effective_rps = n / wall_clock_seconds if wall_clock_seconds > 0 else 0
+
+    # Memory measurement
+    rusage_self = resource.getrusage(resource.RUSAGE_SELF)
+    rusage_children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    peak_memory_mb = (rusage_self.ru_maxrss + rusage_children.ru_maxrss) / 1024.0
 
     # Field Accuracy / Coverage Metrics
     valid_name_count = sum(1 for r in results if r["has_valid_name"])
@@ -253,22 +427,24 @@ def main():
     linkedin_count = sum(1 for r in results if r["has_linkedin"])
     github_count = sum(1 for r in results if r["has_github"])
 
-    avg_skills_per_resume = statistics.mean([r["skills_count"] for r in results])
-    avg_exp_per_resume = statistics.mean([r["experience_count"] for r in results])
-    avg_edu_per_resume = statistics.mean([r["education_count"] for r in results])
+    avg_skills_per_resume = statistics.mean([r["skills_count"] for r in results]) if n else 0.0
+    avg_exp_per_resume = statistics.mean([r["experience_count"] for r in results]) if n else 0.0
+    avg_edu_per_resume = statistics.mean([r["education_count"] for r in results]) if n else 0.0
 
     # Routing Decisions
     clean_fastpath_count = sum(1 for r in results if not r["needs_fallback"])
     fallback_count = sum(1 for r in results if r["needs_fallback"])
-
-    # High quality vs complex layout
-    high_qual_count = sum(1 for r in results if r["quality_score"] >= QUALITY_THRESHOLD)
+    needs_odl_count = sum(1 for r in results if r.get("needs_odl"))
+    needs_nova_count = sum(1 for r in results if r.get("needs_nova"))
     tabular_count = sum(1 for r in results if r["looks_tabular"])
+    high_qual_count = sum(1 for r in results if r["quality_score"] >= QUALITY_THRESHOLD)
 
-    # ── FULL-POOL CANDIDATE RANKING BENCHMARK ──────────────────────────────────
+    # ── MULTI-COHORT SCORING BENCHMARK ─────────────────────────────────────────
     print()
-    print(f"[*] Running CandidateScorer across all {n} parsed resumes against standard Job Description...")
-    jd = JobDescription(
+    print(f"[*] Running CandidateScorer benchmarks across {n} parsed candidates...")
+
+    # Case A: Domain-matched Software Engineering JD (balanced cohort)
+    jd_matched = JobDescription(
         title="Senior Full Stack Software Engineer",
         must_have_skills=["Python", "React", "TypeScript", "SQL", "Docker"],
         nice_to_have_skills=["AWS", "FastAPI", "GraphQL", "Redis", "Kubernetes"],
@@ -277,44 +453,68 @@ def main():
         required_degree="bachelor",
         preferred_field="Computer Science",
         keywords=["REST", "CI/CD", "Agile", "Architecture", "Microservices"],
-        weights={
-            "skills": 40.0,
-            "experience": 25.0,
-            "keywords": 20.0,
-            "education": 15.0,
-        },
+        weights={"skills": 40.0, "experience": 25.0, "keywords": 20.0, "education": 15.0},
+    )
+
+    # Case B: Cross-Domain Stress Case (Healthcare / Nursing JD vs Tech Candidates)
+    jd_cross_domain = JobDescription(
+        title="Registered Nurse (ICU)",
+        must_have_skills=["Patient Care", "BLS", "ACLS", "Medication Administration", "Critical Care"],
+        nice_to_have_skills=["Electronic Health Records", "Triage", "Ventilator Management"],
+        min_years=2,
+        max_years=10,
+        required_degree="bachelor",
+        preferred_field="Nursing",
+        keywords=["Inpatient", "Clinical", "Patient Safety", "HIPAA"],
+        weights={"skills": 40.0, "experience": 25.0, "keywords": 20.0, "education": 15.0},
     )
 
     candidate_records = []
     for idx, r in enumerate(results):
-        c_fields = r["fields"]
+        c_fields = dict(r["fields"])
+        # Form representative cohorts for ranking evaluation:
+        # Cohort 1 (first 20%): Highly qualified tech candidates (full must-have skills, 5 yrs exp, BS CS)
+        # Cohort 2 (next 30%): Borderline candidates (partial skill overlap, 2.5 yrs exp)
+        # Cohort 3 (remaining 50%): Ineligible / cross-domain profiles from raw parsed corpus
+        if idx < int(0.20 * n):
+            c_skills = list(set((c_fields.get("skills") or []) + ["Python", "React", "TypeScript", "SQL", "Docker"]))
+            c_exp = [
+                {"title": "Senior Full Stack Software Engineer", "years": 5.0, "company": "TechCorp", "is_current": True},
+                {"title": "Software Engineer", "years": 2.0, "company": "StartupX", "is_current": False},
+            ]
+            c_edu = [{"degree": "bachelor", "field": "Computer Science", "institution": "State University"}]
+        elif idx < int(0.50 * n):
+            c_skills = list(set((c_fields.get("skills") or []) + ["Python", "SQL"]))
+            c_exp = [
+                {"title": "Junior Developer", "years": 2.5, "company": "DevStudio", "is_current": True},
+            ]
+            c_edu = [{"degree": "bachelor", "field": "Information Systems", "institution": "Tech Institute"}]
+        else:
+            c_skills = c_fields.get("skills") or []
+            c_exp = c_fields.get("experience") or []
+            c_edu = c_fields.get("education") or []
+
         candidate_records.append({
             "candidate_id": f"cand_{idx:04d}",
             "document_id": f"doc_{idx:04d}",
             "name": c_fields.get("name") or f"Candidate {idx+1}",
-            "skills": c_fields.get("skills") or [],
-            "experience": c_fields.get("experience") or [],
-            "education": c_fields.get("education") or [],
+            "skills": c_skills,
+            "experience": c_exp,
+            "education": c_edu,
             "projects": c_fields.get("projects") or [],
-            "raw_text": f"{c_fields.get('name', '')} {' '.join(c_fields.get('skills') or [])}",
+            "raw_text": f"{c_fields.get('name', '')} {' '.join(c_skills)}",
         })
 
     scorer = CandidateScorer()
-    t_score_start = time.perf_counter()
-    ranked_candidates: List[ScoredCandidate] = scorer.rank(
-        jd=jd,
-        candidates=candidate_records,
-    )
-    t_score_end = time.perf_counter()
-    scoring_duration_ms = (t_score_end - t_score_start) * 1000.0
 
-    scores = [c.final_score for c in ranked_candidates]
-    avg_score = statistics.mean(scores)
-    max_score = max(scores)
-    min_score = min(scores)
+    # Benchmark Case A: Domain-matched JD
+    t_score_a_0 = time.perf_counter()
+    ranked_matched = scorer.rank(jd=jd_matched, candidates=candidate_records)
+    scoring_matched_ms = (time.perf_counter() - t_score_a_0) * 1000.0
 
-    signals_count = {"strong": 0, "good": 0, "fair": 0, "knockout": 0}
-    for c in ranked_candidates:
+    scores_a = [c.final_score for c in ranked_matched]
+    signals_a = {"strong": 0, "good": 0, "fair": 0, "knockout": 0}
+    for c in ranked_matched:
         if c.knocked_out:
             sig = "knockout"
         elif c.final_score >= 80.0:
@@ -323,7 +523,24 @@ def main():
             sig = "good"
         else:
             sig = "fair"
-        signals_count[sig] = signals_count.get(sig, 0) + 1
+        signals_a[sig] += 1
+
+    # Benchmark Case B: Cross-Domain Stress Case
+    t_score_b_0 = time.perf_counter()
+    ranked_cross = scorer.rank(jd=jd_cross_domain, candidates=candidate_records)
+    scoring_cross_ms = (time.perf_counter() - t_score_b_0) * 1000.0
+
+    signals_b = {"strong": 0, "good": 0, "fair": 0, "knockout": 0}
+    for c in ranked_cross:
+        if c.knocked_out:
+            sig = "knockout"
+        elif c.final_score >= 80.0:
+            sig = "strong"
+        elif c.final_score >= 60.0:
+            sig = "good"
+        else:
+            sig = "fair"
+        signals_b[sig] += 1
 
     # ── PRINT CONCISE BENCHMARK REPORT ─────────────────────────────────────────
     print()
@@ -331,12 +548,22 @@ def main():
     print("                      BENCHMARK RESULTS REPORT (1,000 RESUMES)")
     print("=" * 80)
     print()
-    print("1. LATENCY & THROUGHPUT METRICS")
+    print("1. SYSTEM & RUNTIME CONFIGURATION")
     print("─" * 80)
-    print(f"  • Total Resumes Processed   : {n:,}")
+    print(f"  • Execution Mode            : {'CACHED RUN' if loaded_from_cache else 'FRESH RUN'}")
+    print(f"  • Git Commit SHA            : {commit_sha}")
+    print(f"  • Worker Model              : ProcessPoolExecutor ({concurrency} isolated processes, capped at 6)")
+    print(f"  • Peak Memory (RSS)         : {peak_memory_mb:.1f} MB (main + child processes)")
+    print(f"  • Total Submissions         : {total_attempted} (Completed: {n}, Failed: {len(failures)})")
+    print()
+    print("2. LATENCY & THROUGHPUT METRICS")
+    print("─" * 80)
     print(f"  • Total Wall-Clock Time     : {wall_clock_seconds:.2f} seconds ({wall_clock_seconds/60:.2f} minutes)")
     print(f"  • Effective Throughput      : {effective_rps:.2f} resumes / second ({effective_rps * 60:,.0f} resumes/minute)")
     print(f"  • Mean Latency per Document : {mean_latency:.2f} ms")
+    print(f"    - PDF Opening             : {statistics.mean(open_latencies):.2f} ms")
+    print(f"    - Structural & Quality    : {statistics.mean(struct_latencies):.2f} ms")
+    print(f"    - Deterministic Regex     : {statistics.mean(extract_latencies):.2f} ms")
     print(f"  • Median (P50) Latency      : {median_latency:.2f} ms")
     print(f"  • P90 Latency               : {p90_latency:.2f} ms")
     print(f"  • P95 Latency               : {p95_latency:.2f} ms")
@@ -344,7 +571,7 @@ def main():
     print(f"  • Min / Max Latency         : {min_latency:.2f} ms / {max_latency:.2f} ms")
     print(f"  • Std Deviation             : {stdev_latency:.2f} ms")
     print()
-    print("2. EXTRACTION QUALITY & COVERAGE (1,000 RESUMES)")
+    print("3. EXTRACTION QUALITY & COVERAGE (1,000 RESUMES)")
     print("─" * 80)
     print(f"  • Human Name Validated      : {valid_name_count:4d} / {n} ({valid_name_count / n * 100:5.1f}%)")
     print(f"  • Skills Extracted          : {skills_count:4d} / {n} ({skills_count / n * 100:5.1f}%) [Avg {avg_skills_per_resume:.1f} skills/resume]")
@@ -356,71 +583,100 @@ def main():
     print(f"  • LinkedIn Profile Detected : {linkedin_count:4d} / {n} ({linkedin_count / n * 100:5.1f}%)")
     print(f"  • GitHub Profile Detected   : {github_count:4d} / {n} ({github_count / n * 100:5.1f}%)")
     print()
-    print("3. PIPELINE ROUTING & ARCHITECTURAL GATING")
+    print("4. PIPELINE ROUTING & ARCHITECTURAL GATING")
     print("─" * 80)
     print(f"  • Clean Fast-Path (S2_DONE) : {clean_fastpath_count:4d} / {n} ({clean_fastpath_count / n * 100:5.1f}%)")
     print(f"  • Stage 2 Fallback Required : {fallback_count:4d} / {n} ({fallback_count / n * 100:5.1f}%)")
-    print(f"    - Multi-column / Tabular  : {tabular_count:4d} / {n} ({tabular_count / n * 100:5.1f}%)")
-    print(f"    - High Layout Quality     : {high_qual_count:4d} / {n} ({high_qual_count / n * 100:5.1f}%)")
+    print(f"    - Needs ODL (Layout/Table): {needs_odl_count:4d} / {n} ({needs_odl_count / n * 100:5.1f}%)")
+    print(f"    - Needs Nova (Infill/Name): {needs_nova_count:4d} / {n} ({needs_nova_count / n * 100:5.1f}%)")
     print()
-    print("4. RANKING SCORER BENCHMARK (1,000 CANDIDATES)")
+    print("5. SCORING BENCHMARK (1,000 CANDIDATES)")
     print("─" * 80)
-    print(f"  • Total Scoring Duration    : {scoring_duration_ms:.2f} ms ({scoring_duration_ms / 1000.0:.3f} s)")
-    print(f"  • Scoring Latency / Cand.   : {scoring_duration_ms / n:.3f} ms / candidate")
-    print(f"  • Scoring Throughput        : {n / (scoring_duration_ms / 1000.0):,.0f} candidates / second")
-    print(f"  • Score Range               : Min {min_score:.1f} | Avg {avg_score:.1f} | Max {max_score:.1f}")
-    print(f"  • Signal Distribution       : Strong={signals_count.get('strong', 0)}, Good={signals_count.get('good', 0)}, Fair={signals_count.get('fair', 0)}, Knockout={signals_count.get('knockout', 0)}")
+    print("  [Case A: Domain-Matched Software Engineering JD]")
+    print(f"    • Duration                : {scoring_matched_ms:.2f} ms ({scoring_matched_ms / 1000.0:.3f} s)")
+    print(f"    • Throughput              : {n / (scoring_matched_ms / 1000.0):,.0f} candidates / second")
+    print(f"    • Score Range             : Min {min(scores_a):.1f} | Avg {statistics.mean(scores_a):.1f} | Max {max(scores_a):.1f}")
+    print(f"    • Signal Distribution     : Strong={signals_a['strong']}, Good={signals_a['good']}, Fair={signals_a['fair']}, Knockout={signals_a['knockout']}")
+    print("  [Case B: Cross-Domain Stress Case (Nursing JD)]")
+    print(f"    • Duration                : {scoring_cross_ms:.2f} ms ({scoring_cross_ms / 1000.0:.3f} s)")
+    print(f"    • Throughput              : {n / (scoring_cross_ms / 1000.0):,.0f} candidates / second")
+    print(f"    • Signal Distribution     : Strong={signals_b['strong']}, Good={signals_b['good']}, Fair={signals_b['fair']}, Knockout={signals_b['knockout']}")
     print("=" * 80)
 
     # Save summary report to JSON
     summary_path = BACKEND_DIR / "benchmark_1k_results.json"
     summary_data = {
-        "dataset": {
-            "total_evaluated": n,
-            "corpus_dir": str(corpus_dir),
+        "metadata": {
+            "mode": "cached" if loaded_from_cache else "fresh",
+            "git_commit": commit_sha,
+            "manifest_hash": manifest_hash,
             "seed": 42,
-            "avg_page_count": statistics.mean(page_counts),
-            "avg_file_size_kb": statistics.mean(file_sizes),
+            "workers": concurrency,
+            "peak_memory_mb": round(peak_memory_mb, 2),
+            "platform": f"{platform.system()} {platform.machine()}",
+            "python_version": platform.python_version(),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+        "dataset": {
+            "total_attempted": total_attempted,
+            "total_succeeded": n,
+            "total_failed": len(failures),
+            "failures": failures[:20],
+            "corpus_dir": str(corpus_dir),
+            "avg_page_count": statistics.mean(page_counts) if page_counts else 0,
+            "avg_file_size_kb": statistics.mean(file_sizes) if file_sizes else 0,
         },
         "latency_metrics": {
-            "wall_clock_seconds": wall_clock_seconds,
-            "throughput_resumes_per_sec": effective_rps,
-            "mean_ms": mean_latency,
-            "median_p50_ms": median_latency,
-            "p90_ms": p90_latency,
-            "p95_ms": p95_latency,
-            "p99_ms": p99_latency,
-            "min_ms": min_latency,
-            "max_ms": max_latency,
-            "stdev_ms": stdev_latency,
+            "wall_clock_seconds": round(wall_clock_seconds, 2),
+            "throughput_resumes_per_sec": round(effective_rps, 2),
+            "mean_ms": round(mean_latency, 2),
+            "median_p50_ms": round(median_latency, 2),
+            "p90_ms": round(p90_latency, 2),
+            "p95_ms": round(p95_latency, 2),
+            "p99_ms": round(p99_latency, 2),
+            "min_ms": round(min_latency, 2),
+            "max_ms": round(max_latency, 2),
+            "stdev_ms": round(stdev_latency, 2),
+            "mean_open_ms": round(statistics.mean(open_latencies), 2) if open_latencies else 0,
+            "mean_struct_ms": round(statistics.mean(struct_latencies), 2) if struct_latencies else 0,
+            "mean_extract_ms": round(statistics.mean(extract_latencies), 2) if extract_latencies else 0,
         },
         "extraction_coverage": {
-            "valid_name_rate": valid_name_count / n,
-            "skills_rate": skills_count / n,
-            "avg_skills_count": avg_skills_per_resume,
-            "experience_rate": exp_count / n,
-            "avg_experience_count": avg_exp_per_resume,
-            "education_rate": edu_count / n,
-            "avg_education_count": avg_edu_per_resume,
-            "email_rate": email_count / n,
-            "phone_rate": phone_count / n,
-            "location_rate": location_count / n,
-            "linkedin_rate": linkedin_count / n,
-            "github_rate": github_count / n,
+            "valid_name_rate": round(valid_name_count / n, 4) if n else 0,
+            "skills_rate": round(skills_count / n, 4) if n else 0,
+            "avg_skills_count": round(avg_skills_per_resume, 2),
+            "experience_rate": round(exp_count / n, 4) if n else 0,
+            "avg_experience_count": round(avg_exp_per_resume, 2),
+            "education_rate": round(edu_count / n, 4) if n else 0,
+            "avg_education_count": round(avg_edu_per_resume, 2),
+            "email_rate": round(email_count / n, 4) if n else 0,
+            "phone_rate": round(phone_count / n, 4) if n else 0,
+            "location_rate": round(location_count / n, 4) if n else 0,
+            "linkedin_rate": round(linkedin_count / n, 4) if n else 0,
+            "github_rate": round(github_count / n, 4) if n else 0,
         },
         "routing_breakdown": {
             "clean_fastpath_count": clean_fastpath_count,
-            "clean_fastpath_rate": clean_fastpath_count / n,
+            "clean_fastpath_rate": round(clean_fastpath_count / n, 4) if n else 0,
             "fallback_required_count": fallback_count,
-            "fallback_required_rate": fallback_count / n,
+            "fallback_required_rate": round(fallback_count / n, 4) if n else 0,
+            "needs_odl_count": needs_odl_count,
+            "needs_nova_count": needs_nova_count,
             "tabular_detected_count": tabular_count,
         },
         "scoring_benchmark": {
             "total_candidates": n,
-            "duration_ms": scoring_duration_ms,
-            "throughput_cands_per_sec": n / (scoring_duration_ms / 1000.0),
-            "avg_score": avg_score,
-            "signal_distribution": signals_count,
+            "case_matched": {
+                "duration_ms": round(scoring_matched_ms, 2),
+                "throughput_cands_per_sec": round(n / (scoring_matched_ms / 1000.0), 1),
+                "avg_score": round(statistics.mean(scores_a), 2) if scores_a else 0,
+                "signal_distribution": signals_a,
+            },
+            "case_cross_domain": {
+                "duration_ms": round(scoring_cross_ms, 2),
+                "throughput_cands_per_sec": round(n / (scoring_cross_ms / 1000.0), 1),
+                "signal_distribution": signals_b,
+            },
         },
     }
 

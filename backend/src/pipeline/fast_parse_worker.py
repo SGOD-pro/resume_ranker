@@ -11,8 +11,8 @@ Consumes messages from FAST_PARSE_QUEUE. Runs only the cheap first layer:
 - Never marks a candidate finally scored here
 """
 
+import hashlib
 import logging
-import tempfile
 import time
 from typing import Any, Dict
 
@@ -83,7 +83,6 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             queue_adapter.delete_message(FAST_PARSE_QUEUE, message.receipt_handle)
         return
 
-    tmp_path = None
     try:
         # 1. Download PDF from S3
         t_dl_0 = time.time()
@@ -92,7 +91,6 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         dl_ms = round((t_dl_1 - t_dl_0) * 1000, 2)
 
         # 2. SHA-256 hash calculation & duplicate detection in background worker
-        import hashlib
         file_hash = hashlib.sha256(pdf_bytes).hexdigest()
 
         existing = docs_repo.find_by_hash(job_id, file_hash)
@@ -110,14 +108,10 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             )
             return
 
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(pdf_bytes)
-            tmp_path = tmp.name
-
-        # 3. PyMuPDF inspection & layout quality calculation
+        # 3. PyMuPDF in-memory inspection & layout quality calculation
         t_struct_0 = time.time()
         try:
-            pdf_doc = fitz.open(tmp_path)
+            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             page_count = len(pdf_doc)
             if page_count == 0:
                 raise ValueError("Corrupt PDF: 0 pages")
@@ -153,18 +147,16 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             )
             return
 
-        scores = [pymupdf_layout_quality(page) for page in pdf_doc]
-        quality_score = round(sum(scores) / len(scores), 2) if scores else 0.0
-
-        # Extract PyMuPDF text & basic blocks
+        scores = []
         pymupdf_text_lines = []
         for page in pdf_doc:
+            scores.append(pymupdf_layout_quality(page))
             pymupdf_text_lines.append(page.get_text())
         pdf_doc.close()
+        quality_score = round(sum(scores) / len(scores), 2) if scores else 0.0
         full_pymupdf_text = "\n".join(pymupdf_text_lines)
         t_struct_1 = time.time()
         struct_ms = round((t_struct_1 - t_struct_0) * 1000, 2)
-
 
         # 3. Deterministic extraction pass
         t_det_0 = time.time()
@@ -173,7 +165,7 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             markdown_text=full_pymupdf_text,
             hyperlinks=[],
             elements=[],
-            pymupdf_markdown=full_pymupdf_text,
+            pymupdf_markdown="",
         )
         t_det_1 = time.time()
         det_ms = round((t_det_1 - t_det_0) * 1000, 2)
@@ -275,13 +267,6 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             pass
 
     finally:
-        if tmp_path:
-            import os
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-
         # Acknowledge / delete message from queue
         if message.receipt_handle:
             queue_adapter.delete_message(FAST_PARSE_QUEUE, message.receipt_handle)

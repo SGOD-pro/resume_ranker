@@ -58,17 +58,58 @@ def _parse_pdf_in_process(pdf_bytes: bytes) -> Dict[str, Any]:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page_texts = []
     page_signals = []
-    for page in doc:
-        page_texts.append(page.get_text())
-        try:
-            sig = pymupdf_layout_quality_signals(page)
-            page_signals.append(sig)
-        except Exception:
-            pass
-    doc.close()
+    hyperlinks = []
+    first_page_visual_header = []
+
+    try:
+        for idx, page in enumerate(doc):
+            page_text = page.get_text()
+            page_texts.append(page_text)
+
+            # Collect link URIs
+            for link in page.get_links():
+                if "uri" in link:
+                    hyperlinks.append({"uri": link["uri"]})
+
+            # Extract bounded first-page header geometry / font evidence for identity resolution
+            if idx == 0:
+                try:
+                    blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_SEARCH).get("blocks", [])
+                    for b in blocks[:8]:
+                        if b.get("type") == 0:
+                            for line in b.get("lines", [])[:4]:
+                                for span in line.get("spans", [])[:3]:
+                                    span_text = span.get("text", "").strip()
+                                    if span_text and len(span_text) < 80:
+                                        first_page_visual_header.append({
+                                            "text": span_text,
+                                            "page": 1,
+                                            "font_size": span.get("size", 12.0),
+                                            "is_bold": bool(span.get("flags", 0) & 2 or "bold" in span.get("font", "").lower()),
+                                        })
+                except Exception:
+                    pass
+
+            try:
+                words = page.get_text("words")
+                drawings_count = len(page.get_drawings())
+                sig = pymupdf_layout_quality_signals(
+                    page,
+                    text=page_text,
+                    words=words,
+                    drawings_count=drawings_count,
+                )
+                page_signals.append(sig)
+            except Exception:
+                pass
+    finally:
+        doc.close()
+
     return {
         "raw_text": "\n\n".join(page_texts),
         "page_signals": page_signals,
+        "hyperlinks": hyperlinks,
+        "first_page_visual_header": first_page_visual_header,
     }
 
 
@@ -217,6 +258,8 @@ def process_stage1_message(message: Any) -> bool:
         parsed_pdf = run_isolated_pdf_parse(pdf_bytes)
         raw_text = parsed_pdf["raw_text"]
         page_signals = parsed_pdf["page_signals"]
+        hyperlinks = parsed_pdf.get("hyperlinks", [])
+        visual_headers = parsed_pdf.get("first_page_visual_header", [])
 
         # Layout quality check
         min_quality = min((p["score"] for p in page_signals), default=1.0) if page_signals else 1.0
@@ -226,7 +269,12 @@ def process_stage1_message(message: Any) -> bool:
 
         # Deterministic regex field extraction
         extractor = MarkdownExtractionService()
-        extracted = extractor.extract(raw_text, pymupdf_markdown=raw_text)
+        extracted = extractor.extract(
+            raw_text,
+            hyperlinks=hyperlinks,
+            visual_header_lines=visual_headers,
+            pymupdf_markdown="",
+        )
         fields = extracted.get("fields", {})
         candidate_name = fields.get("name") or "Candidate"
         unresolved = extracted.get("unresolved_chunks", [])
@@ -235,18 +283,41 @@ def process_stage1_message(message: Any) -> bool:
         has_valid_name = bool(fields.get("name")) and str(fields.get("name")).strip().lower() not in ("candidate", "unknown", "")
         has_experience = bool(fields.get("experience")) and len(fields.get("experience")) > 0
 
-        # Fallback decision: quality threshold, unresolved chunks, OR missing name / experience
-        needs_fallback = (
-            (min_quality < QUALITY_THRESHOLD)
-            or bool(unresolved)
-            or not has_valid_name
-            or not has_experience
+        # Replace undifferentiated fallback with documented reasons
+        fallback_reasons = []
+        is_ocr_image = min_quality < 0.20 or len(raw_text.strip()) < 100
+        is_layout_repair = min_quality < QUALITY_THRESHOLD and not is_ocr_image
+        is_ambiguous_name = not has_valid_name
+
+        raw_lower = raw_text.lower()
+        is_student = (
+            any(k in raw_lower for k in ("student", "fresh graduate", "undergraduate", "fresher", "entry level"))
+            or (bool(fields.get("education")) and not bool(fields.get("experience")) and bool(fields.get("skills")))
         )
+        is_experience_parsing_failure = (not has_experience) and (not is_student)
+        is_legitimate_absent_experience = (not has_experience) and is_student
+
+        if is_ocr_image:
+            fallback_reasons.append("ocr_image_text")
+        if is_layout_repair:
+            fallback_reasons.append("layout_repair")
+        if is_ambiguous_name:
+            fallback_reasons.append("ambiguous_identity")
+        if is_experience_parsing_failure:
+            fallback_reasons.append("experience_parsing_failure")
+        if is_legitimate_absent_experience:
+            fallback_reasons.append("legitimate_absent_fields")
+        if bool(unresolved):
+            fallback_reasons.append("unresolved_chunks")
+
+        needs_odl_fallback = is_layout_repair or is_ocr_image
+        needs_nova_fallback = is_ambiguous_name or is_experience_parsing_failure or bool(unresolved)
+        needs_fallback = needs_odl_fallback or needs_nova_fallback
 
         elapsed_ms = (time.monotonic() - t0) * 1000.0
         logger.info(
-            "|PYMUPDF| [Job: %s, File: %s] Extracted candidate='%s', quality=%.2f, needs_fallback=%s, time=%.1fms",
-            job_id, file_id, candidate_name, min_quality, needs_fallback, elapsed_ms
+            "|PYMUPDF| [Job: %s, File: %s] Extracted candidate='%s', quality=%.2f, needs_fallback=%s, reasons=%s, time=%.1fms",
+            job_id, file_id, candidate_name, min_quality, needs_fallback, fallback_reasons, elapsed_ms
         )
 
         stage1_payload = {
@@ -260,6 +331,10 @@ def process_stage1_message(message: Any) -> bool:
             },
             "unresolved_chunks": unresolved,
             "needs_fallback": needs_fallback,
+            "needs_odl": needs_odl_fallback,
+            "needs_nova": needs_nova_fallback,
+            "fallback_reasons": fallback_reasons,
+            "fallback_reason": ", ".join(fallback_reasons) if fallback_reasons else None,
         }
 
         # Upload Stage 1 JSON
@@ -315,6 +390,8 @@ def process_stage1_message(message: Any) -> bool:
                             "job_id": job_id,
                             "file_id": file_id,
                             "s3_key": s3_raw_key,
+                            "stage": "ODL_BATCH" if needs_odl_fallback else "NOVA",
+                            "fallback_reasons": fallback_reasons,
                         },
                     )
                     files_repo.reconcile_outbox(job_id)

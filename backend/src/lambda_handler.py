@@ -1,107 +1,56 @@
 """
-lambda_handler.py — AWS Lambda entry points for API and SQS Workers
-===================================================================
-Provides entrypoints for:
+lambda_handler.py — AWS Lambda unified entry points with ReportBatchItemFailures
+==============================================================================
+Provides backwards-compatible entrypoints for all Lambda functions:
 - handler: API Gateway HTTP API v2 via Mangum
 - stage1_handler: SQS event source for Stage 1 (PyMuPDF triggered by S3)
 - stage2_handler: SQS event source for Stage 2 (ODL & Nova fallback)
 - scoring_handler: SQS event source for Scoring / Final Rank
 - dlq_handler: SQS event source for Dead-Letter Queues (DLQ)
+- recovery_handler: EventBridge scheduled rule for autonomous outbox recovery
+
+Each handler delegates to its isolated module in src.handlers to eliminate
+cross-tier cold starts and dependency leakage, and returns batchItemFailures
+for resilient SQS partial-batch retries.
 """
 
-import json
 import logging
 from typing import Any, Dict
 
-from mangum import Mangum
-
-from src.main import app
-from src.pipeline.dlq_consumers import (
-    process_scoring_dlq_message,
-    process_stage1_dlq_message,
-    process_stage2_dlq_message,
-)
-from src.pipeline.scoring_worker import process_scoring_message
-from src.pipeline.stage1_worker import process_stage1_message
-from src.pipeline.stage2_worker import process_stage2_message
-
 logger = logging.getLogger(__name__)
 
-# Mangum translates API Gateway HTTP API events ↔ ASGI (FastAPI)
-handler = Mangum(app, lifespan="off")
+
+def handler(event: Dict[str, Any], context: Any) -> Any:
+    """Mangum translates API Gateway HTTP API events <-> ASGI (FastAPI)."""
+    from src.handlers.api import handler as api_handler
+    return api_handler(event, context)
 
 
-def stage1_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler invoked by Stage 1 SQS Queue (s3:ObjectCreated)."""
-    records = event.get("Records", [])
-    logger.info("Stage 1 Lambda received %d records", len(records))
-    for record in records:
-        try:
-            process_stage1_message(record)
-        except Exception as e:
-            logger.error("Stage 1 record processing error: %s", e, exc_info=True)
-            raise
-    return {"statusCode": 200, "processed": len(records)}
+def stage1_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+    """Stage 1 SQS event source handler with ReportBatchItemFailures."""
+    from src.handlers.stage1 import handler as s1_handler
+    return s1_handler(event, context)
 
 
-def stage2_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler invoked by Stage 2 SQS Queue (Fallback processing)."""
-    records = event.get("Records", [])
-    logger.info("Stage 2 Lambda received %d records", len(records))
-    if not records:
-        return {"statusCode": 200, "processed": 0}
-    try:
-        from src.pipeline.stage2_worker import process_stage2_batch
-        res = process_stage2_batch(records)
-        return {"statusCode": 200, "processed": res.get("processed", len(records))}
-    except Exception as e:
-        logger.error("Stage 2 batch processing error: %s", e, exc_info=True)
-        # Re-raise to trigger SQS retry with backoff
-        raise
+def stage2_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+    """Stage 2 SQS event source handler with ReportBatchItemFailures."""
+    from src.handlers.stage2 import handler as s2_handler
+    return s2_handler(event, context)
 
 
-def scoring_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler invoked by Scoring SQS Queue."""
-    records = event.get("Records", [])
-    logger.info("Scoring Lambda received %d records", len(records))
-    for record in records:
-        try:
-            process_scoring_message(record)
-        except Exception as e:
-            logger.error("Scoring record processing error: %s", e, exc_info=True)
-            raise
-    return {"statusCode": 200, "processed": len(records)}
+def scoring_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+    """Scoring SQS event source handler with ReportBatchItemFailures."""
+    from src.handlers.scoring import handler as score_handler
+    return score_handler(event, context)
 
 
-def dlq_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler invoked by SQS DLQs to ensure terminal state accounting."""
-    records = event.get("Records", [])
-    logger.info("DLQ Consumer Lambda received %d poisoned messages", len(records))
-    for record in records:
-        event_source_arn = record.get("eventSourceARN", "")
-        if "stage1" in event_source_arn.lower() or "fast-parse" in event_source_arn.lower():
-            process_stage1_dlq_message(record)
-        elif "stage2" in event_source_arn.lower() or "odl" in event_source_arn.lower() or "nova" in event_source_arn.lower():
-            process_stage2_dlq_message(record)
-        elif "scoring" in event_source_arn.lower() or "final-rank" in event_source_arn.lower():
-            process_scoring_dlq_message(record)
-        else:
-            # Fallback inspection of body
-            body_str = record.get("body", "")
-            if "raw/" in body_str:
-                process_stage1_dlq_message(record)
-    return {"statusCode": 200, "processed": len(records)}
+def dlq_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+    """DLQ consumer handler with ReportBatchItemFailures."""
+    from src.handlers.dlq import handler as d_handler
+    return d_handler(event, context)
 
 
-def recovery_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler invoked periodically (e.g. EventBridge scheduled rule) to recover outbox events and stranded jobs.
-    
-    Provides guaranteed downstream progress completely independent of browser polling.
-    """
-    from src.infrastructure.repositories.files_repository import FilesRepository
-    repo = FilesRepository()
-    relayed_events, recovered_jobs = repo.reconcile_all_pending_outboxes()
-    logger.info("Independent outbox recovery complete: %d outbox events, %d stranded jobs recovered",
-                relayed_events, recovered_jobs)
-    return {"statusCode": 200, "relayed_events": relayed_events, "recovered_jobs": recovered_jobs}
-
+def recovery_handler(event: Dict[str, Any] = None, context: Any = None) -> Dict[str, Any]:
+    """Autonomous outbox recovery handler."""
+    from src.handlers.recovery import handler as rec_handler
+    return rec_handler(event, context)

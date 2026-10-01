@@ -84,7 +84,8 @@ def _build_pattern(skill: str) -> re.Pattern:
         re.IGNORECASE
     )
 
-_SKILL_PATTERNS = [(skill, _build_pattern(skill)) for skill in _SKILLS_SORTED]
+_SKILL_PATTERNS_FAST = [(skill, skill.lower(), _build_pattern(skill)) for skill in _SKILLS_SORTED]
+_SKILL_PATTERNS = [(skill, pattern) for skill, _, pattern in _SKILL_PATTERNS_FAST]
 
 
 class SkillsParser:
@@ -257,9 +258,11 @@ class SkillsParser:
 
     def _dict_scan(self, text: str) -> Set[str]:
         found: Set[str] = set()
-        for skill, pattern in _SKILL_PATTERNS:
-            if pattern.search(text):
-                found.add(_SKILLS_CANONICAL.get(skill.lower(), skill))
+        text_lower = text.lower()
+        for skill, skill_lower, pattern in _SKILL_PATTERNS_FAST:
+            if skill_lower in text_lower:
+                if pattern.search(text):
+                    found.add(_SKILLS_CANONICAL.get(skill_lower, skill))
         return found
 
     def _deduplicate(self, skills: Set[str]) -> List[str]:

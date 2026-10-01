@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, Any, List
+import re
+from typing import Dict, Any, List, Optional
 from src.extractors.contact.contact_parser import ContactParser
 from src.extractors.skills.skills_parser import SkillsParser
 from src.extractors.experience.experience_parser import ExperienceParser
@@ -7,6 +8,18 @@ from src.extractors.education.education_parser import EducationParser
 from src.extractors.projects.project_parser import ProjectParser
 
 logger = logging.getLogger(__name__)
+
+_EXP_FLAT_RE = re.compile(
+    r'(?:^|\n)'
+    r'(?:#{0,3}\s*)'
+    r'(?:work\s+)?(?:professional\s+)?'
+    r'(?:experience|experince|employment(?:\s+history)?|'
+    r'career\s+(?:history|summary)|work\s+(?:experience|history)|'
+    r'positions?\s+held|relevant\s+experience)'
+    r'\s*:?\s*\n',
+    re.I,
+)
+_HEADING_RE = re.compile(r'\n(?:#{1,3}\s*\w|\n[A-Z][A-Z &/]{3,}\s*:?\s*\n)')
 
 
 class MarkdownExtractionService:
@@ -19,7 +32,7 @@ class MarkdownExtractionService:
     maintained here under src/extraction/ going forward.
 
     Output is a flat dict with top-level keys: name, email, phone, location,
-    skills, experience, education, projects. This is the format the scorer expects.
+    linkedin, github, skills, experience, education, projects. This is the format the scorer expects.
     """
     def __init__(self):
         self.contact_parser = ContactParser()
@@ -28,25 +41,43 @@ class MarkdownExtractionService:
         self.edu_parser = EducationParser()
         self.project_parser = ProjectParser()
         
-    def extract(self, markdown_text: str, hyperlinks: list = None, elements: list = None, pymupdf_markdown: str = "") -> Dict[str, Any]:
+    def extract(
+        self,
+        markdown_text: str,
+        hyperlinks: list = None,
+        elements: list = None,
+        pymupdf_markdown: str = "",
+        visual_header_lines: list = None,
+    ) -> Dict[str, Any]:
         """
         Runs V1 ported regex parsers on the clean Markdown.
         Returns resolved fields and a list of unresolved chunks.
         """
+        has_distinct_pymupdf = bool(
+            pymupdf_markdown and pymupdf_markdown.strip() != (markdown_text or "").strip()
+        )
+
         # Run parsers
         contact = self.contact_parser.parse(
             raw_text=markdown_text, 
             hyperlinks=hyperlinks, 
             elements=elements,
-            pymupdf_text=pymupdf_markdown
+            pymupdf_text=pymupdf_markdown if has_distinct_pymupdf else "",
+            visual_header_lines=visual_header_lines,
         )
-        skills = self.skills_parser.parse(full_text=markdown_text + "\n" + pymupdf_markdown, also_scan_fulltext=True)
+
+        # Do not scan concatenated duplicate resume text
+        full_skills_text = (markdown_text + "\n" + pymupdf_markdown) if has_distinct_pymupdf else markdown_text
+        skills = self.skills_parser.parse(full_text=full_skills_text, also_scan_fulltext=True)
+
         experience = self.experience_parser.parse(markdown_text, elements=elements)
-        if not experience and pymupdf_markdown:
+        if not experience and has_distinct_pymupdf:
             experience = self.experience_parser.parse(pymupdf_markdown, elements=[])
+
         education = self.edu_parser.parse(markdown_text)
-        if not education and pymupdf_markdown:
+        if not education and has_distinct_pymupdf:
             education = self.edu_parser.parse(pymupdf_markdown)
+
         projects = self.project_parser.parse(markdown_text)
         
         fields = {
@@ -54,6 +85,8 @@ class MarkdownExtractionService:
             "identity": contact.get("identity"),
             "email": contact.get("email"),
             "phone": contact.get("phone"),
+            "linkedin": contact.get("linkedin"),
+            "github": contact.get("github"),
             "location": contact.get("location"),
             "skills": skills,
             "experience": experience,
@@ -61,7 +94,6 @@ class MarkdownExtractionService:
             "projects": projects,
         }
 
-        
         flags = []
         if not fields["email"] or not fields["phone"]:
             flags.append("missing_contact_info")
@@ -89,38 +121,25 @@ class MarkdownExtractionService:
         if not fields["name"]:
             missing_critical = True
             
-    
         chunks = []
         if missing_critical:
             # We must tailor the chunks sent to Nova.
             contact_chunk = ""
             if not fields["name"]:
-                contact_chunk = markdown_text[:500]
+                contact_chunk = (markdown_text or "")[:500]
             
             exp_chunk = ""
             if not has_exp and not has_skills:
-                # Find experience section
-                import re
-                _EXP_FLAT_RE = re.compile(
-                    r'(?:^|\n)'
-                    r'(?:#{0,3}\s*)'
-                    r'(?:work\s+)?(?:professional\s+)?'
-                    r'(?:experience|experince|employment(?:\s+history)?|'
-                    r'career\s+(?:history|summary)|work\s+(?:experience|history)|'
-                    r'positions?\s+held|relevant\s+experience)'
-                    r'\s*:?\s*\n',
-                    re.I,
-                )
-                m = _EXP_FLAT_RE.search(markdown_text)
+                # Find experience section using precompiled regex
+                m = _EXP_FLAT_RE.search(markdown_text or "")
                 if m:
                     start_idx = m.start()
                     # Find the next 2 headings
-                    _HEADING_RE = re.compile(r'\n(?:#{1,3}\s*\w|\n[A-Z][A-Z &/]{3,}\s*:?\s*\n)')
                     headings = list(_HEADING_RE.finditer(markdown_text, m.end()))
                     end_idx = headings[1].start() if len(headings) >= 2 else start_idx + 1500
                     exp_chunk = markdown_text[start_idx:end_idx][:1500]
                 else:
-                    exp_chunk = markdown_text[500:2000] # Fallback to middle if not found
+                    exp_chunk = (markdown_text or "")[500:2000] # Fallback to middle if not found
 
             if contact_chunk and exp_chunk:
                 chunks.append(contact_chunk + "\n\n" + exp_chunk)

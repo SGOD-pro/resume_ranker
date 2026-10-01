@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
 import { useJobStore } from '@/store/job-store';
-import { createJob, uploadResumesToBackend } from '@/lib/api';
+import { createJob, uploadResumesToBackend, uploadResumesViaSession, type UploadResult } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -95,20 +95,39 @@ export function ResumeUploadZone() {
           setJobId(currentJobId);
         }
 
-        // 2. Upload files via Frontend -> Backend -> S3 (POST /api/v2/jobs/{job_id}/resumes)
-        const result = await uploadResumesToBackend(
-          currentJobId,
-          files,
-          (uploaded: number, total: number, filename: string, percent?: number) => {
-            const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
-            setUploadProgress({
-              filesUploaded: uploaded,
-              filesTotal: total,
-              percent: pct,
-              currentFile: filename,
-            });
-          },
-        );
+        // 2. Upload files directly to S3 via presigned upload session (with fallback to legacy proxy)
+        let result: UploadResult;
+        try {
+          result = await uploadResumesViaSession(
+            currentJobId,
+            files,
+            (uploaded: number, total: number, filename: string, percent?: number) => {
+              const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
+              setUploadProgress({
+                filesUploaded: uploaded,
+                filesTotal: total,
+                percent: pct,
+                currentFile: filename,
+              });
+            },
+            4, // bounded parallelism 4
+          );
+        } catch (sessionErr) {
+          console.warn('Upload session failed; falling back to legacy proxy:', sessionErr);
+          result = await uploadResumesToBackend(
+            currentJobId,
+            files,
+            (uploaded: number, total: number, filename: string, percent?: number) => {
+              const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
+              setUploadProgress({
+                filesUploaded: uploaded,
+                filesTotal: total,
+                percent: pct,
+                currentFile: filename,
+              });
+            },
+          );
+        }
 
         // Save fileId mapping in store for explicit analyze barrier submission
         setFileIdMap(result.fileIdMap);

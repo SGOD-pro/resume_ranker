@@ -256,6 +256,184 @@ export async function uploadFilesDirectToS3(
   };
 }
 
+export interface UploadSessionFileSpec {
+  filename: string;
+  file_size: number;
+  content_type?: string;
+}
+
+export interface DocumentPresignedUrlInfo {
+  document_id: string;
+  filename: string;
+  s3_key: string;
+  presigned_url: string;
+}
+
+export interface CreateUploadSessionResponse {
+  session_id: string;
+  job_id: string;
+  job_version: number;
+  expected_document_count: number;
+  documents: DocumentPresignedUrlInfo[];
+}
+
+export interface CompleteDocumentResponse {
+  document_id: string;
+  session_id: string;
+  job_id: string;
+  status: string;
+}
+
+export interface FinalizeUploadSessionResponse {
+  session_id: string;
+  job_id: string;
+  status: string;
+  message: string;
+}
+
+/**
+ * Create a durable upload session and receive presigned S3 PUT URLs.
+ */
+export async function createUploadSession(
+  jobId: string,
+  files: File[],
+): Promise<CreateUploadSessionResponse> {
+  const fileSpecs: UploadSessionFileSpec[] = files.map((f) => ({
+    filename: f.name,
+    file_size: f.size,
+    content_type: f.type || 'application/pdf',
+  }));
+  return apiFetch(`/api/v2/jobs/${jobId}/upload-sessions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      document_count: files.length,
+      files: fileSpecs,
+    }),
+  });
+}
+
+/**
+ * Notify backend that a direct S3 PUT has completed for a specific document.
+ */
+export async function completeDocumentUpload(
+  jobId: string,
+  sessionId: string,
+  documentId: string,
+): Promise<CompleteDocumentResponse> {
+  return apiFetch(
+    `/api/v2/jobs/${jobId}/upload-sessions/${sessionId}/documents/${documentId}/complete`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+/**
+ * Finalize an upload session to seal the upload barrier and begin fast preprocessing.
+ */
+export async function finalizeUploadSession(
+  jobId: string,
+  sessionId: string,
+): Promise<FinalizeUploadSessionResponse> {
+  return apiFetch(`/api/v2/jobs/${jobId}/upload-sessions/${sessionId}/finalize`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * High-performance direct browser-to-S3 upload session with bounded parallelism.
+ * - Max 6 active concurrent uploads (defaults to 4)
+ * - True streaming direct to S3 via presigned PUT (zero Lambda memory usage)
+ * - Individual document completion registration triggering immediate extraction
+ * - Preserves successful mappings even if other files fail
+ */
+export async function uploadResumesViaSession(
+  jobId: string,
+  files: File[],
+  onProgress?: (uploaded: number, total: number, filename: string, percent?: number) => void,
+  concurrency: number = 4,
+): Promise<UploadResult> {
+  if (files.length === 0) {
+    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0, fileIdMap: {} };
+  }
+
+  // 1. Create upload session and get presigned PUT URLs
+  const session = await createUploadSession(jobId, files);
+  const sessionId = session.session_id;
+
+  const accepted: string[] = [];
+  const rejected: { filename: string; reason: string }[] = [];
+  const fileIdMap: Record<string, string> = {};
+
+  const totalFiles = session.documents.length;
+  let completedCount = 0;
+
+  // Bounded worker pool: capped at 6
+  const boundedLimit = Math.min(Math.max(1, concurrency), 6, totalFiles);
+  let nextIdx = 0;
+
+  const worker = async () => {
+    while (nextIdx < totalFiles) {
+      const idx = nextIdx++;
+      const docInfo = session.documents[idx];
+      const file = files[idx];
+
+      if (!file) {
+        rejected.push({ filename: docInfo.filename, reason: 'File handle not found' });
+        completedCount++;
+        onProgress?.(completedCount, totalFiles, docInfo.filename, Math.round((completedCount / totalFiles) * 100));
+        continue;
+      }
+
+      fileIdMap[docInfo.filename] = docInfo.document_id;
+
+      try {
+        // Direct S3 PUT
+        const s3Res = await fetch(docInfo.presigned_url, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': file.type || 'application/pdf',
+          },
+          body: file,
+        });
+
+        if (!s3Res.ok) {
+          throw new Error(`S3 direct upload failed with HTTP ${s3Res.status}`);
+        }
+
+        // Notify backend of completion to trigger fast parsing immediately
+        await completeDocumentUpload(jobId, sessionId, docInfo.document_id);
+        accepted.push(docInfo.filename);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Upload failed';
+        rejected.push({ filename: docInfo.filename, reason: msg });
+      } finally {
+        completedCount++;
+        const pct = Math.round((completedCount / totalFiles) * 100);
+        onProgress?.(completedCount, totalFiles, docInfo.filename, pct);
+      }
+    }
+  };
+
+  const pool = Array.from({ length: boundedLimit }, () => worker());
+  await Promise.all(pool);
+
+  // 3. Finalize upload session to establish barrier
+  try {
+    await finalizeUploadSession(jobId, sessionId);
+  } catch (err: unknown) {
+    console.warn('Failed to finalize upload session:', err);
+  }
+
+  return {
+    job_id: jobId,
+    accepted,
+    rejected,
+    total_accepted: accepted.length,
+    fileIdMap,
+  };
+}
+
 /**
  * Upload files via Frontend -> Backend -> S3 (POST /api/v2/jobs/{job_id}/resumes).
  * Tracks real-time upload progress with true byte-level precision using XMLHttpRequest.

@@ -14,6 +14,8 @@ All other fields: pure regex.
 import re
 from typing import Optional, Dict, Any, Union
 
+from src.registries.section_registry import resolve as _resolve_section
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Regex patterns
@@ -179,6 +181,78 @@ _TECH_WORDS = {
     'gsm', 'cdma', 'matlab', 'simulink', 'labview',
 }
 
+_TITLE_SUFFIXES = {
+    'engineer', 'developer', 'manager', 'architect', 'consultant',
+    'analyst', 'specialist', 'teacher', 'designer', 'director',
+    'officer', 'coordinator', 'administrator', 'supervisor',
+    'technician', 'associate', 'assistant', 'executive', 'intern',
+    'planner', 'inspector', 'auditor', 'operator',
+    'instructor', 'programmer', 'teller', 'pharmacist',
+    'publicist', 'strategist', 'maintainer', 'writer',
+}
+
+_HEADER_FRAGMENTS = {
+    'career objectives', 'career objective', 'core accomplishments',
+    'core competencies', 'career overview', 'career summary',
+    'educational qualifications', 'academic qualifications',
+    'professional qualifications', 'personal details',
+    'professional details', 'position desire', 'position desired',
+    'curriculum vitae', 'curriculam vitea', 'science education',
+    'university departmental', 'microsoft office',
+    'esteemed organization', 'career work', 'senior planning',
+    'logistics and', 'finance minister',
+    'people centered leadership', 'classroom management interpersonal',
+    'tactical planning goal-oriented', 'multi task abilities',
+    'court procedures due dilligence', 'academic record',
+    'professional overview', 'information technology provision',
+}
+
+_PHONE_PATTERNS = [
+    re.compile(r'\+(?:[1-9]\d{0,3})[\s\-.]*(?:\(?\d{1,4}\)?[\s\-.]*){2,4}\d{2,4}'),
+    re.compile(r'\+\d{1,4}[\s\-.()]*\d[\d\s\-.()]{6,14}\d'),
+    re.compile(r'\+\d{1,3}[\s\-.]*\(?\d{3,5}\)?[\s\-.]*\d{3,5}[\s\-.]*\d{3,5}'),
+    re.compile(r'\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{4}'),
+    re.compile(r'\b\d{5}[\s\-.]?\d{5}\b'),
+    re.compile(r'\b\d{10}\b'),
+    re.compile(r'\b\d{3,4}[\s\-.]+\d{3,4}[\s\-.]+\d{3,4}\b'),
+    re.compile(r'\b\d{3}[\s\-.]+\d{3}[\s\-.]+\d{4}\b'),
+]
+
+_CITY_STATE_RE = re.compile(
+    r'\b([A-Z][a-zA-Z\s]{2,25}),\s*([A-Z]{2}|\b[A-Z][a-zA-Z]{3,20})\b'
+)
+_SECTION_KW_RE = re.compile(
+    r'(?:programming|languages?|frameworks?|libraries|tools|skills|'
+    r'databases?|education|experience|projects|certific)[:\s]', re.I
+)
+_JOB_ENTRY_RE = re.compile(
+    r'\b(?:at|@)\s+[A-Z]|'
+    r'\b(?:Engineer|Developer|Manager|Designer|Teacher|Nurse|'
+    r'Analyst|Associate|Assistant|Coordinator)\b', re.I
+)
+_TAG_RE = re.compile(r'\[/?[A-Z_]+\]')
+_ADDR_RE = re.compile(
+    r'(?:\d+\s+[A-Za-z\s]+(?:St|Ave|Blvd|Dr|Rd|Lane|Way|Street|Avenue),\s*)?'
+    r'([A-Z][a-zA-Z\s]{2,20}),\s*(?:\d{5}|[A-Z]{2,3})'
+)
+_LABEL_RE = re.compile(
+    r'(?i:Nationality|Place\s+of\s+Birth|Address|Location|City)'
+    r'\s*[:\|\s]\s*([A-Z][a-zA-Z\s,]+)'
+)
+_ADDR_SECTION_RE = re.compile(
+    r'\[(ADDRESS|PLACE|LOCATION|NATIONALITY|CITY)\]\s*\n(.+?)(?:\n\[|$)',
+    re.I | re.DOTALL
+)
+_TEL_MD_RE = re.compile(r'\]\(tel:([^)\s]+)', re.IGNORECASE)
+_TEL_URI_RE = re.compile(r'tel:(\+?[\d\s\-().]+)')
+_MAILTO_MD_RE = re.compile(r'\]\(mailto:([^)?\s]+)', re.IGNORECASE)
+_OBFUSCATED_AT_RE = re.compile(r'(?i)\[at\]|\(at\)|<at>|{at}| at ')
+_OBFUSCATED_DOT_RE = re.compile(r'(?i)\[dot\]|\(dot\)|<dot>|{dot}| dot ')
+_DIGIT_CLEAN_RE = re.compile(r'\D')
+_PHONE_IN_LINE_RE = re.compile(r'[\(\)]*\d[\d\s\-\.]{6,15}')
+_ADDRESS_LINE_HINT_RE = re.compile(r'\d{5}|\d+\s+(?:Ave|St|Blvd|Dr|Rd|Lane|Way)', re.I)
+_JOB_TITLE_TAG_RE = re.compile(r'\[(?:JOB_TITLE|NAME|TITLE)\]')
+
 # Regex to split name from contact info on the same line
 # Matches: Email, email, E-mail, Phone, Tel, Mobile, |, ●, •, ⎪, ·
 _LINE_SPLIT_RE = re.compile(
@@ -257,20 +331,10 @@ def _is_name_line(line: str) -> bool:
     if lower_words and lower_words.issubset(_TECH_WORDS):
         return False
     # Reject if it resolves to a known section header
-    from src.registries.section_registry import resolve as _resolve_section
     if _resolve_section(s):
         return False
     # Reject if the name ends with a common job title suffix
     # e.g., "PIPING ENGINEER", "ART TEACHER", "PROJECT MANAGER"
-    _TITLE_SUFFIXES = {
-        'engineer', 'developer', 'manager', 'architect', 'consultant',
-        'analyst', 'specialist', 'teacher', 'designer', 'director',
-        'officer', 'coordinator', 'administrator', 'supervisor',
-        'technician', 'associate', 'assistant', 'executive', 'intern',
-        'planner', 'inspector', 'auditor', 'operator',
-        'instructor', 'programmer', 'teller', 'pharmacist',
-        'publicist', 'strategist', 'maintainer', 'writer',
-    }
     last_word = words[-1].lower().rstrip('s')  # handle plurals
     if last_word in _TITLE_SUFFIXES and len(words) >= 2:
         return False
@@ -295,22 +359,6 @@ def _is_name_line(line: str) -> bool:
         if generic_count >= 2:
             return False
     # Reject common section header fragments that pass other checks
-    _HEADER_FRAGMENTS = {
-        'career objectives', 'career objective', 'core accomplishments',
-        'core competencies', 'career overview', 'career summary',
-        'educational qualifications', 'academic qualifications',
-        'professional qualifications', 'personal details',
-        'professional details', 'position desire', 'position desired',
-        'curriculum vitae', 'curriculam vitea', 'science education',
-        'university departmental', 'microsoft office',
-        'esteemed organization', 'career work', 'senior planning',
-        'logistics and', 'finance minister',
-        # Observed bad names from benchmark
-        'people centered leadership', 'classroom management interpersonal',
-        'tactical planning goal-oriented', 'multi task abilities',
-        'court procedures due dilligence', 'academic record',
-        'professional overview', 'information technology provision',
-    }
     if s.lower() in _HEADER_FRAGMENTS:
         return False
     return True
@@ -409,24 +457,19 @@ class ContactParser:
             if content:
                 header_contents.append(str(content))
             
-            # Check for nested link/uri attributes that might contain the email
-            # Flatten the dict to string and use regex to find mailto/tel/@ links
-            dumped = str(el)
-            import re
-            # Extract links that look like mailto:, tel:, or emails from the dictionary string representation
-            links = re.findall(r"(?:mailto:|tel:|[\w._%+\-]+@[\w.\-]+\.[a-zA-Z]{2,})[^\s'\"\}\]]*", dumped)
-            for l in links:
-                # Remove common JSON/dict artifacts if any got caught
-                clean_link = l.rstrip("',\"}]")
-                if clean_link:
-                    header_contents.append(clean_link)
+            # Check for nested link/uri attributes that might contain the email or contact links
+            for link_key in ('uri', 'url', 'href', 'target', 'link', 'email'):
+                val = el.get(link_key)
+                if isinstance(val, str) and val:
+                    header_contents.append(val)
 
         return "\n".join(header_contents)
 
     def parse(self, full_width_text: str = "", raw_text: str = "",
               sidebar_text: str = "", main_text: str = "",
               hyperlinks: list = None, elements: list = None,
-              pymupdf_text: str = "") -> Dict[str, Any]:
+              pymupdf_text: str = "",
+              visual_header_lines: list = None) -> Dict[str, Any]:
 
         # ── Build header text from ODL bounding-box geometry ─────────────────
         # This catches email/phone in side-column headers that appear late in
@@ -466,6 +509,7 @@ class ContactParser:
             pymupdf_text=pymupdf_text,
             email=email,
             phone=phone,
+            visual_header_lines=visual_header_lines,
         )
 
         return {
@@ -488,6 +532,7 @@ class ContactParser:
         pymupdf_text: str = "",
         email: Optional[str] = None,
         phone: Optional[str] = None,
+        visual_header_lines: Optional[list] = None,
     ) -> CandidateIdentityResult:
         """Arbitrate candidate identity via CandidateIdentityResolver."""
         # 1. Explicit [NAME] tag from layout extractor
@@ -531,21 +576,22 @@ class ContactParser:
                         })
 
         # 2b. Visual header lines (top non-empty lines of page 1)
-        visual_header_lines = []
-        top_candidates = []
-        for src in [full_width_text, pymupdf_text, main_text, raw_text]:
-            if src:
-                for l in src.split('\n')[:5]:
-                    s_line = l.strip()
-                    if s_line and s_line not in top_candidates:
-                        top_candidates.append(s_line)
-        for cand_line in top_candidates[:3]:
-            visual_header_lines.append({
-                "text": cand_line,
-                "page": 1,
-                "font_size": 14.0,
-                "is_bold": True,
-            })
+        if not visual_header_lines:
+            visual_header_lines = []
+            top_candidates = []
+            for src in [full_width_text, pymupdf_text, main_text, raw_text]:
+                if src:
+                    for l in src.split('\n')[:5]:
+                        s_line = l.strip()
+                        if s_line and s_line not in top_candidates:
+                            top_candidates.append(s_line)
+            for cand_line in top_candidates[:3]:
+                visual_header_lines.append({
+                    "text": cand_line,
+                    "page": 1,
+                    "font_size": 14.0,
+                    "is_bold": True,
+                })
 
         # 3. Adjacent lines to contact anchor
         adjacent_lines = []
@@ -626,41 +672,25 @@ class ContactParser:
 
     def _extract_phone(self, text: str) -> Optional[str]:
         # ── Priority 0: Markdown link [text](tel:...) — catches ODL-rendered links ──
-        m_tel_md = re.search(r'\]\(tel:([^)\s]+)', text, re.IGNORECASE)
+        m_tel_md = _TEL_MD_RE.search(text)
         if m_tel_md:
             result = m_tel_md.group(1).strip()
-            if len(re.sub(r'\D', '', result)) >= 7:
+            if len(_DIGIT_CLEAN_RE.sub('', result)) >= 7:
                 return result
 
         # ── Priority 1: bare tel: URI (from hyperlinks appended to text) ──────
-        tel_m = re.search(r'tel:(\+?[\d\s\-().]+)', text)
+        tel_m = _TEL_URI_RE.search(text)
         if tel_m:
             phone = tel_m.group(1).strip()
-            if len(re.sub(r'\D', '', phone)) >= 7:
+            if len(_DIGIT_CLEAN_RE.sub('', phone)) >= 7:
                 return phone
 
         # ── Priority 2: standard digit patterns ──────────────────────────────
-        patterns = [
-            # International with country code (+91, +1, etc.)
-            r'\+(?:[1-9]\d{0,3})[\s\-.]*(?:\(?\d{1,4}\)?[\s\-.]*){2,4}\d{2,4}',
-            # Permissive country code: +X followed by 7-12 digits
-            r'\+\d{1,4}[\s\-.()]*\d[\d\s\-.()]{6,14}\d',
-            # Traditional N-NNN-NNN-NNNN
-            r'\+\d{1,3}[\s\-.]*\(?\d{3,5}\)?[\s\-.]*\d{3,5}[\s\-.]*\d{3,5}',
-            r'\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{4}',
-            # 10-digit Indian format: 98765 43210 or 9876543210
-            r'\b\d{5}[\s\-.]?\d{5}\b',
-            r'\b\d{10}\b',
-            # General N-NNN-NNNN style
-            r'\b\d{3,4}[\s\-.]+\d{3,4}[\s\-.]+\d{3,4}\b',
-            # Add a more permissive pattern for things like 310. 839. 8722
-            r'\b\d{3}[\s\-.]+\d{3}[\s\-.]+\d{4}\b',
-        ]
-        for pat in patterns:
-            m = re.search(pat, text)
+        for pat in _PHONE_PATTERNS:
+            m = pat.search(text)
             if m:
                 result = m.group(0).strip()
-                if len(re.sub(r'\D', '', result)) >= 7:
+                if len(_DIGIT_CLEAN_RE.sub('', result)) >= 7:
                     return result
         return None
 
@@ -693,41 +723,25 @@ class ContactParser:
     def _extract_location_from_text(self, text: str) -> Optional[str]:
         lines = [l.strip() for l in text.split('\n') if l.strip()]
 
-        # Strategy 1: "City, ST" pattern (US format) — only in header area
-        city_state_re = re.compile(
-            r'\b([A-Z][a-zA-Z\s]{2,25}),\s*([A-Z]{2}|\b[A-Z][a-zA-Z]{3,20})\b'
-        )
-        # Section headers/keywords that should NOT be searched for locations
-        _section_kw_re = re.compile(
-            r'(?:programming|languages?|frameworks?|libraries|tools|skills|'
-            r'databases?|education|experience|projects|certific)[:\s]', re.I)
-        # Job entry patterns — skip these for location extraction
-        _job_entry_re = re.compile(
-            r'\b(?:at|@)\s+[A-Z]|'   # "at Company" pattern
-            r'\b(?:Engineer|Developer|Manager|Designer|Teacher|Nurse|'
-            r'Analyst|Associate|Assistant|Coordinator)\b', re.I)
-        _tag_re = re.compile(r'\[/?[A-Z_]+\]')
-
         # First pass: prefer lines with street address or zip code
         for line in lines[:15]:
             if _LINKEDIN_RE.search(line):
                 continue
-            if _section_kw_re.search(line) or _job_entry_re.search(line):
+            if _SECTION_KW_RE.search(line) or _JOB_ENTRY_RE.search(line):
                 continue
-            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+            if _JOB_TITLE_TAG_RE.search(line):
                 continue
-            clean_line = _tag_re.sub('', line).strip()
+            clean_line = _TAG_RE.sub('', line).strip()
             if not clean_line:
                 continue
             # Strip email and phone from line before matching
             clean_line = _EMAIL_RE.sub('', clean_line)
-            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
-            clean_line = clean_line.strip(' ,;|')
+            clean_line = _PHONE_IN_LINE_RE.sub('', clean_line).strip(' ,;|')
             if not clean_line:
                 continue
             # Prefer address lines with zip codes or street numbers
-            if re.search(r'\d{5}|\d+\s+(?:Ave|St|Blvd|Dr|Rd|Lane|Way)', clean_line, re.I):
-                m = city_state_re.search(clean_line)
+            if _ADDRESS_LINE_HINT_RE.search(clean_line):
+                m = _CITY_STATE_RE.search(clean_line)
                 if m:
                     return m.group(0).strip()
 
@@ -735,60 +749,48 @@ class ContactParser:
         for line in lines[:15]:
             if _LINKEDIN_RE.search(line):
                 continue
-            if _section_kw_re.search(line) or _job_entry_re.search(line):
+            if _SECTION_KW_RE.search(line) or _JOB_ENTRY_RE.search(line):
                 continue
-            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+            if _JOB_TITLE_TAG_RE.search(line):
                 continue
-            clean_line = _tag_re.sub('', line).strip()
+            clean_line = _TAG_RE.sub('', line).strip()
             if not clean_line:
                 continue
             # Strip email and phone before matching
             clean_line = _EMAIL_RE.sub('', clean_line)
-            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
-            clean_line = clean_line.strip(' ,;|')
+            clean_line = _PHONE_IN_LINE_RE.sub('', clean_line).strip(' ,;|')
             if not clean_line:
                 continue
-            m = city_state_re.search(clean_line)
+            m = _CITY_STATE_RE.search(clean_line)
             if m:
                 return m.group(0).strip()
 
         # Strategy 1.5: "Street, City, ZIP, Country" or "City, ZIP" format
-        # Catches addresses like "9 Wall St, New York, 10005, USA"
-        addr_re = re.compile(
-            r'(?:\d+\s+[A-Za-z\s]+(?:St|Ave|Blvd|Dr|Rd|Lane|Way|Street|Avenue),\s*)?'
-            r'([A-Z][a-zA-Z\s]{2,20}),\s*(?:\d{5}|[A-Z]{2,3})',
-        )
         for line in lines[:15]:
             if _LINKEDIN_RE.search(line):
                 continue
-            if _section_kw_re.search(line) or _job_entry_re.search(line):
+            if _SECTION_KW_RE.search(line) or _JOB_ENTRY_RE.search(line):
                 continue
-            if re.search(r'\[(?:JOB_TITLE|NAME|TITLE)\]', line):
+            if _JOB_TITLE_TAG_RE.search(line):
                 continue
-            clean_line = _tag_re.sub('', line).strip()
+            clean_line = _TAG_RE.sub('', line).strip()
             if not clean_line:
                 continue
             # Strip email and phone before matching
             clean_line = _EMAIL_RE.sub('', clean_line)
-            clean_line = re.sub(r'[\(\)]*\d[\d\s\-\.]{6,15}', '', clean_line)
-            clean_line = clean_line.strip(' ,;|')
+            clean_line = _PHONE_IN_LINE_RE.sub('', clean_line).strip(' ,;|')
             if not clean_line:
                 continue
-            m = addr_re.search(clean_line)
+            m = _ADDR_RE.search(clean_line)
             if m:
                 city = m.group(1).strip()
                 if len(city) > 2:
                     return city
 
         # Strategy 2: Nationality/Place of Birth/Address labels
-        # Use inline (?i:...) for keywords only; capture group is case-sensitive
-        label_re = re.compile(
-            r'(?i:Nationality|Place\s+of\s+Birth|Address|Location|City)'
-            r'\s*[:\|\s]\s*([A-Z][a-zA-Z\s,]+)')
         for line in lines[:30]:
-            # Strip tags first
-            clean = _tag_re.sub('', line).strip()
-            m = label_re.search(clean)
+            clean = _TAG_RE.sub('', line).strip()
+            m = _LABEL_RE.search(clean)
             if m:
                 val = m.group(1).strip().rstrip(',').strip()
                 # Remove trailing noise like "Driving license Full"
@@ -799,10 +801,7 @@ class ContactParser:
                     return val
 
         # Strategy 3: Sidebar [ADDRESS] or [PLACE] section
-        addr_section_re = re.compile(
-            r'\[(ADDRESS|PLACE|LOCATION|NATIONALITY|CITY)\]\s*\n(.+?)(?:\n\[|$)',
-            re.I | re.DOTALL)
-        m = addr_section_re.search(text)
+        m = _ADDR_SECTION_RE.search(text)
         if m:
             addr_lines = [l.strip() for l in m.group(2).strip().split('\n') if l.strip()]
             if addr_lines:

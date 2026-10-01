@@ -40,6 +40,23 @@ class UploadSessionsRepository:
             Item=item,
             ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
         )
+        # Maintain org-indexed active session pointer to avoid O(N) table scans
+        try:
+            self._table.put_item(
+                Item={
+                    "PK": f"ORG#{session.org_id}",
+                    "SK": f"ACTIVE_SESSION#{session.session_id}",
+                    "entity_type": "ACTIVE_SESSION",
+                    "job_id": session.job_id,
+                    "session_id": session.session_id,
+                    "status": session.status.value,
+                    "created_at": session.created_at,
+                    "updated_at": session.updated_at,
+                }
+            )
+        except Exception as e:
+            logger.warning("Failed to write active session index pointer: %s", e)
+
         logger.info("Created upload session: %s for job: %s", session.session_id, session.job_id)
         return session
 
@@ -66,10 +83,12 @@ class UploadSessionsRepository:
     def count_active_for_org(self, org_id: str, max_age_seconds: int = 1800) -> int:
         """Count active in-flight upload sessions for an organization to enforce quotas.
 
+        Uses indexed partition query on PK=ORG#{org_id}, SK begins_with('ACTIVE_SESSION#')
+        instead of an O(N) table scan across the entire DynamoDB table.
         Sessions in READY_TO_ANALYZE or terminal states (READY, FAILED, EXPIRED) are excluded.
         Sessions older than max_age_seconds (default 30 min) are treated as expired and excluded.
         """
-        active_statuses = [
+        active_statuses = {
             UploadSessionStatus.UPLOADING.value,
             UploadSessionStatus.UPLOAD_FINALIZED.value,
             UploadSessionStatus.FAST_PREPROCESSING.value,
@@ -77,24 +96,17 @@ class UploadSessionsRepository:
             UploadSessionStatus.ANALYSIS_REQUESTED.value,
             UploadSessionStatus.FALLBACK_PROCESSING.value,
             UploadSessionStatus.FINAL_RANKING.value,
-        ]
-        items = []
-        scan_kwargs: Dict[str, Any] = {
-            "FilterExpression": (
-                Attr("entity_type").eq("UPLOAD_SESSION")
-                & Attr("org_id").eq(org_id)
-            ),
-            "ProjectionExpression": "session_id, #st, created_at, updated_at",
-            "ExpressionAttributeNames": {"#st": "status"},
         }
-        done = False
-        while not done:
-            response = self._table.scan(**scan_kwargs)
-            items.extend(response.get("Items", []))
-            if "LastEvaluatedKey" in response:
-                scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
-            else:
-                done = True
+        try:
+            response = self._table.query(
+                KeyConditionExpression=Key("PK").eq(f"ORG#{org_id}") & Key("SK").begins_with("ACTIVE_SESSION#"),
+                ProjectionExpression="session_id, #st, created_at, updated_at",
+                ExpressionAttributeNames={"#st": "status"},
+            )
+            items = response.get("Items", [])
+        except Exception as e:
+            logger.warning("Indexed active sessions query failed; falling back to empty count: %s", e)
+            items = []
 
         now = datetime.now(timezone.utc)
         active_count = 0
@@ -107,6 +119,12 @@ class UploadSessionsRepository:
                 try:
                     ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                     if (now - ts).total_seconds() > max_age_seconds:
+                        try:
+                            self._table.delete_item(
+                                Key={"PK": f"ORG#{org_id}", "SK": f"ACTIVE_SESSION#{it['session_id']}"}
+                            )
+                        except Exception:
+                            pass
                         continue
                 except Exception:
                     pass
@@ -155,7 +173,30 @@ class UploadSessionsRepository:
             "Updated upload session %s status → %s (v%d → v%d)",
             session_id, status.value, expected_version, expected_version + 1
         )
-        return UploadSessionItem.from_dynamodb_item(response["Attributes"])
+        updated_item = UploadSessionItem.from_dynamodb_item(response["Attributes"])
+        TERMINAL_OR_BARRIER_STATUSES = {
+            UploadSessionStatus.READY_TO_ANALYZE,
+            UploadSessionStatus.READY,
+            UploadSessionStatus.READY_WITH_WARNINGS,
+            UploadSessionStatus.FAILED,
+            UploadSessionStatus.EXPIRED,
+        }
+        if updated_item.org_id:
+            try:
+                if status in TERMINAL_OR_BARRIER_STATUSES:
+                    self._table.delete_item(
+                        Key={"PK": f"ORG#{updated_item.org_id}", "SK": f"ACTIVE_SESSION#{session_id}"}
+                    )
+                else:
+                    self._table.update_item(
+                        Key={"PK": f"ORG#{updated_item.org_id}", "SK": f"ACTIVE_SESSION#{session_id}"},
+                        UpdateExpression="SET #st = :status, updated_at = :now",
+                        ExpressionAttributeNames={"#st": "status"},
+                        ExpressionAttributeValues={":status": status.value, ":now": _utcnow_iso()},
+                    )
+            except Exception as e:
+                logger.debug("Active session pointer update skipped: %s", e)
+        return updated_item
 
     def set_analysis_requested(
         self,
