@@ -78,18 +78,30 @@ class UploadSessionsRepository:
             UploadSessionStatus.FALLBACK_PROCESSING.value,
             UploadSessionStatus.FINAL_RANKING.value,
         ]
-        response = self._table.scan(
-            FilterExpression=(
+        items = []
+        scan_kwargs: Dict[str, Any] = {
+            "FilterExpression": (
                 Attr("entity_type").eq("UPLOAD_SESSION")
                 & Attr("org_id").eq(org_id)
-                & Attr("status").is_in(active_statuses)
             ),
-            ProjectionExpression="session_id, created_at, updated_at",
-        )
-        items = response.get("Items", [])
+            "ProjectionExpression": "session_id, #st, created_at, updated_at",
+            "ExpressionAttributeNames": {"#st": "status"},
+        }
+        done = False
+        while not done:
+            response = self._table.scan(**scan_kwargs)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" in response:
+                scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            else:
+                done = True
+
         now = datetime.now(timezone.utc)
         active_count = 0
         for it in items:
+            st = it.get("status")
+            if st not in active_statuses:
+                continue
             ts_str = it.get("updated_at") or it.get("created_at")
             if ts_str:
                 try:

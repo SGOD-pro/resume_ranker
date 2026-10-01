@@ -162,15 +162,15 @@ def main():
 
     actual_count = len(selected_pdfs)
 
+    extractor = MarkdownExtractionService()
+    concurrency = min(16, os.cpu_count() or 8)
+
     print("=" * 80)
     print(f"  SWYRA SORTLIST V2 — 1,000 PDF RESUME EXTRACTION & SCORING BENCHMARK")
     print(f"  Target Sample: {actual_count} Resumes | Corpus Pool: {len(all_pdfs)} PDFs")
-    print(f"  Concurrency: 8 Worker Threads (Matching Production Local Worker Daemon)")
+    print(f"  Concurrency: {concurrency} Worker Threads")
     print("=" * 80)
     print()
-
-    extractor = MarkdownExtractionService()
-    concurrency = min(16, os.cpu_count() or 8)
     cache_path = BACKEND_DIR / "_1k_extracted_cache.json"
     results: List[Dict[str, Any]] = []
 
