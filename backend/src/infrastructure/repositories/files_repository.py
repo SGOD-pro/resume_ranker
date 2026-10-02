@@ -496,7 +496,8 @@ class FilesRepository:
                                 adapter.send_message(ODL_BATCH_QUEUE, msg)
                                 dispatched_count += 1
 
-            if rem == 0 and analyze_req and current_st not in (
+            total_files = int(job_item.get("total_files", 0))
+            if total_files > 0 and rem == 0 and analyze_req and current_st not in (
                 JobStatus.DONE.value,
                 JobStatus.DONE_WITH_ERRORS.value,
                 JobStatus.FAILED.value,

@@ -1,196 +1,262 @@
-# architecture.md — SWYRA Sortlist V2.2
-> System Architecture, Module Topology, and Pipeline Data Flow.
-> Rev 5 — Modular Monolith, Durable Worker Pipeline & S3 Upload Proxy.
+# architecture.md — SWYRA Sortlist Architecture Specification
+
+> **Reviewed Baseline Commit:** `c9124c3de334c4b9024239acac4752a9bbb88d7e`  
+> **Target Release:** `v2.2 — Durable Serverless Pipeline, Evidence Integrity, and Strict Relevance Scoring`  
+> **Status:** Authoritative system architecture, serverless infrastructure, and data flow specification.
 
 ---
 
-## 1. Architectural Philosophy
+## 1. Architectural Principles
 
-SWYRA Sortlist is architected as a **modular monolith**: a single deployable unit per tier that achieves enterprise-grade durability, high throughput, and complete auditability without the operational overhead of microservices or distributed Kubernetes clusters.
+SWYRA Sortlist is architected as an **auditable, evidence-linked candidate review workspace**. It employs a standard AWS Serverless topology in production and a lightweight self-contained modular monolith in local development.
 
-### Core Principles
-1. **Frontend -> Backend -> S3 Upload Proxy:** The browser never uploads directly to AWS S3. All files pass through FastAPI (`POST /api/v2/jobs/{job_id}/resumes`), which performs magic bytes (`%PDF`) validation, computes SHA-256 deduplication, writes to S3, updates DynamoDB, and dispatches parsing. S3 CORS is unnecessary, enabling sub-50ms server startup.
-2. **Durable Multi-Stage Work Queues:** Extraction is separated into four distinct stages (`FAST_PARSE`, `ODL_BATCH`, `NOVA_FALLBACK`, `FINAL_RANK`). Each stage communicates via decoupled queues (SQS in production, in-memory queues in local development).
-3. **Outbox Pattern with Worker Lease Recovery:** Worker tasks claim items with a lease timestamp (`claim_expires_at`). If a worker crashes or is abruptly killed, `reconcile_outbox()` identifies expired leases and re-enqueues stranded files.
-4. **Barrier Synchronization with Self-Healing:** The final scoring engine is triggered only when all files reach terminal states (`remaining == 0`). If an unexpected crash desynchronizes the barrier count, the reconciler automatically self-heals the counter and dispatches ranking.
-5. **Deterministic, Explainable Scoring:** Zero LLMs in the ranking hot-path. Scoring is 100% deterministic using precomputed BM25 IDF, TF-IDF role matching, and evidence-linked factor ledgers.
+### Core Architectural Guarantees
+1. **Direct Browser-to-S3 Uploads (Zero API Buffering):** The primary production upload path issues presigned S3 URLs (`POST /api/v2/jobs` or `POST /api/v2/jobs/{job_id}/upload-sessions`). Browsers stream multi-megabyte PDF files directly to S3 with bounded client concurrency (4–6 parallel PUT/POSTs). This eliminates multi-megabyte PDF body buffering in API Lambda RAM, reserving Lambda memory strictly for sub-50ms JSON execution (`create`, `complete`, `finalize`). The legacy backend upload proxy (`POST /api/v2/jobs/{job_id}/resumes`) is maintained strictly for local development and fallback compatibility.
+2. **Decoupled Serverless Queues & Microbatches:** Document processing is segregated into independent, asynchronous queue stages:
+   - **`Stage1Queue` / `Stage1WorkerFunction`:** High-speed in-memory PyMuPDF extraction and visual reading-order clustering. Single-threaded PyMuPDF per OS process.
+   - **`Stage2Queue` / `Stage2WorkerFunction`:** Layout repair (OpenDataLoader PDF JVM) and targeted LLM infill (Bedrock Nova Micro).
+   - **`ScoringQueue` / `ScoringWorkerFunction`:** 100% deterministic multi-signal candidate scoring and cohort BM25 ranking.
+   - **Dead Letter Queues (`Stage1DLQ`, `Stage2DLQ`, `ScoringDLQ`):** Captured by `DlqConsumerFunction` to maintain atomic barrier accounting.
+3. **Partial Batch Failure Isolation:** All Lambda SQS event source mappings enforce `ReportBatchItemFailures`. Visibility timeouts strictly exceed function execution timeouts (`Stage1Queue` 180s > 120s, `Stage2Queue` 300s > 180s, `ScoringQueue` 240s > 120s). Transient errors on a single document retry only that specific `messageId`, never re-driving peer records in the microbatch.
+4. **Base-Table Key-Prefix Session Queries:** Active upload session tracking queries DynamoDB base-table items using `PK=ORG#{org_id}` and `SK begins_with('ACTIVE_SESSION#')`. This is an **org-partition key-prefix query, not an O(1) constant lookup, not a GSI, and does not guarantee 1 RCU**. It consumes read capacity proportional to matching session pointer count and payload size. Active pointers are strictly removed upon transition to `READY_TO_ANALYZE` or terminal states.
+5. **Deterministic Scoring & Algorithmic Ethics:** Zero LLMs in the scoring path. Multi-signal ranking combines BM25 skills matching, TF-IDF role experience cosine similarity, keyword ratios, and education criteria into an auditable factor ledger. University prestige bonuses, employer prestige bonuses, and career gap penalties are permanently eliminated.
 
 ---
 
-## 2. System Architecture Diagram
+## 2. Serverless Component Topology
 
 ```mermaid
 flowchart TD
-    subgraph ClientTier ["Frontend Tier (React 18 + Vite + Zustand)"]
-        UI["Candidate Review Workspace"]
-        Upload["Resume Upload Dropzone"]
-        SSEListener["SSE Stream Listener"]
+    subgraph Browser ["Client Browser (React 18 + Zustand)"]
+        UI["Recruiter Review Workspace"]
+        UploadZone["Resume Upload Zone (Presigned S3 PUT/POST)"]
     end
 
-    subgraph APITier ["API Tier (FastAPI / Uvicorn)"]
-        Router["/api/v2/jobs Router"]
-        MagicValidator["Magic Bytes & Deduplication Gate"]
-        SSEHub["SSE Progress Hub (/extract)"]
+    subgraph APILayer ["API Tier (AWS Lambda / FastAPI)"]
+        API["ApiGatewayFunction<br/>(Jobs, Sessions, Auth, Scoring)"]
     end
 
-    subgraph StorageTier ["Persistence Tier"]
-        S3[("AWS S3<br/>Raw PDFs & JSON Artifacts")]
+    subgraph StorageLayer ["Persistence Tier"]
+        S3[("AWS S3<br/>Raw PDFs & Extracted JSON")]
         DDB[("AWS DynamoDB<br/>Single-Table Design")]
     end
 
-    subgraph QueueTier ["Queue & Outbox Tier"]
-        Q1["FAST_PARSE_QUEUE"]
-        Q2["ODL_BATCH_QUEUE"]
-        Q3["NOVA_QUEUE"]
-        Q4["FINAL_RANK_QUEUE"]
-        Reconciler["Outbox Lease Reconciler<br/>(reconcile_outbox)"]
+    subgraph QueueLayer ["SQS Queue & Worker Tier"]
+        Q1["Stage1Queue<br/>(Vis: 180s)"] --> W1["Stage1WorkerFunction<br/>(PyMuPDF 120s)"]
+        Q2["Stage2Queue<br/>(Vis: 300s)"] --> W2["Stage2WorkerFunction<br/>(ODL / Nova 180s)"]
+        Q3["ScoringQueue<br/>(Vis: 240s)"] --> W3["ScoringWorkerFunction<br/>(Scorer 120s)"]
+        DLQ["DLQs (S1, S2, Scoring)<br/>(Vis: 120s)"] --> W_DLQ["DlqConsumerFunction<br/>(Barrier Decrement 60s)"]
     end
 
-    subgraph WorkerTier ["Worker Tier (BackgroundWorkerDaemon)"]
-        W1["FastParseWorker<br/>(PyMuPDF In-Memory)"]
-        W2["Stage2Worker<br/>(ODL JVM Microbatch)"]
-        W3["NovaQueueWorker<br/>(Bedrock LLM Infill)"]
-        W4["ScoringWorker<br/>(BM25 + Multi-Signal)"]
-    end
+    %% Upload & Extraction Triggers
+    UploadZone -->|"1. Request Presigned URLs"| API
+    API -->|"2. Create Active Session & Pointers"| DDB
+    UploadZone -->|"3. Direct Stream (4-6 parallel)"| S3
+    UploadZone -->|"4. Complete & Finalize"| API
+    API -->|"5. Seal Barrier & Enqueue S1"| Q1
 
-    %% Upload Flow
-    Upload -->|"1. Multipart Upload (PDFs)"| Router
-    Router -->|"2. Verify %PDF Header"| MagicValidator
-    MagicValidator -->|"3. Stream PutObject"| S3
-    MagicValidator -->|"4. Create FileItems & Init Barrier"| DDB
-    MagicValidator -->|"5. Enqueue Doc IDs"| Q1
+    %% Processing Flow
+    W1 -->|"6. Pure In-Memory Parse"| S3
+    W1 -->|"Clean Layout -> S2_DONE"| DDB
+    W1 -->|"Fallback Needed -> S1_DONE"| Q2
+    W2 -->|"7. ODL Layout / Nova Infill"| S3
+    W2 -->|"Terminal -> S2_DONE"| DDB
 
-    %% Stage 1 Fast Parse
-    Q1 -->|"6. Consume Msg"| W1
-    W1 -->|"7. In-Memory Parse & Quality Gate"| W1
-    W1 -->|"Clean Layout (>=0.90)"| S3
-    W1 -->|"Transition S2_DONE"| DDB
-    W1 -->|"Complex Layout (<0.90)"| Q2
-
-    %% Stage 2 ODL Microbatch
-    Q2 -->|"8. Bounded Microbatch (<=20 docs)"| W2
-    W2 -->|"9. JVM Layout Parsing"| W2
-    W2 -->|"Save Extracted JSON"| S3
-    W2 -->|"Transition S2_DONE"| DDB
-    W2 -->|"Missing Critical Fields"| Q3
-
-    %% Stage 3 Nova Fallback
-    Q3 -->|"10. Token Budgeted LLM Infill"| W3
-    W3 -->|"Save Extracted JSON"| S3
-    W3 -->|"Transition S2_DONE"| DDB
-
-    %% Barrier & Scoring
-    DDB -->|"11. Barrier: remaining == 0"| Q4
-    Q4 -->|"12. Trigger Scoring"| W4
-    W4 -->|"13. Load Extracted JSONs"| S3
-    W4 -->|"14. BM25 + Multi-Signal Scorer"| W4
-    W4 -->|"15. Write Scored Results"| S3
-    W4 -->|"16. JobStatus: SCORED"| DDB
-
-    %% Live Feedback
-    DDB -.->|"17. Read State Transitions"| SSEHub
-    SSEHub -.->|"18. SSE Events"| SSEListener
-    SSEListener -.->|"19. Update Zustand Store"| UI
-
-    %% Self Healing
-    Reconciler -.->|"Audit Expired Leases"| DDB
-    Reconciler -.->|"Re-enqueue Stranded"| Q1
-    Reconciler -.->|"Self-Heal Barrier"| Q4
+    %% Barrier Scoring
+    DDB -.->|"8. Atomic Decrement (remaining == 0)"| Q3
+    W3 -->|"9. Load Extracted JSONs & Rank"| S3
+    W3 -->|"10. Write Results & JobStatus: SCORED"| DDB
 ```
 
 ---
 
-## 3. Tech Stack & Infrastructure Specifications
+## 3. Core Lifecycle & Recovery Path Diagrams
 
-| Component | Technology | Rationale |
-| :--- | :--- | :--- |
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide Icons | Type-safe, brutalist recruiter UI; zero unnecessary bundle bloat. |
-| **Frontend State** | Zustand | Atomic state stores (`job-store`, `candidate-store`, `app-store`) with memoized selectors to avoid re-render loops. |
-| **Backend API** | Python 3.13, FastAPI, Uvicorn | Async ASGI server, native type validation, auto-generated OpenAPI specs. |
-| **Object Storage** | AWS S3 (`resume-ranker-documents-local`) | Scalable storage for raw PDF resumes, structured extraction JSONs, and scoring snapshots. |
-| **Database** | AWS DynamoDB (Single-Table, `PAY_PER_REQUEST`) | Sub-10ms key-value lookups with composite PK/SK patterns and optimistic concurrency locking. |
-| **Fast Extraction** | PyMuPDF (`fitz`) | High-speed C-based text extraction with visual reading order reconstruction. |
-| **Layout Extraction** | OpenDataLoader PDF (JVM / Docker) | Amortized microbatch parser for multi-column resumes, tables, and bounding boxes. |
-| **LLM Infill** | Amazon Bedrock (Nova Micro) | Strictly bounded to fill unresolved chunks/names with temperature=0 and atomic token budgets. |
-| **Scoring Engine** | Python (`rank_bm25`, `scikit-learn`, `numpy`) | 100% deterministic scoring with precomputed reference IDF table and explainable factor ledgers. |
-
----
-
-## 4. End-to-End Pipeline Workflow
-
-### Stage 1: Document Ingestion & Fast-Path Parsing
-1. **Multipart Upload:** Recruiter submits resumes via `POST /api/v2/jobs/{job_id}/resumes`.
-2. **Magic Bytes Gate:** FastAPI reads the initial bytes of each stream; non-`%PDF` files are rejected upfront with descriptive error structures.
-3. **S3 Stream & Barrier Registration:** Valid files are streamed directly to S3 under `jobs/{job_id}/raw/{file_id}.pdf`. File records are created in DynamoDB with `status = UPLOADED`, and the job's atomic barrier counter (`remaining += N`) is incremented.
-4. **Fast-Parse Queue:** Messages are enqueued to `FAST_PARSE_QUEUE`.
-5. **PyMuPDF Extraction:** `FastParseWorker` downloads the PDF from S3 into memory, runs structural heuristic layout evaluation (x-clustering, reading order monotonicity, character density), and extracts candidate sections.
-6. **Fast-Path Completion:** If layout quality $\ge 0.90$ and required fields are parsed, the worker uploads the structured JSON to S3, transitions the file to `S2_DONE`, and decrements the job barrier.
-
-### Stage 2: Bounded ODL JVM Microbatching
-1. **Routing Gate:** If structural quality $< 0.90$ (multi-column layouts, tabular formatting, or irregular text blocks), the file is enqueued to `ODL_BATCH_QUEUE`.
-2. **Microbatch Aggregation:** `Stage2Worker` pulls up to 20 documents (max 20MB budget) to amortize JVM initialization.
-3. **Execution & Cleanup:** ODL parses visual layout elements and bounding boxes. Upon completion, files are updated to `S2_DONE` and immediately purged from the `ODL_BUFFER#` tracking set in DynamoDB.
-
-### Stage 3: Targeted LLM Infill
-1. **Fallback Routing:** If critical fields (e.g. candidate name or unparsed sections) remain ambiguous after Stage 1/2, the document is routed to `NOVA_QUEUE`.
-2. **Atomic Token Budget:** `NovaQueueWorker` verifies the session's token budget and invokes Amazon Bedrock Nova Micro (`temperature = 0`) solely to extract missing fields.
-3. **Terminal Transition:** Extracted fields are merged into the structured JSON, saved to S3, and the file transitions to `S2_DONE`.
-
-### Stage 4: Barrier Synchronization & Deterministic Scoring
-1. **Atomic Barrier Check:** Each worker decrements the job's `remaining` counter via DynamoDB atomic expressions:
-   ```text
-   UpdateExpression: "ADD remaining :decr, usable_files :incr"
-   ConditionExpression: "remaining >= :one"
-   ```
-2. **Trigger Final Ranking:** When `remaining == 0`, the barrier automatically enqueues a `FinalRankMessage` to `FINAL_RANK_QUEUE`.
-3. **Scoring Execution:** `ScoringWorker` loads all structured JSON files for the job from S3 and executes deterministic multi-signal ranking:
-   - **BM25 Skill Match:** Uses fixed reference IDF corpus; evaluates direct, alias, implied, and related skills.
-   - **Experience Match:** Cosine similarity of role titles + years in range + recency.
-   - **Keyword Match:** Exact and semantic presence ratios.
-   - **Education Match:** Degree level mapping + field of study relevance.
-   - **Knockout Rules:** Evaluates hard requirements (missing must-haves, out-of-range experience, missing degree). Candidates failing criteria are marked `signal = 'knockout'` with sub-scores preserved for transparent explanation.
-4. **Snapshot Persistence:** Complete scoring snapshots and factor ledgers are stored in S3 at `jobs/{job_id}/results/scoring_{scoring_id}.json`. Job transitions to `JobStatus.SCORED`.
-
-### Stage 5: Live Real-Time Updates (SSE)
-1. **Connection:** Frontend holds open `GET /api/v2/jobs/{job_id}/extract`.
-2. **Event Emission:** The SSE handler monitors state transitions and emits structured progress events (`stage`, `completed`, `total`, `active_workers`).
-3. **Client Completion:** Upon receiving `status = 'complete'`, the frontend fetches candidate results and populates the Zustand store.
-4. **Instant Weight Adjustments:** Recruiters adjusting component weights in the UI see the candidate list re-rank instantly via memoized client-side calculation ($O(N)$), with zero server round-trips.
-
----
-
-## 5. Crash Durability & Self-Healing Guarantees
+### Lifecycle 1: Analyze Before, During, and After Stage 1
 
 ```mermaid
-stateDiagram-v2
-    [*] --> UPLOADED
-    UPLOADED --> S1_PROCESSING: Worker Claims (claim_expires_at)
-    S1_PROCESSING --> S2_DONE: Fast-Path Pass (Quality >= 0.90)
-    S1_PROCESSING --> S1_DONE: Needs Stage 2
-    S1_DONE --> S2_PROCESSING: Stage 2 Worker Claims
-    S2_PROCESSING --> S2_DONE: ODL / LLM Success
-    S1_PROCESSING --> FAILED: Parse Error
-    S2_PROCESSING --> FAILED: ODL Error
+sequenceDiagram
+    participant UI as Browser UI
+    participant API as ApiGatewayFunction
+    participant DDB as DynamoDB (Job & Files)
+    participant S1 as Stage1WorkerFunction
+    participant S2 as Stage2WorkerFunction
+    participant SC as ScoringWorkerFunction
 
-    state "Outbox Reconciler Self-Healing" as Reconciler {
-        S1_PROCESSING --> UPLOADED: Lease Expired (Crash Recovery)
-        S2_PROCESSING --> S1_DONE: Lease Expired (Crash Recovery)
-    }
+    Note over UI,API: BEFORE STAGE 1 (Upload & Job Setup)
+    UI->>API: POST /jobs/{job_id}/upload-sessions
+    API->>DDB: Create JobItem (total_files=N, remaining=N, analyze_requested=false)
+    UI->>API: POST /jobs/{job_id}/upload-sessions/{id}/finalize
+    API->>DDB: Set JobStatus: READY_TO_ANALYZE
 
-    S2_DONE --> [*]: Barrier Decrement
-    FAILED --> [*]: Barrier Decrement
+    Note over UI,S1: USER CLICKS "ANALYZE"
+    UI->>API: POST /jobs/{job_id}/analyze
+    API->>DDB: Set analyze_requested = true
+    API->>S1: Trigger Stage1Queue
+
+    Note over S1,S2: DURING STAGE 1 (Fast-Path PyMuPDF)
+    S1->>S1: In-memory text & reading order extraction
+    alt Clean Layout (Quality >= 0.90)
+        S1->>DDB: Update File: S2_DONE (remaining -= 1)
+    else Fallback Required (ODL or Nova)
+        S1->>DDB: Update File: S1_DONE
+        S1->>S2: Enqueue Stage2Queue (since analyze_requested=true)
+    end
+
+    Note over S2,SC: AFTER STAGE 1 (Tail Processing & Scoring)
+    opt Stage 2 Processing
+        S2->>S2: Execute ODL layout repair / Bedrock Nova infill
+        S2->>DDB: Update File: S2_DONE (remaining -= 1)
+    end
+    Note over DDB,SC: Barrier Check: When remaining == 0
+    DDB->>SC: Enqueue ScoringQueue
+    SC->>DDB: Set JobStatus: SCORED
+    SC-->>UI: Results ready for recruiter review
 ```
-
-- **Lease Timeouts:** Every worker claims documents with an explicit TTL (`claim_expires_at = now + 120s`).
-- **Periodic Outbox Sweep:** `reconcile_outbox()` executes every 10–30s. If a worker process dies mid-execution, its claimed documents revert to the appropriate queue.
-- **Barrier Self-Healing:** If all document records in DynamoDB have reached terminal statuses (`S2_DONE`, `FAILED`, `REJECTED_DUPLICATE`) but the job item reflects `remaining > 0`, the reconciler automatically corrects `remaining = 0` and dispatches `FinalRankWorker`.
 
 ---
 
-## 6. Prohibited Attributes & Algorithmic Ethics
+### Lifecycle 2: Partial Browser Uploads & Barrier Reconciliation
 
-Sortlist enforces a non-negotiable bias-free scoring architecture:
-1. **Prestige Bonuses Permanently Removed:** University prestige lists (Ivy League / top tier) and employer prestige bonuses (`_prestige_bonus()`, FAANG/Fortune 500) have been eliminated.
-2. **Career Gaps Not Penalized:** Career gap anomaly detection is disabled. Gaps in employment history have zero negative weight.
-3. **Protected Demographic Attributes Prohibited:** The extraction and scoring pipelines do not accept, parse, or evaluate candidate age, date of birth, gender, race, ethnicity, caste, religion, nationality, disability, marital status, or photograph.
-4. **Candidate Name Guardrails:** Strict identity validation prevents guessing names from company titles or addresses, avoiding noisy or hallucinated candidate profiles.
+```mermaid
+sequenceDiagram
+    participant Browser as Browser Uploader
+    participant S3 as AWS S3 Storage
+    participant API as API Lambda
+    participant DDB as DynamoDB
+
+    Browser->>API: POST /jobs/{job_id}/upload-sessions (Request N files)
+    API->>DDB: Create session with expected_count = N
+    API-->>Browser: Return N presigned S3 URLs
+
+    Note over Browser,S3: Partial Upload Occurs (K of N succeed)
+    par Successful Uploads (K files)
+        Browser->>S3: PUT file_1.pdf (200 OK)
+        Browser->>API: POST /complete (file_1)
+        API->>DDB: Set file_1 status: UPLOADED
+    and Aborted / Failed Uploads (N - K files)
+        Browser-xS3: Network drop / file too large / user cancels
+    end
+
+    Note over Browser,DDB: Finalize Barrier Reconciliation
+    Browser->>API: POST /upload-sessions/{id}/finalize (uploaded_count = K)
+    API->>DDB: Mark (N - K) uncompleted files as REMOVED / FAILED
+    API->>DDB: Reconcile Job: total_files = K, remaining = K
+    API->>DDB: Delete ACTIVE_SESSION# pointer
+    API-->>Browser: Session finalized (usable_files = K, barrier sealed)
+```
+
+---
+
+### Lifecycle 3: SQS Worker Fallback Tail & Batch Item Failure Isolation
+
+```mermaid
+flowchart LR
+    subgraph Ingestion ["Stage 1 PyMuPDF Ingestion"]
+        S1_Batch["SQS Microbatch (10 records)"]
+        S1_Proc["Stage1WorkerFunction"]
+    end
+
+    subgraph FastPath ["Fast-Path (80-90%)"]
+        Clean["Clean Single-Column Layouts"]
+        S2_Done["Status: S2_DONE<br/>(Atomic Barrier Decrement)"]
+    end
+
+    subgraph FallbackTail ["Fallback Tail (10-20%)"]
+        S2_Queue["Stage2Queue"]
+        S2_Proc["Stage2WorkerFunction<br/>(ReportBatchItemFailures)"]
+        ODL["ODL JVM<br/>(Multi-Column Repair)"]
+        Nova["Nova LLM<br/>(Targeted Infill)"]
+    end
+
+    S1_Batch --> S1_Proc
+    S1_Proc -->|"Quality >= 0.90"| Clean --> S2_Done
+    S1_Proc -->|"needs_odl or needs_nova"| S2_Queue
+
+    S2_Queue --> S2_Proc
+    S2_Proc -->|"needs_odl"| ODL
+    S2_Proc -->|"needs_nova"| Nova
+    ODL & Nova --> S2_Done
+    S2_Proc -.->|"Transient 429 Throttling"| Retry["Return batchItemFailures<br/>(Retry Failed MessageId Only)"]
+```
+
+---
+
+### Lifecycle 4: Expired Worker Lease & DLQ Recovery
+
+```mermaid
+sequenceDiagram
+    participant SQS as SQS Stage Queue
+    participant W as Worker Lambda
+    participant DLQ as Dead Letter Queue
+    participant DDB as DynamoDB
+    participant R as DlqConsumerFunction / Recovery Lambda
+
+    Note over SQS,W: Visibility Timeout Exceeds Function Timeout
+    SQS->>W: Deliver Message (ReceiveCount = 1, VisTimeout = 180s)
+    W->>W: Process starts (Lambda timeout = 120s)
+    Note over W: Worker times out or OOMs at 120s
+    Note over SQS: VisTimeout expires at 180s (Message becomes visible again)
+    
+    SQS->>W: Redrive Message (ReceiveCount = 2)
+    Note over W: Worker crashes again
+    SQS->>W: Redrive Message (ReceiveCount = 3)
+    Note over W: Final attempt fails
+
+    Note over SQS,DLQ: Poison Pill Routed to DLQ
+    SQS->>DLQ: Route to DLQ (maxReceiveCount = 3 exceeded)
+    DLQ->>R: Trigger DlqConsumerFunction
+    R->>DDB: Mark FileStatus: S1_FAILED or S2_FAILED
+    R->>DDB: Atomic Decrement Job Barrier (remaining -= 1)
+    R->>SQS: Delete DLQ Message (Self-Heals Barrier Deadlock)
+```
+
+---
+
+### Lifecycle 5: Selected-Cohort Publication & Explainable Scoring
+
+```mermaid
+flowchart TD
+    subgraph Trigger ["Scoring Trigger"]
+        Barrier["DynamoDB Barrier: remaining == 0"]
+        ScoringQ["ScoringQueue"]
+    end
+
+    subgraph Scorer ["Deterministic CandidateScorer"]
+        Load["Load S3 Extracted JSONs for Job"]
+        BM25["BM25 Skill Matching<br/>(Cohort IDF Matrix)"]
+        Exp["TF-IDF Role Cosine +<br/>Experience Duration Math"]
+        KW["Keyword & Education Matching"]
+        Knockout["Knockout Rule Evaluation<br/>(Preserves Explainable Sub-Scores)"]
+        Ledger["Factor Ledger Generation<br/>(Transparent Provenance)"]
+    end
+
+    subgraph Publication ["Results Publication"]
+        S3_Results[("S3: jobs/{job_id}/results/scoring_{id}.json")]
+        DDB_Job[("DynamoDB: JobStatus = SCORED")]
+        UI["Recruiter UI:<br/>Instant Client-Side Weight Recalculation"]
+    end
+
+    Barrier --> ScoringQ --> Load
+    Load --> BM25 & Exp & KW
+    BM25 & Exp & KW --> Knockout --> Ledger
+    Ledger --> S3_Results & DDB_Job
+    S3_Results -.-> UI
+```
+
+---
+
+## 4. Key Architectural Clarifications
+
+### A. Base-Table Key-Prefix Session Queries
+- Active upload session verification queries DynamoDB using `PK=ORG#{org_id}` and `SK begins_with('ACTIVE_SESSION#')`.
+- **Reality:** This is **not an $O(1)$ constant query, not a Global Secondary Index (GSI), and does not guarantee 1 RCU**.
+- **Scalability:** It scans and reads all matching session pointers in the organization partition. To ensure predictable costs, active pointers are strictly deleted when sessions transition to `READY_TO_ANALYZE` or reach terminal states (`EXPIRED`, `FAILED`). Stale pointers are reconciled during admission.
+
+### B. Direct S3 Upload Memory Reality
+- **Client Direct Uploads:** Resumes are uploaded directly from the client browser to AWS S3 using presigned URLs.
+- **Lambda Memory Reality:** Direct S3 uploads eliminate buffering multi-megabyte PDF bodies through the API Lambda memory. However, the API Lambda still consumes minimal memory for JSON requests (`create-upload-session`, `complete`, `finalize`). Memory size is set to 512 MB to support fast JSON serialization and low-latency crypto token generation.
+
+### C. Concurrency: 6 Local Workers vs. AWS Lambda
+- **Local Microbenchmark:** Spawns a maximum of 6 isolated operating system processes (`ProcessPoolExecutor`). PyMuPDF executes strictly single-threaded within each process to prevent C-library memory corruption.
+- **AWS Lambda Scaling:** Lambda concurrency is **independent of local process limits**. In AWS Lambda, each invocation runs in its own isolated Firecracker microVM. Lambda scaling is governed by SQS trigger batch sizes (up to 10 records) and AWS account concurrency quotas. Six local processes does not mean six Lambda invocations.

@@ -143,7 +143,15 @@ def compute_total_experience_years(experience: List[Dict[str, Any]]) -> float:
             ranges.append((start, end))
 
     if not ranges:
+        explicit_years = sum(
+            float(exp.get("years", 0) or 0)
+            for exp in experience
+            if isinstance(exp.get("years"), (int, float)) and (exp.get("years", 0) or 0) > 0
+        )
+        if explicit_years > 0:
+            return round(explicit_years, 1)
         return 0.0
+
 
     # Sort and merge overlapping ranges
     ranges.sort(key=lambda x: x[0])

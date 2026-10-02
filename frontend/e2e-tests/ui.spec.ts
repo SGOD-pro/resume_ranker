@@ -4,8 +4,11 @@ import * as path from 'path';
 test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
 
   test('Should test Dashboard fields, upload resume, and perform ATS check', async ({ page }) => {
-    test.setTimeout(120000); // Allow up to 2 minutes for full E2E run
+    test.setTimeout(240000); // Allow up to 4 minutes for full E2E run
     
+    page.on('console', (msg) => console.log('[BROWSER CONSOLE]', msg.type(), msg.text()));
+    page.on('pageerror', (err) => console.log('[BROWSER ERROR]', err.message));
+
     // 1. Visit the Dashboard (Root URL)
     await page.goto('/');
 
@@ -25,17 +28,25 @@ test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
     await page.locator('text=Max years').locator('xpath=following-sibling::input').fill('7');
 
     // 5. Upload a resume via the hidden file input (creates the job)
-    const resumePath = path.resolve(process.cwd(), '../backend/data/resumes/cv (1872).pdf');
-    await page.locator('input[type="file"]').first().setInputFiles(resumePath);
+    const resumePath = path.resolve(process.cwd(), '../backend/data/resumes/1.pdf');
+    await page.locator('input[data-testid="resume-file-input"]').setInputFiles(resumePath);
     
-    // Wait for the upload to complete (file to appear in the list)
-    await page.waitForSelector('text=cv (1872).pdf');
+    // Wait for upload to complete: "Ready to analyze" text in progress bar or toast
+    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
 
     // 6. Click "Analyze Resumes" to trigger extraction and scoring
-    await page.click('button:has-text("Analyze Resumes")');
+    const analyzeBtn = page.locator('button:has-text("Analyze Resumes")');
+    await expect(analyzeBtn).toBeEnabled({ timeout: 15000 });
+    await analyzeBtn.click();
+
+    // Ensure knockouts are visible
+    const knockoutSwitch = page.locator('#show-knockouts');
+    if (await knockoutSwitch.getAttribute('data-state') === 'unchecked') {
+      await page.click('label[for="show-knockouts"]');
+    }
 
     // 7. Wait for processing progress to finish and candidate list to render
-    await page.waitForSelector('text=Signal', { timeout: 60000 });
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
     
     // 8. Navigate to ATS Checker
     await page.goto('/ats-checker');

@@ -64,6 +64,33 @@ def test_stage1_handler_all_succeed():
         assert res["batchItemFailures"] == []
 
 
+def test_stage2_handler_report_batch_item_failures():
+    """Verify Stage 2 handler isolates poisoned/throttled record in batchItemFailures."""
+    from src.handlers.stage2 import handler as stage2_handler
+
+    event = {
+        "Records": [
+            {"messageId": "s2-msg-001", "body": '{"job_id": "j1", "document_ids": ["d1"]}'},
+            {"messageId": "s2-msg-002", "body": '{"job_id": "j1", "document_ids": ["d2"]}'},
+        ]
+    }
+
+    # Simulate batch processing where message s2-msg-002 fails/throttles while s2-msg-001 succeeds
+    mock_batch_result = {
+        "processed": 1,
+        "succeeded": 1,
+        "failed_items": ["s2-msg-002"],
+    }
+
+    with patch("src.handlers.stage2.process_stage2_batch", return_value=mock_batch_result):
+        res = stage2_handler(event)
+        assert res["statusCode"] == 200
+        assert res["processed"] == 1
+        assert len(res["batchItemFailures"]) == 1
+        assert res["batchItemFailures"][0]["itemIdentifier"] == "s2-msg-002"
+
+
+
 def test_scoring_handler_report_batch_item_failures():
     """Verify Scoring handler isolates failed record in batchItemFailures."""
     from src.handlers.scoring import handler as scoring_handler

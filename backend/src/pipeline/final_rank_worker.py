@@ -6,6 +6,7 @@ over the complete set of extracted documents for a pinned job_version.
 Guarantees idempotency and version consistency; prevents stale ranking overwrites.
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -161,6 +162,26 @@ def process_final_rank_message(message: QueueMessage) -> None:
         # Persist ranking JSON to S3
         scoring_id = str(uuid.uuid4())
         s3_key = storage.upload_ranking(job_id, scoring_id, results_dicts)
+
+        # Also write canonical jobs/{job_id}/results.json for API results consumer
+        try:
+            storage._client.put_object(
+                Bucket=storage._bucket,
+                Key=f"jobs/{job_id}/results.json",
+                Body=json.dumps(
+                    {
+                        "job_id": job_id,
+                        "status": "scored",
+                        "total_candidates": len(results_dicts),
+                        "candidates": results_dicts,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ).encode("utf-8"),
+                ContentType="application/json",
+            )
+        except Exception as e:
+            logger.warning("Could not write canonical results.json for job %s: %s", job_id, e)
 
         # Persist ScoringItem in DynamoDB
         top_name = results[0].name if results else None

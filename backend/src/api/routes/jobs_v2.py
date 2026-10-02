@@ -1329,19 +1329,36 @@ async def extract_resumes_stream(
                 succeeded = sum(1 for d in docs if d.status.is_terminal_fast_parse() and d.status not in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED))
                 failed = sum(1 for d in docs if d.status in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED))
 
+                is_terminal_job = job.status in (
+                    JobStatus.READY,
+                    JobStatus.READY_WITH_WARNINGS,
+                    JobStatus.DONE,
+                    JobStatus.DONE_WITH_ERRORS,
+                )
+                is_complete = is_terminal_job if job.analyze_requested else (fast_parsed == total_docs and total_docs > 0)
+
                 payload = {
                     "job_id": job_id,
-                    "status": "extracted" if fast_parsed == total_docs else "extracting",
+                    "job_status": job.status.value,
+                    "status": "complete" if is_complete else ("scoring" if fast_parsed == total_docs else "extracting"),
                     "total": total_docs,
+                    "total_files": total_docs,
                     "current": fast_parsed,
+                    "usable_files": succeeded,
+                    "remaining": total_docs - fast_parsed,
                     "succeeded": succeeded,
                     "failed": failed,
+                    "analyze_requested": job.analyze_requested,
+                    "is_stalled": job.is_stalled(threshold_seconds=600),
                 }
                 yield f"event: progress\ndata: {json.dumps(payload)}\n\n"
 
-                if fast_parsed == total_docs and total_docs > 0:
-                    yield f"event: complete\ndata: {json.dumps({'type': 'extraction_complete', 'total': total_docs, 'succeeded': succeeded, 'failed': failed})}\n\n"
+                if is_complete and total_docs > 0:
+                    yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'status': job.status.value, 'total': total_docs, 'usable': succeeded, 'succeeded': succeeded, 'failed': failed})}\n\n"
                     break
+
+                await asyncio.sleep(0.5)
+                continue
 
             s2_done_count = sum(1 for f in files if f.status == FileStatus.S2_DONE.value)
             failed_count = sum(1 for f in files if f.status in (FileStatus.S1_FAILED.value, FileStatus.S2_FAILED.value))
@@ -1383,7 +1400,7 @@ async def extract_resumes_stream(
                 yield f"event: progress\ndata: {json.dumps(payload)}\n\n"
 
             # Check terminal states
-            if job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS) or (files and completed_files == len(files)):
+            if job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS, JobStatus.READY, JobStatus.READY_WITH_WARNINGS) or (files and completed_files == len(files)):
                 yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'status': job.status.value, 'total': job.total_files or len(files), 'usable': job.usable_files or s2_done_count, 'succeeded': s2_done_count, 'failed': failed_count})}\n\n"
                 break
             elif job.status == JobStatus.FAILED:
@@ -1456,10 +1473,24 @@ async def get_results(
     enforce_session_ownership(job, request, ctx)
 
     try:
-        resp = _storage._client.get_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/results.json")
+        try:
+            resp = _storage._client.get_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/results.json")
+        except Exception:
+            # Fallback to latest scoring result key from ScoringRepository
+            scoring_item = _scoring_repo.get_latest(job_id)
+            if not scoring_item or not scoring_item.s3_result_key:
+                raise
+            resp = _storage._client.get_object(Bucket=_storage._bucket, Key=scoring_item.s3_result_key)
+
         body = resp["Body"].read().decode("utf-8")
-        results_data = json.loads(body)
-        candidates = results_data.get("candidates", [])
+        parsed = json.loads(body)
+        if isinstance(parsed, dict):
+            candidates = parsed.get("candidates", [])
+        elif isinstance(parsed, list):
+            candidates = parsed
+        else:
+            candidates = []
+
         for c in candidates:
             doc_id = c.get("document_id") or c.get("_document_id") or c.get("candidate_id")
             if doc_id:
@@ -1467,8 +1498,13 @@ async def get_results(
                 c["job_id"] = job_id
                 if not c.get("pdf_url"):
                     c["pdf_url"] = f"/api/v2/jobs/{job_id}/resumes/{doc_id}/download"
-        results_data["candidates"] = candidates
-        return results_data
+
+        return {
+            "job_id": job_id,
+            "status": "scored",
+            "total_candidates": len(candidates),
+            "candidates": candidates,
+        }
     except Exception as e:
         logger.info("Results JSON not yet available for job %s: %s", job_id, e)
         # Return fallback empty shape if still in progress

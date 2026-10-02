@@ -112,6 +112,9 @@ export function ResumeUploadZone() {
             },
             4, // bounded parallelism 4
           );
+          if (result.accepted.length === 0 && files.length > 0) {
+            throw new Error(result.rejected[0]?.reason || 'Direct S3 upload rejected files');
+          }
         } catch (sessionErr) {
           console.warn('Upload session failed; falling back to legacy proxy:', sessionErr);
           result = await uploadResumesToBackend(
@@ -233,6 +236,7 @@ export function ResumeUploadZone() {
       <input
         ref={fileInputRef}
         type="file"
+        data-testid="resume-file-input"
         accept=".pdf"
         multiple
         className="hidden"

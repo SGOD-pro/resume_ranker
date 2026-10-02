@@ -76,7 +76,7 @@ def dispatch_odl_batch(msgs) -> None:
 
 def dispatch_nova(msg) -> None:
     stage = getattr(msg, "stage", None)
-    if stage == "ODL_BATCH" or getattr(msg, "document_ids", None):
+    if stage == "ODL_BATCH":
         process_odl_batch_message(msg)
         return
 

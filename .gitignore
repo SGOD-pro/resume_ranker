@@ -41,3 +41,6 @@ dist/
 build/
 
 scratch_resumes/
+*_extracted_cache.json
+_1k_extracted_cache.json
+*.cache.json

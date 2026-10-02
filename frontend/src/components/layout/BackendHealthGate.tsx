@@ -14,8 +14,8 @@ import { checkHealth } from '@/lib/api';
 import { useAppStore } from '@/store/app-store';
 import { ColdStartLoader } from './ColdStartLoader';
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 2000;
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 2500;
 
 interface BackendHealthGateProps {
   children: ReactNode;

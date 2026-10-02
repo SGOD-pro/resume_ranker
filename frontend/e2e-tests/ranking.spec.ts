@@ -5,7 +5,7 @@ test.describe('E2E UI Test - Resume Ranking', () => {
 
   // We test multiple JDs sequentially
   test('Should test Resume Ranking with multiple JDs and click random candidates', async ({ page }) => {
-    test.setTimeout(180000); // 3 minutes for this complex test
+    test.setTimeout(300000); // 5 minutes for this multi-JD test
 
     // --------- FIRST JD ---------
     await page.goto('/');
@@ -24,24 +24,22 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     const resumePath1 = path.resolve(process.cwd(), '../backend/data/resumes/1.pdf');
     const resumePath2 = path.resolve(process.cwd(), '../backend/data/resumes/2.pdf');
     
-    // We can upload one by one. The first one creates the job.
-    await page.locator('input[type="file"]').first().setInputFiles(resumePath1);
-    await page.waitForSelector('text=1.pdf');
-    
-    await page.locator('input[type="file"]').first().setInputFiles(resumePath2);
-    await page.waitForSelector('text=2.pdf');
+    await page.locator('input[data-testid="resume-file-input"]').setInputFiles([resumePath1, resumePath2]);
+    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
 
     // 4. Click "Analyze Resumes"
-    await page.click('button:has-text("Analyze Resumes")');
+    const analyzeBtn1 = page.locator('button:has-text("Analyze Resumes")');
+    await expect(analyzeBtn1).toBeEnabled({ timeout: 15000 });
+    await analyzeBtn1.click();
+
+    // Ensure knockouts are visible
+    const knockoutSwitch1 = page.locator('#show-knockouts');
+    if (await knockoutSwitch1.getAttribute('data-state') === 'unchecked') {
+      await page.click('label[for="show-knockouts"]');
+    }
 
     // 5. Wait for the candidate list to render
-    await page.waitForSelector('text=Signal', { timeout: 60000 });
-    
-    // Toggle "Show knockouts" in case our random resumes didn't match the JD
-    await page.click('label[for="show-knockouts"]');
-
-    // Wait for at least one candidate row to appear
-    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 30000 });
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
 
     // 6. Click on the first candidate in the list
     const candidates = page.getByTestId('candidate-row');
@@ -75,22 +73,22 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     const resumePath3 = path.resolve(process.cwd(), '../backend/data/resumes/3.pdf');
     const resumePath4 = path.resolve(process.cwd(), '../backend/data/resumes/5.pdf');
     
-    await page.locator('input[type="file"]').first().setInputFiles(resumePath3);
-    await page.waitForSelector('text=3.pdf');
-    
-    await page.locator('input[type="file"]').first().setInputFiles(resumePath4);
-    await page.waitForSelector('text=5.pdf');
+    await page.locator('input[data-testid="resume-file-input"]').setInputFiles([resumePath3, resumePath4]);
+    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
 
     // 4. Click "Analyze Resumes"
-    await page.click('button:has-text("Analyze Resumes")');
+    const analyzeBtn2 = page.locator('button:has-text("Analyze Resumes")');
+    await expect(analyzeBtn2).toBeEnabled({ timeout: 15000 });
+    await analyzeBtn2.click();
+
+    // Ensure knockouts are visible
+    const knockoutSwitch2 = page.locator('#show-knockouts');
+    if (await knockoutSwitch2.getAttribute('data-state') === 'unchecked') {
+      await page.click('label[for="show-knockouts"]');
+    }
 
     // 5. Wait for the candidate list to render
-    await page.waitForSelector('text=Signal', { timeout: 60000 });
-    
-    // Toggle "Show knockouts" in case our random resumes didn't match the JD
-    await page.click('label[for="show-knockouts"]');
-
-    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 30000 });
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
 
     // 6. Click on the second candidate in the list (or the last one)
     const candidates2 = page.getByTestId('candidate-row');

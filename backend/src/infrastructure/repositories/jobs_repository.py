@@ -252,7 +252,7 @@ class JobsRepository:
         # 5. Fetch fresh job state to evaluate terminal barrier
         fresh_job = self.get(job_id) or updated_job
 
-        if fresh_job.remaining == 0:
+        if fresh_job.total_files > 0 and fresh_job.remaining == 0:
             if fresh_job.usable_files == 0:
                 logger.warning("Job %s analyze requested but 0 usable files -> DONE_WITH_ERRORS", job_id)
                 self._table.update_item(

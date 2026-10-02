@@ -43,7 +43,7 @@ def process_odl_batch_message(message: QueueMessage) -> None:
     session_id = message.session_id
 
     # If this message was sent to the shared Stage 2 queue for Nova LLM fallback, hand off immediately
-    if getattr(message, "stage", None) == "NOVA" or (not getattr(message, "document_ids", None) and getattr(message, "document_id", None)):
+    if getattr(message, "stage", None) == "NOVA":
         from src.pipeline.nova_queue_worker import process_nova_message
         process_nova_message(message)
         return

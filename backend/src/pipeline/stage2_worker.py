@@ -360,7 +360,8 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                                 job_id, file_id, fields.get("name"))
                 except NovaThrottlingError as nte:
                     logger.warning("Stage2Worker: Nova throttled for %s/%s (retryable): %s", job_id, file_id, nte)
-                    failed_items.append(doc["msg_id"])
+                    if doc.get("msg_id"):
+                        failed_items.append(doc["msg_id"])
                     raise RetryableThrottlingError(f"Bedrock Nova throttled for {job_id}/{file_id}: {nte}") from nte
                 except NovaQuotaExceededError as qe:
                     logger.warning("Stage2Worker: Nova quota exceeded for %s/%s: %s", job_id, file_id, qe)
@@ -370,7 +371,8 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                     error_code = ce.response.get("Error", {}).get("Code", "")
                     if error_code in ("ThrottlingException", "RequestLimitExceeded", "TooManyRequestsException"):
                         logger.warning("Stage2Worker: Bedrock throttled for %s/%s (retryable): %s", job_id, file_id, ce)
-                        failed_items.append(doc["msg_id"])
+                        if doc.get("msg_id"):
+                            failed_items.append(doc["msg_id"])
                         raise RetryableThrottlingError(f"Bedrock throttled for {job_id}/{file_id}: {ce}") from ce
                     else:
                         logger.warning("Stage2Worker: Nova ClientError for %s/%s: %s", job_id, file_id, ce)
@@ -380,6 +382,11 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                     logger.warning("Stage2Worker: Nova fallback error for %s/%s: %s", job_id, file_id, ne)
                     low_confidence = True
                     fallback_reason = f"NOVA_EXCEPTION: {str(ne)[:80]}"
+
+        if doc.get("msg_id") and doc["msg_id"] in failed_items:
+            # Skip terminal transition for retryable failures; SQS will redrive this message
+            continue
+
 
         # Propagate low-confidence flag and fallback reason
         fields["low_confidence_extraction"] = low_confidence

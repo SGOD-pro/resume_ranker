@@ -130,8 +130,9 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "resume-ranker-scoring-${Environment}"
-      VisibilityTimeout: 180
+      VisibilityTimeout: 240
       MessageRetentionPeriod: 86400
+
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt ScoringDLQ.Arn
         maxReceiveCount: 3
@@ -264,6 +265,9 @@ Resources:
           Properties:
             Queue: !GetAtt Stage1Queue.Arn
             BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
 
   # ── Stage 2 ODL / Nova Fallback Worker Lambda ──────────────────────────────
   Stage2WorkerFunction:
@@ -272,7 +276,7 @@ Resources:
       FunctionName: !Sub "resume-ranker-stage2-worker-${Environment}"
       CodeUri: ../backend
       Handler: src.lambda_handler.stage2_handler
-      Timeout: 300
+      Timeout: 180
       MemorySize: 1024
       Policies:
         - S3CrudPolicy:
@@ -297,6 +301,8 @@ Resources:
           Properties:
             Queue: !GetAtt Stage2Queue.Arn
             BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
 
   # ── Scoring / Final Ranking Worker Lambda ──────────────────────────────────
   ScoringWorkerFunction:
@@ -305,7 +311,7 @@ Resources:
       FunctionName: !Sub "resume-ranker-scoring-worker-${Environment}"
       CodeUri: ../backend
       Handler: src.lambda_handler.scoring_handler
-      Timeout: 180
+      Timeout: 120
       MemorySize: 1024
       Policies:
         - S3CrudPolicy:
@@ -318,6 +324,9 @@ Resources:
           Properties:
             Queue: !GetAtt ScoringQueue.Arn
             BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
 
   # ── DLQ Consumer Lambda (Guarantees Terminal State Accounting) ───────────────
   DlqConsumerFunction:
@@ -337,16 +346,23 @@ Resources:
           Properties:
             Queue: !GetAtt Stage1DLQ.Arn
             BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
         Stage2DlqEvent:
           Type: SQS
           Properties:
             Queue: !GetAtt Stage2DLQ.Arn
             BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
         ScoringDlqEvent:
           Type: SQS
           Properties:
             Queue: !GetAtt ScoringDLQ.Arn
             BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
 
   # ── AWS Budgets Cost Alarm Resource (Amendment 1) ───────────────────────────
   DevCostBudget:

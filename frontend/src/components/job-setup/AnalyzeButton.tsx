@@ -96,7 +96,18 @@ export function AnalyzeButton() {
           isDone = true;
           cleanup();
           try {
-            const results = await getResults(currentJobId);
+            // Retry getResults up to 8 times with 1s backoff to handle S3 scoring write finalization
+            let results: Awaited<ReturnType<typeof getResults>> | null = null;
+            for (let attempt = 1; attempt <= 8; attempt++) {
+              try {
+                results = await getResults(currentJobId);
+                if (results && results.candidates) break;
+              } catch (resErr) {
+                if (attempt === 8) throw resErr;
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+            }
+            if (!results) throw new Error('No results returned from server');
             const mapped = mapScoredCandidates(results.candidates || [], currentJobId);
             setCandidates(mapped);
             setUpload({
@@ -125,7 +136,8 @@ export function AnalyzeButton() {
               if (statusRes.files) {
                 setJobFiles(statusRes.files);
               }
-              if (statusRes.status === 'DONE' || statusRes.status === 'DONE_WITH_ERRORS') {
+              const termStatuses = ['DONE', 'DONE_WITH_ERRORS', 'READY', 'READY_WITH_WARNINGS', 'COMPLETED'];
+              if (termStatuses.includes(statusRes.status)) {
                 await handleSuccess(statusRes.usable_files);
                 return;
               }
@@ -155,9 +167,9 @@ export function AnalyzeButton() {
               setIsStalled(true);
             }
             const st = data.job_status || data.status;
-            if (st === 'PROCESSING') {
+            if (st === 'PROCESSING' || st === 'FALLBACK_PROCESSING' || st === 'FAST_PREPROCESSING' || st === 'extracting') {
               setAppPhase('processing');
-            } else if (st === 'SCORING') {
+            } else if (st === 'SCORING' || st === 'FINAL_RANKING' || st === 'scoring') {
               setAppPhase('scoring');
             }
             if (data.total_files !== undefined) {

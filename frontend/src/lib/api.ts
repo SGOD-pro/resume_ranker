@@ -90,9 +90,9 @@ async function apiFetch<T>(
 
 // ── Public API functions ────────────────────────────────────────────────────
 
-/** Health check — 3s timeout, used by BackendHealthGate */
+/** Health check — 15s timeout, used by BackendHealthGate */
 export async function checkHealth(): Promise<{ status: string }> {
-  return apiFetch('/health', { timeoutMs: 3_000 });
+  return apiFetch('/health', { timeoutMs: 15_000 });
 }
 
 /** Create job payload */

@@ -1,14 +1,17 @@
 {
   "metadata": {
-    "mode": "cached",
-    "git_commit": "0867b4929e7d3c565dc7c885a2bbe08270df41e8",
+    "mode": "fresh",
+    "git_commit": "c9124c3de334c4b9024239acac4752a9bbb88d7e",
+    "is_dirty": true,
+    "source_fingerprint": "65d0d3ed38cba160",
     "manifest_hash": "83790f4af7b1398a",
     "seed": 42,
     "workers": 6,
-    "peak_memory_mb": 216.56,
+    "extraction_peak_rss_mb": 618.29,
+    "scoring_peak_rss_mb": 139.0,
     "platform": "Linux x86_64",
     "python_version": "3.13.14",
-    "timestamp": "2026-10-01T19:49:26Z"
+    "timestamp": "2026-10-01T22:21:58Z"
   },
   "dataset": {
     "total_attempted": 1000,
@@ -20,19 +23,24 @@
     "avg_file_size_kb": 118.4823271484375
   },
   "latency_metrics": {
-    "wall_clock_seconds": 7.3,
-    "throughput_resumes_per_sec": 137.01,
-    "mean_ms": 42.99,
-    "median_p50_ms": 35.31,
-    "p90_ms": 74.92,
-    "p95_ms": 93.04,
-    "p99_ms": 136.51,
-    "min_ms": 1.93,
-    "max_ms": 398.46,
-    "stdev_ms": 33.17,
-    "mean_open_ms": 0.42,
-    "mean_struct_ms": 17.24,
-    "mean_extract_ms": 23.66
+    "wall_clock_seconds": 6.76,
+    "throughput_resumes_per_sec": 147.94,
+    "mean_ms": 39.81,
+    "median_p50_ms": 32.95,
+    "p90_ms": 71.73,
+    "p95_ms": 85.44,
+    "p99_ms": 136.26,
+    "min_ms": 1.96,
+    "max_ms": 335.81,
+    "stdev_ms": 30.08,
+    "mean_open_ms": 0.35,
+    "mean_struct_ms": 15.92,
+    "mean_extract_ms": 22.23,
+    "comparison": {
+      "baseline_wall_clock_s": 37.4,
+      "speedup_ratio": 5.53,
+      "time_reduction_pct": 81.9
+    }
   },
   "extraction_coverage": {
     "valid_name_rate": 0.604,
@@ -60,9 +68,11 @@
   "scoring_benchmark": {
     "total_candidates": 1000,
     "case_matched": {
-      "duration_ms": 9624.78,
-      "throughput_cands_per_sec": 103.9,
-      "avg_score": 7.91,
+      "duration_ms": 9930.7,
+      "throughput_cands_per_sec": 100.7,
+      "avg_score": 10.98,
+      "cohort_1_qualified_eligible": 184,
+      "cohort_1_qualified_total": 200,
       "signal_distribution": {
         "strong": 0,
         "good": 0,
@@ -71,8 +81,8 @@
       }
     },
     "case_cross_domain": {
-      "duration_ms": 8074.01,
-      "throughput_cands_per_sec": 123.9,
+      "duration_ms": 8566.59,
+      "throughput_cands_per_sec": 116.7,
       "signal_distribution": {
         "strong": 0,
         "good": 0,

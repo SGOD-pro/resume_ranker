@@ -31,4 +31,16 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error("Stage 2 batch processing error: %s", e, exc_info=True)
-        raise
+        batch_item_failures = [
+            {"itemIdentifier": r.get("messageId", "")}
+            for r in records
+            if r.get("messageId")
+        ]
+        if not batch_item_failures:
+            raise
+        return {
+            "statusCode": 200,
+            "processed": 0,
+            "batchItemFailures": batch_item_failures,
+        }
+
