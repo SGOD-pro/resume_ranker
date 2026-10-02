@@ -75,6 +75,8 @@ from src.infrastructure.repositories.files_repository import FilesRepository
 from src.infrastructure.repositories.jobs_repository import JobsRepository
 from src.infrastructure.repositories.scoring_repository import ScoringRepository
 from src.infrastructure.repositories.upload_sessions_repository import (
+    AdmissionVerificationError,
+    QuotaExceededError,
     UploadSessionsRepository,
 )
 from src.infrastructure.storage.storage_service import StorageService
@@ -786,30 +788,7 @@ async def create_upload_session(
 
     settings = get_settings()
 
-    # Guard 1: Concurrency / Quota
-    active_sessions = _sessions_repo.count_active_for_org(ctx.org_id)
-    if active_sessions >= settings.MAX_ACTIVE_SESSIONS_PER_ORG:
-        client_ip = request.client.host if request.client else "unknown"
-        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "status_code": 429,
-                "error_code": "CONCURRENT_SESSIONS_EXCEEDED",
-                "code": "CONCURRENT_SESSIONS_EXCEEDED",
-                "route": request.url.path,
-                "job_id": job_id,
-                "session_id": None,
-                "org_id": ctx.org_id,
-                "client_ip_hash": ip_hash,
-                "retry_after": 60,
-                "retry_after_seconds": 60,
-                "message": f"Organization has {active_sessions} active upload sessions (max {settings.MAX_ACTIVE_SESSIONS_PER_ORG}). Please wait before retrying.",
-            },
-            headers={"Retry-After": "60"},
-        )
-
-    # Guard 2: Document count limit
+    # Guard 1: Document count limit
     if body.document_count > settings.MAX_DOCS_PER_SESSION or len(body.files) > settings.MAX_DOCS_PER_SESSION:
         raise HTTPException(
             status_code=400,
@@ -819,7 +798,7 @@ async def create_upload_session(
             },
         )
 
-    # Guard 3: Batch bytes & file sizes
+    # Guard 2: Batch bytes & file sizes
     total_bytes = sum(f.file_size for f in body.files)
     if total_bytes > settings.MAX_BATCH_BYTES:
         raise HTTPException(
@@ -852,9 +831,57 @@ async def create_upload_session(
         uploaded_document_count=0,
         status=UploadSessionStatus.UPLOADING,
     )
-    _sessions_repo.create(session)
+
+    # Guard 3: Atomic admission quota verification and session creation
+    try:
+        session = _sessions_repo.admit_and_create_session(
+            session,
+            max_active=settings.MAX_ACTIVE_SESSIONS_PER_ORG,
+        )
+    except AdmissionVerificationError as ave:
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
+        logger.warning("Org %s admission verification failed: %s", ctx.org_id, ave)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status_code": 503,
+                "error_code": "ADMISSION_VERIFICATION_UNAVAILABLE",
+                "code": "ADMISSION_VERIFICATION_UNAVAILABLE",
+                "route": request.url.path,
+                "job_id": job_id,
+                "session_id": None,
+                "org_id": ctx.org_id,
+                "client_ip_hash": ip_hash,
+                "retry_after": 5,
+                "retry_after_seconds": 5,
+                "message": "Organization admission verification is temporarily unavailable. Please retry.",
+            },
+            headers={"Retry-After": "5"},
+        )
+    except QuotaExceededError as qee:
+        client_ip = request.client.host if request.client else "unknown"
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "status_code": 429,
+                "error_code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "code": "CONCURRENT_SESSIONS_EXCEEDED",
+                "route": request.url.path,
+                "job_id": job_id,
+                "session_id": None,
+                "org_id": ctx.org_id,
+                "client_ip_hash": ip_hash,
+                "retry_after": 60,
+                "retry_after_seconds": 60,
+                "message": f"Organization has {qee.current} active upload sessions (max {qee.limit}). Please wait before retrying.",
+            },
+            headers={"Retry-After": "60"},
+        )
 
     doc_infos: List[DocumentPresignedUrlInfo] = []
+    file_items: List[FileItem] = []
     for f in body.files:
         doc_id = str(uuid.uuid4())
         s3_key = f"{ctx.org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
@@ -876,6 +903,17 @@ async def create_upload_session(
         )
         _docs_repo.create(doc_item)
 
+        file_items.append(
+            FileItem(
+                job_id=job_id,
+                file_id=doc_id,
+                filename=f.filename,
+                file_size=f.file_size,
+                status=FileStatus.PENDING_UPLOAD,
+                s3_raw_key=s3_key,
+            )
+        )
+
         doc_infos.append(
             DocumentPresignedUrlInfo(
                 document_id=doc_id,
@@ -884,6 +922,9 @@ async def create_upload_session(
                 presigned_url=presigned_url,
             )
         )
+
+    if file_items:
+        _files_repo.create_files(job_id, file_items)
 
     audit_logger.record(
         ctx.org_id,
@@ -961,7 +1002,7 @@ async def complete_document_upload(
             raise
         raise HTTPException(status_code=400, detail="Failed to verify PDF header bytes")
 
-    # 3. Update DocumentItem in DynamoDB to UPLOADED
+    # 3. Update DocumentItem and FileItem in DynamoDB to UPLOADED
     if doc:
         updated = _docs_repo.update_status_conditional(
             job_id=job_id,
@@ -974,6 +1015,13 @@ async def complete_document_upload(
             fresh_sess = _sessions_repo.get(job_id, resolved_session_id)
             if fresh_sess:
                 _sessions_repo.increment_uploaded_count(job_id, resolved_session_id, expected_version=fresh_sess.version)
+
+    _files_repo.update_file_non_terminal(
+        job_id=job_id,
+        file_id=document_id,
+        status=FileStatus.UPLOADED,
+        file_size=actual_size,
+    )
 
     fresh_job = _jobs_repo.get(job_id)
     if fresh_job:

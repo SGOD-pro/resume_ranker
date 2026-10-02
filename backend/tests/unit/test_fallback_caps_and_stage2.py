@@ -48,7 +48,7 @@ def test_job_llm_fallback_cap_reached():
         FileItem(job_id=job_id, file_id=f"f{i}", status=FileStatus.S2_DONE, needs_fallback=True, low_confidence_extraction=False)
         for i in range(5)
     ]
-    current_file = FileItem(job_id=job_id, file_id=file_id, status=FileStatus.S1_DONE, needs_fallback=True)
+    current_file = FileItem(job_id=job_id, file_id=file_id, status=FileStatus.S1_DONE, needs_fallback=True, file_size=1024)
 
     stage1_json = {
         "fields": {"email": "test@example.com"},  # missing name and experience
@@ -86,7 +86,7 @@ def test_global_daily_llm_cap_reached():
     job_id = "job-global-cap-test"
     file_id = "file-daily-capped"
 
-    current_file = FileItem(job_id=job_id, file_id=file_id, status=FileStatus.S1_DONE, needs_fallback=True)
+    current_file = FileItem(job_id=job_id, file_id=file_id, status=FileStatus.S1_DONE, needs_fallback=True, file_size=1024)
 
     stage1_json = {
         "fields": {},  # missing critical fields

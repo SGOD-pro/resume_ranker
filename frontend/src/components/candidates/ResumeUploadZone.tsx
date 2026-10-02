@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
 import { useJobStore } from '@/store/job-store';
-import { createJob, uploadResumesToBackend, uploadResumesViaSession, type UploadResult } from '@/lib/api';
+import { createJob, finalizeUploadSession, uploadResumesToBackend, uploadResumesViaSession, type UploadResult } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -146,21 +146,48 @@ export function ResumeUploadZone() {
         setUpload({
           totalFiles: result.total_accepted,
           analyzedFiles: 0,
-          processingFiles: result.accepted.length,
+          processingFiles: result.total_accepted,
           isUploading: false,
         });
+
+        // Expose finalization failures with a retry action
+        if (result.finalizationError) {
+          toast.error('Upload session finalization failed', {
+            description: result.finalizationError,
+            action: {
+              label: 'Retry Finalize',
+              onClick: async () => {
+                try {
+                  if (result.sessionId) {
+                    await finalizeUploadSession(currentJobId, result.sessionId);
+                    toast.success('Upload session finalized successfully');
+                    setAppPhase('ready_to_analyze');
+                  }
+                } catch (retryErr) {
+                  toast.error('Finalization retry failed', {
+                    description: retryErr instanceof Error ? retryErr.message : 'Unknown error',
+                  });
+                }
+              },
+            },
+          });
+        }
 
         if (result.accepted.length > 0) {
           setUploadProgress({
             filesUploaded: result.total_accepted,
             filesTotal: result.total_accepted,
             percent: 100,
-            currentFile: `${result.total_accepted} resumes uploaded. Ready to analyze!`,
+            currentFile: result.finalizationError
+              ? `${result.total_accepted} resumes uploaded, but session finalization failed.`
+              : `${result.total_accepted} resumes uploaded. Ready to analyze!`,
           });
-          setAppPhase('ready_to_analyze');
-          toast.success(
-            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded. Ready to analyze!`,
-          );
+          if (!result.finalizationError) {
+            setAppPhase('ready_to_analyze');
+            toast.success(
+              `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded. Ready to analyze!`,
+            );
+          }
         } else {
           resetUploadProgress();
           setAppPhase('idle');

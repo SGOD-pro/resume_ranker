@@ -500,9 +500,9 @@ def test_retryable_throttling_propagates_to_queue(mock_table):
 
         msg = MagicMock(job_id=job_id, document_id=file_id)
 
-        # Worker must raise RetryableThrottlingError so SQS retries
+        # Single-message worker must raise RetryableThrottlingError so SQS retries
         with pytest.raises(RetryableThrottlingError) as exc_info:
-            process_stage2_batch([msg])
+            process_stage2_message(msg)
 
         assert "Bedrock Nova throttled" in str(exc_info.value)
 
@@ -562,8 +562,8 @@ def test_partial_odl_microbatch_failure_and_tail_flush(mock_table):
     f_good = "file-odl-good"
     f_bad = "file-odl-bad"
 
-    file_good = FileItem(job_id=job_id, file_id=f_good, status=FileStatus.S1_DONE, needs_fallback=True)
-    file_bad = FileItem(job_id=job_id, file_id=f_bad, status=FileStatus.S1_DONE, needs_fallback=True)
+    file_good = FileItem(job_id=job_id, file_id=f_good, status=FileStatus.S1_DONE, needs_fallback=True, file_size=1024)
+    file_bad = FileItem(job_id=job_id, file_id=f_bad, status=FileStatus.S1_DONE, needs_fallback=True, file_size=1024)
 
     stage1_good = {
         "fields": {"email": "good@example.com"},

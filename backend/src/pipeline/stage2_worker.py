@@ -16,6 +16,7 @@ Implements Phase 1.6 Concurrency, Durability & Batching Requirements:
 
 import json
 import logging
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -117,6 +118,25 @@ def _extract_job_file_id(message: Any) -> Tuple[Optional[str], Optional[str]]:
     return job_id, file_id
 
 
+def _extract_msg_id(msg: Any, fallback: str) -> str:
+    """Extract originating SQS messageId or receiptHandle, supporting dicts and models."""
+    if isinstance(msg, dict):
+        return (
+            msg.get("messageId")
+            or msg.get("message_id")
+            or msg.get("receiptHandle")
+            or msg.get("receipt_handle")
+            or fallback
+        )
+    return (
+        getattr(msg, "message_id", None)
+        or getattr(msg, "messageId", None)
+        or getattr(msg, "receipt_handle", None)
+        or getattr(msg, "event_id", None)
+        or fallback
+    )
+
+
 def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
     """Process a bounded batch of Stage 2 fallback messages with real ODL microbatching.
     
@@ -133,16 +153,40 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
     # Step 1: Parse and validate candidates, acquire worker lease claims
     eligible_docs = []  # list of dicts with file context
     failed_items = []
+    throttled_items = []
 
     for msg in messages:
         job_id, file_id = _extract_job_file_id(msg)
-        msg_id = getattr(msg, "message_id", None) or getattr(msg, "receipt_handle", None) or file_id
+        msg_id = _extract_msg_id(msg, file_id or "")
 
         if not job_id or not file_id:
             logger.error("Stage2Worker: invalid message without job_id/file_id: %s", msg)
+            if msg_id:
+                failed_items.append(msg_id)
             continue
 
         file_item = files_repo.get_file(job_id, file_id)
+        if not file_item:
+            from src.infrastructure.repositories.documents_repository import DocumentsRepository
+            from src.infrastructure.models.file import FileItem
+            docs_repo = DocumentsRepository()
+            doc = docs_repo.get(job_id, file_id)
+            if doc:
+                file_item = FileItem(
+                    job_id=job_id,
+                    file_id=file_id,
+                    filename=doc.filename,
+                    file_size=doc.file_size,
+                    status=FileStatus.S1_DONE,
+                    s3_raw_key=doc.s3_pdf_key or f"jobs/{job_id}/raw/{file_id}.pdf",
+                )
+                files_repo.create_files(job_id, [file_item])
+                logger.info("Stage2Worker: Materialized FileItem from DocumentItem for %s/%s", job_id, file_id)
+            else:
+                logger.error("Stage2Worker: Neither FileItem nor DocumentItem found for %s/%s", job_id, file_id)
+                failed_items.append(msg_id)
+                continue
+
         if file_item and file_item.is_terminal:
             logger.info("Stage2Worker: file %s/%s already terminal (%s), skipping", job_id, file_id, file_item.status)
             continue
@@ -156,8 +200,13 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
             processing_status=FileStatus.S2_PROCESSING.value,
         )
         if not claimed:
-            logger.info("Stage2Worker: file %s/%s could not be claimed by %s (active lease exists or already terminal), skipping",
-                        job_id, file_id, worker_id)
+            latest = files_repo.get_file(job_id, file_id)
+            if latest and latest.is_terminal:
+                logger.info("Stage2Worker: file %s/%s already terminal (%s), skipping", job_id, file_id, latest.status)
+                continue
+            logger.warning("Stage2Worker: file %s/%s could not be claimed by %s (active lease exists), reporting failed for retry",
+                           job_id, file_id, worker_id)
+            failed_items.append(msg_id)
             continue
 
         try:
@@ -172,7 +221,7 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
             )
             continue
 
-        raw_s3_key = file_item.s3_raw_key if file_item else f"jobs/{job_id}/raw/{file_id}.pdf"
+        raw_s3_key = (file_item.s3_raw_key if file_item and file_item.s3_raw_key else None) or f"jobs/{job_id}/raw/{file_id}.pdf"
         file_size = getattr(file_item, "file_size", 0) or stage1_data.get("file_size", 0)
         # Register document into durable ODL collector
         try:
@@ -245,12 +294,37 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         for doc in odl_candidates:
             doc_size = doc.get("file_size") or 0
             if doc_size <= 0:
-                try:
-                    head = storage._client.head_object(Bucket=storage._bucket, Key=doc["raw_s3_key"])
-                    doc_size = int(head.get("ContentLength", 0))
-                except Exception:
-                    doc_size = 0
+                # Require verified size before dispatch: retry HeadObject up to 3 times
+                for attempt in range(3):
+                    try:
+                        head = storage._client.head_object(Bucket=storage._bucket, Key=doc["raw_s3_key"])
+                        doc_size = int(head.get("ContentLength", 0))
+                        if doc_size > 0:
+                            break
+                    except Exception as h_err:
+                        if attempt == 2:
+                            logger.error("Stage2Worker: HeadObject failed for %s/%s after 3 attempts: %s",
+                                         doc["job_id"], doc["file_id"], h_err)
+                        time.sleep(0.05 * (attempt + 1))
+
+            if doc_size <= 0:
+                # Size could not be verified; do NOT fail open with 0 bytes!
+                logger.warning("Stage2Worker: Size unverified for %s/%s; retrying message via SQS",
+                               doc["job_id"], doc["file_id"])
+                if doc.get("msg_id"):
+                    failed_items.append(doc["msg_id"])
+                continue
+
             doc["file_size"] = doc_size
+
+            # Explicitly handle individually oversized documents
+            if doc_size > MAX_ODL_BYTE_BUDGET:
+                logger.warning(
+                    "Stage2Worker: Document %s/%s size %d bytes exceeds MAX_ODL_BYTE_BUDGET %d; bypassing ODL to Nova fallback",
+                    doc["job_id"], doc["file_id"], doc_size, MAX_ODL_BYTE_BUDGET
+                )
+                doc["fallback_reason"] = "EXCEEDS_ODL_BYTE_BUDGET"
+                continue
 
             if current_chunk and (
                 len(current_chunk) >= MAX_ODL_MICROBATCH_SIZE
@@ -362,7 +436,12 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                     logger.warning("Stage2Worker: Nova throttled for %s/%s (retryable): %s", job_id, file_id, nte)
                     if doc.get("msg_id"):
                         failed_items.append(doc["msg_id"])
-                    raise RetryableThrottlingError(f"Bedrock Nova throttled for {job_id}/{file_id}: {nte}") from nte
+                        throttled_items.append(doc["msg_id"])
+                    try:
+                        files_repo.update_file_non_terminal(job_id, file_id, FileStatus.S1_DONE)
+                    except Exception:
+                        pass
+                    continue
                 except NovaQuotaExceededError as qe:
                     logger.warning("Stage2Worker: Nova quota exceeded for %s/%s: %s", job_id, file_id, qe)
                     low_confidence = True
@@ -373,7 +452,12 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                         logger.warning("Stage2Worker: Bedrock throttled for %s/%s (retryable): %s", job_id, file_id, ce)
                         if doc.get("msg_id"):
                             failed_items.append(doc["msg_id"])
-                        raise RetryableThrottlingError(f"Bedrock throttled for {job_id}/{file_id}: {ce}") from ce
+                            throttled_items.append(doc["msg_id"])
+                        try:
+                            files_repo.update_file_non_terminal(job_id, file_id, FileStatus.S1_DONE)
+                        except Exception:
+                            pass
+                        continue
                     else:
                         logger.warning("Stage2Worker: Nova ClientError for %s/%s: %s", job_id, file_id, ce)
                         low_confidence = True
@@ -435,10 +519,13 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         "processed": len(eligible_docs),
         "succeeded": succeeded_count,
         "failed_items": failed_items,
+        "throttled_items": throttled_items,
     }
 
 
 def process_stage2_message(message: Any) -> bool:
     """Process a single Stage 2 fallback message (backward compatibility)."""
     res = process_stage2_batch([message])
+    if res.get("throttled_items"):
+        raise RetryableThrottlingError(f"Bedrock Nova throttled for {res['throttled_items']}")
     return res["succeeded"] > 0 or res["processed"] == 0

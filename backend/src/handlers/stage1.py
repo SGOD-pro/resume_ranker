@@ -26,7 +26,11 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
     for record in records:
         msg_id = record.get("messageId", "")
         try:
-            process_stage1_message(record)
+            ok = process_stage1_message(record)
+            if ok is False:
+                logger.warning("Stage 1 record processing unsuccessful for message %s", msg_id)
+                if msg_id:
+                    batch_item_failures.append({"itemIdentifier": msg_id})
         except Exception as e:
             logger.error("Stage 1 record processing error for message %s: %s", msg_id, e, exc_info=True)
             if msg_id:

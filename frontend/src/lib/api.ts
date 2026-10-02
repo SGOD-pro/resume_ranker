@@ -184,6 +184,9 @@ export interface UploadResult {
   rejected: { filename: string; reason: string }[];
   total_accepted: number;
   fileIdMap: Record<string, string>;
+  confirmedDocumentIds?: string[];
+  finalizationError?: string | null;
+  sessionId?: string;
 }
 
 /**
@@ -197,16 +200,14 @@ export async function uploadFilesDirectToS3(
   onProgress?: (uploaded: number, total: number, filename: string) => void,
 ): Promise<UploadResult> {
   if (files.length === 0) {
-    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0, fileIdMap: {} };
+    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0, fileIdMap: {}, confirmedDocumentIds: [] };
   }
 
   const fileMap = new Map<string, File>();
   files.forEach((f) => fileMap.set(f.name, f));
 
   const fileIdMap: Record<string, string> = {};
-  presignedFiles.forEach((pf) => {
-    fileIdMap[pf.filename] = pf.file_id;
-  });
+  const confirmedDocumentIds: string[] = [];
 
   const accepted: string[] = [];
   const rejected: { filename: string; reason: string }[] = [];
@@ -230,6 +231,9 @@ export async function uploadFilesDirectToS3(
 
       try {
         await uploadFileViaPresignedPost(file, fileInfo.presigned_post);
+        // Only record confirmed successful uploads, keyed by file_id to avoid filename collisions
+        fileIdMap[fileInfo.file_id] = fileInfo.file_id;
+        confirmedDocumentIds.push(fileInfo.file_id);
         accepted.push(fileInfo.filename);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
@@ -253,6 +257,7 @@ export async function uploadFilesDirectToS3(
     rejected,
     total_accepted: accepted.length,
     fileIdMap,
+    confirmedDocumentIds,
   };
 }
 
@@ -354,7 +359,7 @@ export async function uploadResumesViaSession(
   concurrency: number = 4,
 ): Promise<UploadResult> {
   if (files.length === 0) {
-    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0, fileIdMap: {} };
+    return { job_id: jobId, accepted: [], rejected: [], total_accepted: 0, fileIdMap: {}, confirmedDocumentIds: [] };
   }
 
   // 1. Create upload session and get presigned PUT URLs
@@ -364,6 +369,7 @@ export async function uploadResumesViaSession(
   const accepted: string[] = [];
   const rejected: { filename: string; reason: string }[] = [];
   const fileIdMap: Record<string, string> = {};
+  const confirmedDocumentIds: string[] = [];
 
   const totalFiles = session.documents.length;
   let completedCount = 0;
@@ -385,8 +391,6 @@ export async function uploadResumesViaSession(
         continue;
       }
 
-      fileIdMap[docInfo.filename] = docInfo.document_id;
-
       try {
         // Direct S3 PUT
         const s3Res = await fetch(docInfo.presigned_url, {
@@ -403,6 +407,10 @@ export async function uploadResumesViaSession(
 
         // Notify backend of completion to trigger fast parsing immediately
         await completeDocumentUpload(jobId, sessionId, docInfo.document_id);
+
+        // Store by document ID ONLY after confirmed upload success (avoids filename collisions and failed entries)
+        fileIdMap[docInfo.document_id] = docInfo.document_id;
+        confirmedDocumentIds.push(docInfo.document_id);
         accepted.push(docInfo.filename);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
@@ -419,10 +427,12 @@ export async function uploadResumesViaSession(
   await Promise.all(pool);
 
   // 3. Finalize upload session to establish barrier
+  let finalizationError: string | null = null;
   try {
     await finalizeUploadSession(jobId, sessionId);
   } catch (err: unknown) {
-    console.warn('Failed to finalize upload session:', err);
+    finalizationError = err instanceof Error ? err.message : 'Failed to finalize upload session';
+    console.error('Failed to finalize upload session:', err);
   }
 
   return {
@@ -431,6 +441,9 @@ export async function uploadResumesViaSession(
     rejected,
     total_accepted: accepted.length,
     fileIdMap,
+    confirmedDocumentIds,
+    finalizationError,
+    sessionId,
   };
 }
 

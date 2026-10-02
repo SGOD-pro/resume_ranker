@@ -22,7 +22,11 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
     for record in records:
         msg_id = record.get("messageId", "")
         try:
-            process_scoring_message(record)
+            ok = process_scoring_message(record)
+            if ok is False:
+                logger.warning("Scoring processing returned false for record %s", msg_id)
+                if msg_id:
+                    batch_item_failures.append({"itemIdentifier": msg_id})
         except Exception as e:
             logger.error("Scoring record processing error for message %s: %s", msg_id, e, exc_info=True)
             if msg_id:

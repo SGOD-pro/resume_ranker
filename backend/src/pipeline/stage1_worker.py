@@ -223,11 +223,25 @@ def process_stage1_message(message: Any) -> bool:
 
     file_item = files_repo.get_file(job_id, file_id)
     if not file_item:
-        logger.warning("Stage1Worker: file item %s/%s not found in DynamoDB", job_id, file_id)
-        # Still attempt to process or transition if job exists
-        file_item_status = None
-    else:
-        file_item_status = file_item.status
+        logger.warning("Stage1Worker: file item %s/%s not found in DynamoDB; checking DocumentItem", job_id, file_id)
+        from src.infrastructure.repositories.documents_repository import DocumentsRepository
+        from src.infrastructure.models.file import FileItem
+        docs_repo = DocumentsRepository()
+        doc = docs_repo.get(job_id, file_id)
+        if doc:
+            file_item = FileItem(
+                job_id=job_id,
+                file_id=file_id,
+                filename=doc.filename,
+                file_size=doc.file_size,
+                status=FileStatus.UPLOADED,
+                s3_raw_key=doc.s3_pdf_key or s3_key or f"jobs/{job_id}/raw/{file_id}.pdf",
+            )
+            files_repo.create_files(job_id, [file_item])
+            logger.info("Stage1Worker: Materialized FileItem from DocumentItem for %s/%s", job_id, file_id)
+        else:
+            logger.error("Stage1Worker: Neither FileItem nor DocumentItem found for %s/%s in DynamoDB", job_id, file_id)
+            return False
 
     # Idempotency check: if already terminal, skip
     if file_item and file_item.is_terminal:
@@ -244,8 +258,13 @@ def process_stage1_message(message: Any) -> bool:
         processing_status=FileStatus.S1_PROCESSING.value,
     )
     if not claimed:
-        logger.info("Stage1Worker: could not claim file %s/%s (active lease exists or already terminal), skipping", job_id, file_id)
-        return True
+        # Check if file has reached terminal state
+        latest = files_repo.get_file(job_id, file_id)
+        if latest and latest.is_terminal:
+            logger.info("Stage1Worker: file %s/%s already terminal (%s), skipping", job_id, file_id, latest.status)
+            return True
+        logger.warning("Stage1Worker: could not claim file %s/%s (active lease exists or item unclaimable), returning False for retry", job_id, file_id)
+        return False
 
     s3_raw_key = s3_key or f"jobs/{job_id}/raw/{file_id}.pdf"
 
@@ -262,9 +281,9 @@ def process_stage1_message(message: Any) -> bool:
         visual_headers = parsed_pdf.get("first_page_visual_header", [])
 
         # Layout quality check
-        min_quality = min((p["score"] for p in page_signals), default=1.0) if page_signals else 1.0
+        min_quality = min((p.get("score", 1.0) for p in page_signals), default=1.0) if page_signals else 1.0
         is_clean = min_quality >= QUALITY_THRESHOLD
-        min_ro = min((p["reading_order"] for p in page_signals), default=1.0) if page_signals else 1.0
+        min_ro = min((p.get("reading_order", 1.0) for p in page_signals), default=1.0) if page_signals else 1.0
         looks_tabular = any(p.get("not_table_heavy") == 0.0 for p in page_signals)
 
         # Deterministic regex field extraction
@@ -323,6 +342,7 @@ def process_stage1_message(message: Any) -> bool:
         stage1_payload = {
             "fields": fields,
             "raw_text": raw_text[:50000],
+            "file_size": len(pdf_bytes),
             "quality": {
                 "score": min_quality,
                 "is_clean": is_clean,
@@ -366,6 +386,7 @@ def process_stage1_message(message: Any) -> bool:
                 s3_stage1_key=s3_stage1_key,
                 needs_fallback=True,
                 candidate_name=candidate_name,
+                file_size=len(pdf_bytes),
             )
             logger.info("|PYMUPDF| [Job: %s, File: %s] Fallback required -> S1_DONE (quality %.2f, unresolved: %d, candidate: '%s')",
                         job_id, file_id, min_quality, len(unresolved), candidate_name)

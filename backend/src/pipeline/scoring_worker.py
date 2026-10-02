@@ -58,6 +58,28 @@ def process_scoring_message(message: Any) -> bool:
 
     # Fetch all files for this job
     all_files = files_repo.list_files_for_job(job_id)
+    if not all_files:
+        from src.infrastructure.repositories.documents_repository import DocumentsRepository
+        from src.infrastructure.models.file import FileItem
+        docs_repo = DocumentsRepository()
+        docs = docs_repo.list_for_job(job_id)
+        if docs:
+            file_items_to_create = []
+            for doc in docs:
+                f_item = FileItem(
+                    job_id=job_id,
+                    file_id=doc.document_id,
+                    filename=doc.filename,
+                    file_size=doc.file_size,
+                    status=FileStatus.S2_DONE if doc.status.is_terminal_fast_parse() else FileStatus.UPLOADED,
+                    candidate_name=doc.candidate_name,
+                    s3_raw_key=doc.s3_pdf_key,
+                    s3_extracted_key=doc.s3_extracted_key,
+                )
+                file_items_to_create.append(f_item)
+            files_repo.create_files(job_id, file_items_to_create)
+            all_files = files_repo.list_files_for_job(job_id)
+
     selected_set = set(job.analyze_file_ids) if job.analyze_file_ids else {f.file_id for f in all_files}
 
     usable_files = [

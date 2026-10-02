@@ -87,6 +87,7 @@ class FilesRepository:
         needs_fallback: Optional[bool] = None,
         candidate_name: Optional[str] = None,
         error_message: Optional[str] = None,
+        file_size: Optional[int] = None,
     ) -> bool:
         """Update a file's non-terminal progress (e.g. S1_PROCESSING, S1_DONE, S2_PROCESSING).
         
@@ -104,6 +105,11 @@ class FilesRepository:
             ":s2_f": FileStatus.S2_FAILED.value,
             ":rem": FileStatus.REMOVED.value,
         }
+
+        if file_size is not None:
+            set_parts.append("#fs = :fs")
+            expr_names["#fs"] = "file_size"
+            expr_values[":fs"] = file_size
 
         if s3_stage1_key is not None:
             set_parts.append("#s1k = :s1k")

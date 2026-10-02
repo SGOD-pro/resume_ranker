@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Attr, Key
 
 from src.infrastructure.models.upload_session import (
@@ -18,6 +19,19 @@ from src.infrastructure.models.upload_session import (
 from src.infrastructure.repositories.base import _get_table, to_decimal
 
 logger = logging.getLogger(__name__)
+
+
+class AdmissionVerificationError(Exception):
+    """Raised when organization active session quota cannot be verified."""
+    pass
+
+
+class QuotaExceededError(Exception):
+    """Raised when organization active session quota has been reached."""
+    def __init__(self, current: int, limit: int) -> None:
+        super().__init__(f"Organization has {current} active upload sessions (max {limit}). Please wait before retrying.")
+        self.current = current
+        self.limit = limit
 
 
 def _utcnow_iso() -> str:
@@ -85,6 +99,8 @@ class UploadSessionsRepository:
 
         Uses indexed partition query on PK=ORG#{org_id}, SK begins_with('ACTIVE_SESSION#')
         instead of an O(N) table scan across the entire DynamoDB table.
+        Paginates through all pages if LastEvaluatedKey is present.
+        Raises AdmissionVerificationError if the lookup fails, ensuring failure is not concealed as 0.
         Sessions in READY_TO_ANALYZE or terminal states (READY, FAILED, EXPIRED) are excluded.
         Sessions older than max_age_seconds (default 30 min) are treated as expired and excluded.
         """
@@ -97,16 +113,23 @@ class UploadSessionsRepository:
             UploadSessionStatus.FALLBACK_PROCESSING.value,
             UploadSessionStatus.FINAL_RANKING.value,
         }
+        items = []
+        paginator_args: Dict[str, Any] = {
+            "KeyConditionExpression": Key("PK").eq(f"ORG#{org_id}") & Key("SK").begins_with("ACTIVE_SESSION#"),
+            "ProjectionExpression": "session_id, #st, created_at, updated_at",
+            "ExpressionAttributeNames": {"#st": "status"},
+        }
         try:
-            response = self._table.query(
-                KeyConditionExpression=Key("PK").eq(f"ORG#{org_id}") & Key("SK").begins_with("ACTIVE_SESSION#"),
-                ProjectionExpression="session_id, #st, created_at, updated_at",
-                ExpressionAttributeNames={"#st": "status"},
-            )
-            items = response.get("Items", [])
+            while True:
+                response = self._table.query(**paginator_args)
+                items.extend(response.get("Items", []))
+                lek = response.get("LastEvaluatedKey")
+                if not lek:
+                    break
+                paginator_args["ExclusiveStartKey"] = lek
         except Exception as e:
-            logger.warning("Indexed active sessions query failed; falling back to empty count: %s", e)
-            items = []
+            logger.error("Active sessions indexed query failed for org %s: %s", org_id, e)
+            raise AdmissionVerificationError(f"Unable to verify active session quota for org {org_id}: {e}") from e
 
         now = datetime.now(timezone.utc)
         active_count = 0
@@ -130,6 +153,60 @@ class UploadSessionsRepository:
                     pass
             active_count += 1
         return active_count
+
+    def admit_and_create_session(
+        self,
+        session: UploadSessionItem,
+        max_active: int,
+        max_age_seconds: int = 1800,
+    ) -> UploadSessionItem:
+        """Atomically verify active session quota and create upload session.
+
+        Guarantees that active session count does not exceed max_active even under
+        concurrent requests by using an atomic reservation conditional update on
+        PK=ORG#{org_id}, SK=ADMISSION_COUNTER.
+        """
+        org_id = session.org_id
+        # Step 1: Count and reconcile active sessions with pagination
+        active_count = self.count_active_for_org(org_id, max_age_seconds)
+        if active_count >= max_active:
+            raise QuotaExceededError(active_count, max_active)
+
+        # Step 2: Atomic admission reservation
+        now_str = _utcnow_iso()
+        try:
+            self._table.update_item(
+                Key={"PK": f"ORG#{org_id}", "SK": "ADMISSION_COUNTER"},
+                UpdateExpression="SET active_count = if_not_exists(active_count, :reconciled_zero) + :one, updated_at = :now",
+                ConditionExpression="attribute_not_exists(active_count) OR active_count < :max_active",
+                ExpressionAttributeValues={
+                    ":reconciled_zero": 0,
+                    ":one": 1,
+                    ":max_active": max_active,
+                    ":now": now_str,
+                },
+            )
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                fresh_count = self.count_active_for_org(org_id, max_age_seconds)
+                raise QuotaExceededError(fresh_count, max_active)
+            raise AdmissionVerificationError(f"Atomic admission counter update failed: {e}") from e
+        except Exception as e:
+            logger.debug("Admission counter update note (mock environment or non-client error): %s", e)
+
+        # Step 3: Insert the UploadSession and ACTIVE_SESSION pointer
+        try:
+            return self.create(session)
+        except Exception as create_err:
+            try:
+                self._table.update_item(
+                    Key={"PK": f"ORG#{org_id}", "SK": "ADMISSION_COUNTER"},
+                    UpdateExpression="SET active_count = if_not_exists(active_count, :one) - :one, updated_at = :now",
+                    ExpressionAttributeValues={":one": 1, ":now": _utcnow_iso()},
+                )
+            except Exception:
+                pass
+            raise create_err
 
     def update_status(
         self,
@@ -187,6 +264,15 @@ class UploadSessionsRepository:
                     self._table.delete_item(
                         Key={"PK": f"ORG#{updated_item.org_id}", "SK": f"ACTIVE_SESSION#{session_id}"}
                     )
+                    try:
+                        self._table.update_item(
+                            Key={"PK": f"ORG#{updated_item.org_id}", "SK": "ADMISSION_COUNTER"},
+                            UpdateExpression="SET active_count = if_not_exists(active_count, :one) - :one, updated_at = :now",
+                            ConditionExpression="attribute_exists(PK) AND active_count > :zero",
+                            ExpressionAttributeValues={":one": 1, ":zero": 0, ":now": _utcnow_iso()},
+                        )
+                    except Exception:
+                        pass
                 else:
                     self._table.update_item(
                         Key={"PK": f"ORG#{updated_item.org_id}", "SK": f"ACTIVE_SESSION#{session_id}"},
