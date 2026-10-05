@@ -71,6 +71,7 @@ Fresh empirical benchmark conducted on **1,000 real-world PDF resumes** using is
 | **Concurrent Peak RSS** | **618.3 MB** | Concurrent parent + 6 child workers sampled simultaneously |
 | **Corpus Parity / Failures**| **0 parse failures (1,000/1,000)** | 100% completion accounting across full corpus |
 
+
 > [!NOTE]
 > **Scope Clarification:** The 6.76s result measures local in-memory Stage 1 parsing. It excludes network S3 transfer, DynamoDB round trips, and SQS serialization.
 

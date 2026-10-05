@@ -4,7 +4,7 @@ import * as path from 'path';
 test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
 
   test('Should test Dashboard fields, upload resume, and perform ATS check', async ({ page }) => {
-    test.setTimeout(240000); // Allow up to 4 minutes for full E2E run
+    test.setTimeout(1200000); // 20 minutes for parallel test run
     
     page.on('console', (msg) => console.log('[BROWSER CONSOLE]', msg.type(), msg.text()));
     page.on('pageerror', (err) => console.log('[BROWSER ERROR]', err.message));
@@ -31,12 +31,9 @@ test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
     const resumePath = path.resolve(process.cwd(), '../backend/data/resumes/1.pdf');
     await page.locator('input[data-testid="resume-file-input"]').setInputFiles(resumePath);
     
-    // Wait for upload to complete: "Ready to analyze" text in progress bar or toast
-    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
-
-    // 6. Click "Analyze Resumes" to trigger extraction and scoring
+    // Wait for upload to complete: "Analyze Resumes" button becomes enabled
     const analyzeBtn = page.locator('button:has-text("Analyze Resumes")');
-    await expect(analyzeBtn).toBeEnabled({ timeout: 15000 });
+    await expect(analyzeBtn).toBeEnabled({ timeout: 180000 });
     await analyzeBtn.click();
 
     // Ensure knockouts are visible
@@ -46,7 +43,7 @@ test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
     }
 
     // 7. Wait for processing progress to finish and candidate list to render
-    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 900000 });
     
     // 8. Navigate to ATS Checker
     await page.goto('/ats-checker');

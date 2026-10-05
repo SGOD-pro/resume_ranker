@@ -77,6 +77,8 @@ def process_odl_batch_message(message: QueueMessage) -> None:
         if message.receipt_handle:
             queue_adapter.delete_message(ODL_BATCH_QUEUE, message.receipt_handle)
         check_and_progress_fallback(job_id, session_id)
+        return
+
     MAX_ODL_BATCH_DOCS = 20
     MAX_ODL_BATCH_BYTES = 20 * 1024 * 1024  # 20 MB budget
 

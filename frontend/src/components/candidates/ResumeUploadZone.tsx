@@ -193,6 +193,7 @@ export function ResumeUploadZone() {
           setAppPhase('idle');
         }
       } catch (err) {
+        console.error('[HANDLE_UPLOAD_ERROR]', err);
         resetUploadProgress();
         toast.error('Upload failed', {
           description: err instanceof Error ? err.message : 'An unexpected error occurred',

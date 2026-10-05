@@ -44,24 +44,25 @@ def dispatch_fast_parse(msg) -> None:
 
 
 def dispatch_odl_batch(msgs) -> None:
+    from src.infrastructure.repositories.documents_repository import DocumentsRepository
     from src.infrastructure.repositories.files_repository import FilesRepository
     f_repo = FilesRepository()
+    d_repo = DocumentsRepository()
     file_msgs = []
     doc_msgs = []
     nova_msgs = []
     for m in msgs:
         stage = getattr(m, "stage", None)
+        jid, fid = _extract_job_file_id(m)
+        has_doc = bool(jid and fid and d_repo.get(jid, fid))
         if stage == "NOVA" or (not getattr(m, "document_ids", None) and getattr(m, "document_id", None) and getattr(m, "stage", None) != "ODL_BATCH"):
-            # Check if this is a FileItem first
-            jid, fid = _extract_job_file_id(m)
-            if jid and fid and f_repo.get_file(jid, fid):
+            if not has_doc and jid and fid and f_repo.get_file(jid, fid):
                 file_msgs.append(m)
             else:
                 nova_msgs.append(m)
             continue
 
-        jid, fid = _extract_job_file_id(m)
-        if jid and fid and f_repo.get_file(jid, fid):
+        if not has_doc and jid and fid and f_repo.get_file(jid, fid):
             file_msgs.append(m)
         else:
             doc_msgs.append(m)
@@ -80,9 +81,14 @@ def dispatch_nova(msg) -> None:
         process_odl_batch_message(msg)
         return
 
+    from src.infrastructure.repositories.documents_repository import DocumentsRepository
     from src.infrastructure.repositories.files_repository import FilesRepository
     jid, fid = _extract_job_file_id(msg)
     if jid and fid:
+        d_repo = DocumentsRepository()
+        if d_repo.get(jid, fid):
+            process_nova_message(msg)
+            return
         f_repo = FilesRepository()
         if f_repo.get_file(jid, fid):
             process_stage2_batch([msg])
@@ -92,10 +98,15 @@ def dispatch_nova(msg) -> None:
 
 def dispatch_final_rank(msg) -> None:
     from src.infrastructure.repositories.files_repository import FilesRepository
+    from src.infrastructure.repositories.documents_repository import DocumentsRepository
     job_id = getattr(msg, "job_id", None)
     if not job_id and hasattr(msg, "body") and isinstance(msg.body, dict):
         job_id = msg.body.get("job_id")
     if job_id:
+        docs_repo = DocumentsRepository()
+        if docs_repo.list_for_job(job_id):
+            process_final_rank_message(msg)
+            return
         f_repo = FilesRepository()
         if f_repo.list_files_for_job(job_id):
             process_scoring_message(msg)

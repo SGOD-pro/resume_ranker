@@ -56,6 +56,10 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             queue_adapter.delete_message(FAST_PARSE_QUEUE, message.receipt_handle)
         return
 
+    # Prefer document's bound session_id over message session_id (which may be browser cookie)
+    if doc and getattr(doc, "session_id", None):
+        session_id = doc.session_id
+
     # Idempotency guard: If already processed past fast-parse, ack and return
     if doc.status.is_terminal_fast_parse():
         logger.info("FastParseWorker: Document %s already in terminal state %s, skipping", doc_id, doc.status.value)
@@ -75,6 +79,7 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             DocumentStatus.FAST_PARSE_QUEUED,
             DocumentStatus.PENDING,
             DocumentStatus.PARSING,
+            DocumentStatus.FAST_PARSING,
         ],
     )
     if not updated_doc:
@@ -229,6 +234,15 @@ def process_fast_parse_message(message: QueueMessage) -> None:
 
         # 5. Persist extracted JSON to S3
         s3_extracted_key = storage.upload_extracted_json(job_id, doc_id, fields)
+        try:
+            storage.upload_stage1_json(job_id, doc_id, {
+                "fields": fields,
+                "quality": {"layout_quality": quality_score},
+                "unresolved_chunks": fields.get("unresolved_chunks", []),
+                "file_size": getattr(doc, "file_size", 0) or 0,
+            })
+        except Exception:
+            pass
 
         # 6. Update DocumentItem in DynamoDB
         docs_repo.update_status_conditional(
@@ -253,6 +267,39 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             doc.filename, target_status.value, quality_score, candidate_name,
         )
 
+        # 6b. Keep FileItem synchronized in FilesRepository if present
+        try:
+            from src.infrastructure.repositories.files_repository import FilesRepository
+            from src.infrastructure.models.file import FileStatus
+            f_repo = FilesRepository()
+            if f_repo.get_file(job_id, doc_id):
+                if target_status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED):
+                    f_repo.update_file_non_terminal(
+                        job_id=job_id,
+                        file_id=doc_id,
+                        status=FileStatus.S2_DONE,
+                        candidate_name=candidate_name,
+                        s3_extracted_key=s3_extracted_key,
+                        file_size=getattr(doc, "file_size", None),
+                    )
+                elif target_status in (DocumentStatus.NEEDS_ODL, DocumentStatus.NEEDS_NOVA):
+                    f_repo.update_file_non_terminal(
+                        job_id=job_id,
+                        file_id=doc_id,
+                        status=FileStatus.S1_DONE,
+                        candidate_name=candidate_name,
+                        file_size=getattr(doc, "file_size", None),
+                    )
+                elif target_status in (DocumentStatus.FAILED, DocumentStatus.PARSE_FAILED, DocumentStatus.REJECTED_DUPLICATE):
+                    f_repo.transition_file_terminal(
+                        job_id=job_id,
+                        file_id=doc_id,
+                        terminal_status=FileStatus.S1_FAILED.value,
+                        error_message="Fast parse failed",
+                    )
+        except Exception as f_err:
+            logger.debug("FastParseWorker: FileItem sync skipped/error: %s", f_err)
+
     except Exception as e:
         logger.error("FastParseWorker: Extraction failed for doc %s: %s", doc_id, e, exc_info=True)
         try:
@@ -262,6 +309,17 @@ def process_fast_parse_message(message: QueueMessage) -> None:
                 new_status=DocumentStatus.FAILED,
                 allowed_current_statuses=[DocumentStatus.FAST_PARSING],
                 extra_updates={"error_reason": str(e)},
+            )
+        except Exception:
+            pass
+        try:
+            from src.infrastructure.repositories.files_repository import FilesRepository
+            from src.infrastructure.models.file import FileStatus
+            FilesRepository().transition_file_terminal(
+                job_id=job_id,
+                file_id=doc_id,
+                terminal_status=FileStatus.S1_FAILED.value,
+                error_message=str(e),
             )
         except Exception:
             pass

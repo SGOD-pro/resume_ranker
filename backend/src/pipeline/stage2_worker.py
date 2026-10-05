@@ -212,14 +212,23 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         try:
             stage1_data = storage.get_stage1_json(job_id, file_id)
         except Exception as e:
-            logger.error("Stage2Worker: failed to load Stage 1 JSON for %s/%s: %s", job_id, file_id, e)
-            files_repo.transition_file_terminal(
-                job_id=job_id,
-                file_id=file_id,
-                terminal_status=FileStatus.S2_FAILED.value,
-                error_message=f"Missing stage1 artifact: {e}",
-            )
-            continue
+            try:
+                extracted = storage.get_extracted_json(job_id, file_id)
+                stage1_data = {
+                    "fields": extracted,
+                    "quality": {"layout_quality": extracted.get("extraction_quality", 0.8)},
+                    "unresolved_chunks": extracted.get("unresolved_chunks", []),
+                    "file_size": file_item.file_size if file_item else 0,
+                }
+            except Exception:
+                logger.error("Stage2Worker: failed to load Stage 1 JSON for %s/%s: %s", job_id, file_id, e)
+                files_repo.transition_file_terminal(
+                    job_id=job_id,
+                    file_id=file_id,
+                    terminal_status=FileStatus.S2_FAILED.value,
+                    error_message=f"Missing stage1 artifact: {e}",
+                )
+                continue
 
         raw_s3_key = (file_item.s3_raw_key if file_item and file_item.s3_raw_key else None) or f"jobs/{job_id}/raw/{file_id}.pdf"
         file_size = getattr(file_item, "file_size", 0) or stage1_data.get("file_size", 0)

@@ -189,8 +189,22 @@ class UploadSessionsRepository:
         except ClientError as e:
             if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
                 fresh_count = self.count_active_for_org(org_id, max_age_seconds)
-                raise QuotaExceededError(fresh_count, max_active)
-            raise AdmissionVerificationError(f"Atomic admission counter update failed: {e}") from e
+                if fresh_count >= max_active:
+                    raise QuotaExceededError(fresh_count, max_active)
+                # Counter drifted; reconcile it with the actual count + 1 and proceed
+                try:
+                    self._table.update_item(
+                        Key={"PK": f"ORG#{org_id}", "SK": "ADMISSION_COUNTER"},
+                        UpdateExpression="SET active_count = :new_count, updated_at = :now",
+                        ExpressionAttributeValues={
+                            ":new_count": fresh_count + 1,
+                            ":now": now_str,
+                        },
+                    )
+                except Exception as sync_err:
+                    logger.warning("Failed to reconcile drifted admission counter: %s", sync_err)
+            else:
+                raise AdmissionVerificationError(f"Atomic admission counter update failed: {e}") from e
         except Exception as e:
             logger.debug("Admission counter update note (mock environment or non-client error): %s", e)
 

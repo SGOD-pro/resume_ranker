@@ -49,10 +49,17 @@ def process_final_rank_message(message: QueueMessage) -> None:
 
     session = sessions_repo.get(job_id, session_id)
     if not session:
-        logger.warning("FinalRankWorker: Session %s not found for job %s", session_id, job_id)
-        if message.receipt_handle:
-            queue_adapter.delete_message(FINAL_RANK_QUEUE, message.receipt_handle)
-        return
+        all_sessions = sessions_repo.list_for_job(job_id)
+        if all_sessions:
+            all_sessions.sort(key=lambda s: getattr(s, "created_at", "") or "", reverse=True)
+            session = all_sessions[0]
+            session_id = session.session_id
+            logger.info("FinalRankWorker: resolved mismatched session_id to actual upload session %s for job %s", session_id, job_id)
+        else:
+            logger.warning("FinalRankWorker: Session %s not found for job %s", session_id, job_id)
+            if message.receipt_handle:
+                queue_adapter.delete_message(FINAL_RANK_QUEUE, message.receipt_handle)
+            return
 
     # Idempotency guard: If session already reached terminal state, skip
     if session.status in (UploadSessionStatus.READY, UploadSessionStatus.READY_WITH_WARNINGS):

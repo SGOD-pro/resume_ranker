@@ -724,16 +724,26 @@ class FilesRepository:
     def _trigger_scoring(self, job_id: str) -> None:
         """Enqueue scoring event to scoring queue."""
         adapter = get_queue_adapter()
+        session_id = job_id
+        try:
+            from src.infrastructure.repositories.upload_sessions_repository import UploadSessionsRepository
+            sessions = UploadSessionsRepository().list_for_job(job_id)
+            if sessions:
+                sessions.sort(key=lambda s: getattr(s, "created_at", "") or "", reverse=True)
+                session_id = sessions[0].session_id
+        except Exception:
+            pass
+
         msg = QueueMessage(
             job_id=job_id,
-            session_id=job_id,
+            session_id=session_id,
             document_id=job_id,
             org_id="org_default",
             job_version=1,
             stage="FINAL_RANK",
         )
         adapter.send_message(FINAL_RANK_QUEUE, msg)
-        logger.info("Enqueued scoring message for job %s", job_id)
+        logger.info("Enqueued scoring message for job %s (session %s)", job_id, session_id)
 
     def check_and_increment_daily_llm_cap(self, limit: int = 100) -> bool:
         """Atomically check and increment global daily LLM count.

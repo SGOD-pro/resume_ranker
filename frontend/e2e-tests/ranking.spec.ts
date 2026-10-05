@@ -1,11 +1,15 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
+import * as fs from 'fs';
 
 test.describe('E2E UI Test - Resume Ranking', () => {
 
-  // We test multiple JDs sequentially
+  // We test multiple JDs sequentially with 50 PDFs for JD 1
   test('Should test Resume Ranking with multiple JDs and click random candidates', async ({ page }) => {
-    test.setTimeout(300000); // 5 minutes for this multi-JD test
+    test.setTimeout(1800000); // 30 minutes for 50-resume multi-JD test
+
+    page.on('console', (msg) => console.log('[BROWSER CONSOLE]', msg.type(), msg.text()));
+    page.on('pageerror', (err) => console.log('[BROWSER ERROR]', err.message));
 
     // --------- FIRST JD ---------
     await page.goto('/');
@@ -20,16 +24,20 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     await page.fill('input[placeholder="+ Add skill"]', 'Machine Learning');
     await page.keyboard.press('Enter');
 
-    // 3. Upload multiple files for JD 1
-    const resumePath1 = path.resolve(process.cwd(), '../backend/data/resumes/1.pdf');
-    const resumePath2 = path.resolve(process.cwd(), '../backend/data/resumes/2.pdf');
-    
-    await page.locator('input[data-testid="resume-file-input"]').setInputFiles([resumePath1, resumePath2]);
-    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
+    // 3. Upload 50 resumes for JD 1
+    const resumesDir = path.resolve(process.cwd(), '../data/resumes');
+    const fiftyPdfs = fs.readdirSync(resumesDir)
+      .filter((f) => f.endsWith('.pdf'))
+      .sort()
+      .slice(0, 50)
+      .map((f) => path.join(resumesDir, f));
 
-    // 4. Click "Analyze Resumes"
+    console.log(`[TEST] Uploading ${fiftyPdfs.length} resumes for JD 1...`);
+    await page.locator('input[data-testid="resume-file-input"]').setInputFiles(fiftyPdfs);
+
+    // 4. Click "Analyze Resumes" when upload completes and button enables
     const analyzeBtn1 = page.locator('button:has-text("Analyze Resumes")');
-    await expect(analyzeBtn1).toBeEnabled({ timeout: 15000 });
+    await expect(analyzeBtn1).toBeEnabled({ timeout: 360000 });
     await analyzeBtn1.click();
 
     // Ensure knockouts are visible
@@ -39,7 +47,7 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     }
 
     // 5. Wait for the candidate list to render
-    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 1200000 });
 
     // 6. Click on the first candidate in the list
     const candidates = page.getByTestId('candidate-row');
@@ -74,11 +82,10 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     const resumePath4 = path.resolve(process.cwd(), '../backend/data/resumes/5.pdf');
     
     await page.locator('input[data-testid="resume-file-input"]').setInputFiles([resumePath3, resumePath4]);
-    await page.waitForSelector('text=Ready to analyze', { timeout: 90000 });
 
-    // 4. Click "Analyze Resumes"
+    // 4. Click "Analyze Resumes" when upload completes and button enables
     const analyzeBtn2 = page.locator('button:has-text("Analyze Resumes")');
-    await expect(analyzeBtn2).toBeEnabled({ timeout: 15000 });
+    await expect(analyzeBtn2).toBeEnabled({ timeout: 180000 });
     await analyzeBtn2.click();
 
     // Ensure knockouts are visible
@@ -87,8 +94,8 @@ test.describe('E2E UI Test - Resume Ranking', () => {
       await page.click('label[for="show-knockouts"]');
     }
 
-    // 5. Wait for the candidate list to render
-    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 120000 });
+    // 5. Wait for the candidate list to render (2 PDFs can still hit Nova slow path)
+    await page.waitForSelector('[data-testid="candidate-row"]', { timeout: 600000 });
 
     // 6. Click on the second candidate in the list (or the last one)
     const candidates2 = page.getByTestId('candidate-row');

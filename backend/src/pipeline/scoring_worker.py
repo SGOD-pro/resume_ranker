@@ -93,6 +93,34 @@ def process_scoring_message(message: Any) -> bool:
     ]
 
     if not usable_files:
+        # Check if DocumentItem entities exist and have terminal extraction results
+        from src.infrastructure.repositories.documents_repository import DocumentsRepository
+        from src.infrastructure.models.document import DocumentStatus
+        docs_repo = DocumentsRepository()
+        docs = docs_repo.list_for_job(job_id)
+        valid_docs = [
+            d for d in docs
+            if d.status in (
+                DocumentStatus.STRUCTURED_PARSED,
+                DocumentStatus.REVIEW_REQUIRED,
+                DocumentStatus.PARSED,
+                DocumentStatus.SCORED,
+            )
+        ]
+        if valid_docs:
+            logger.info("ScoringWorker: 0 usable FileItems, but %d valid DocumentItems found. Delegating to final_rank_worker.", len(valid_docs))
+            from src.pipeline.final_rank_worker import process_final_rank_message
+            from src.infrastructure.queue.message import QueueMessage
+            q_msg = QueueMessage(
+                job_id=job_id,
+                session_id=job.session_id or getattr(valid_docs[0], "session_id", "default"),
+                org_id=getattr(job, "org_id", "org_default"),
+                job_version=job.job_version,
+                stage="FINAL_RANK",
+            )
+            process_final_rank_message(q_msg)
+            return True
+
         logger.warning("ScoringWorker: Job %s has 0 usable files -> DONE_WITH_ERRORS", job_id)
         jobs_repo.update(job_id, {"status": JobStatus.DONE_WITH_ERRORS.value}, expected_version=job.version)
         return True
@@ -101,7 +129,10 @@ def process_scoring_message(message: Any) -> bool:
     candidates: List[Dict[str, Any]] = []
     for f in usable_files:
         try:
-            data = storage.get_stage2_json(job_id, f.file_id)
+            try:
+                data = storage.get_stage2_json(job_id, f.file_id)
+            except Exception:
+                data = storage.get_extracted_json(job_id, f.file_id)
             data["document_id"] = f.file_id
             data["candidate_id"] = f.file_id
             data["file_id"] = f.file_id
@@ -113,7 +144,7 @@ def process_scoring_message(message: Any) -> bool:
                 data["fallback_reason"] = f.fallback_reason
             candidates.append(data)
         except Exception as e:
-            logger.warning("ScoringWorker: Failed to read stage2 JSON for %s/%s: %s", job_id, f.file_id, e)
+            logger.warning("ScoringWorker: Failed to read stage2/extracted JSON for %s/%s: %s", job_id, f.file_id, e)
 
     if not candidates:
         logger.warning("ScoringWorker: Job %s has no readable candidate payloads -> DONE_WITH_ERRORS", job_id)

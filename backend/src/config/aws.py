@@ -61,7 +61,7 @@ class AWSSettings(BaseSettings):
     MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
     MAX_PAGE_COUNT: int = 50
     MAX_BATCH_BYTES: int = 200 * 1024 * 1024  # 200 MB
-    MAX_ACTIVE_SESSIONS_PER_ORG: int = 5
+    MAX_ACTIVE_SESSIONS_PER_ORG: int = 10
     CLIENT_UPLOAD_CONCURRENCY: int = 4
     PRESIGNED_URL_EXPIRY_SECONDS: int = 900  # 15 minutes
 

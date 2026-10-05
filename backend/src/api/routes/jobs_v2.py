@@ -643,11 +643,14 @@ async def notify_files_uploaded(
 
     logger.info("|PYMUPDF| Starting multithreaded extraction for %d files in job %s", len(target_ids), job_id)
 
+    upload_sessions = _sessions_repo.list_for_job(job_id)
+    resolved_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
+
     for f in all_files:
         if f.file_id in target_ids and not f.is_terminal and f.status not in (FileStatus.S1_DONE, FileStatus.S2_DONE):
             msg = QueueMessage(
                 job_id=job_id,
-                session_id=job.session_id,
+                session_id=resolved_session_id,
                 document_id=f.file_id,
                 org_id=ctx.org_id,
                 job_version=job.job_version,
@@ -658,7 +661,7 @@ async def notify_files_uploaded(
             try:
                 enqueue_fast_parse(
                     job_id=job_id,
-                    session_id=job.session_id,
+                    session_id=resolved_session_id,
                     document_id=f.file_id,
                     org_id=ctx.org_id,
                     job_version=job.job_version,
@@ -712,6 +715,9 @@ async def upload_resumes_multipart(
             continue
         file_payloads.append((f_name, content))
 
+    upload_sessions = _sessions_repo.list_for_job(job_id)
+    multipart_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
+
     def _upload_single_s3(f_name: str, content_bytes: bytes) -> tuple[FileItem, QueueMessage]:
         fid = str(uuid.uuid4())
         s3_key = f"jobs/{job_id}/raw/{fid}.pdf"
@@ -731,7 +737,7 @@ async def upload_resumes_multipart(
         )
         q_msg = QueueMessage(
             job_id=job_id,
-            session_id=job.session_id,
+            session_id=multipart_session_id,
             document_id=fid,
             org_id=ctx.org_id,
             job_version=job.job_version,
@@ -925,6 +931,7 @@ async def create_upload_session(
 
     if file_items:
         _files_repo.create_files(job_id, file_items)
+        _jobs_repo.increment_files_count(job_id, len(file_items))
 
     audit_logger.record(
         ctx.org_id,
@@ -1237,7 +1244,7 @@ async def analyze_job(
             try:
                 enqueue_fast_parse(
                     job_id=job_id,
-                    session_id=job.session_id or (target_session.session_id if target_session else "default"),
+                    session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
                     document_id=f.file_id,
                     org_id=ctx.org_id,
                     job_version=current_job_version,
@@ -1328,12 +1335,17 @@ async def get_job_status(
         for f in files
     ]
 
+    docs = _docs_repo.list_for_job(job_id)
+    effective_total = job.total_files or len(files) or len(docs)
+    effective_remaining = job.remaining if job.total_files > 0 else (sum(1 for f in files if not f.is_terminal) if files else sum(1 for d in docs if not d.status.is_terminal_fast_parse()))
+    effective_usable = job.usable_files if job.usable_files > 0 else (sum(1 for f in files if f.status == FileStatus.S2_DONE) if files else sum(1 for d in docs if d.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.SCORED)))
+
     payload = {
         "job_id": job.job_id,
         "status": job.status.value,
-        "total_files": job.total_files,
-        "remaining": job.remaining,
-        "usable_files": job.usable_files,
+        "total_files": effective_total,
+        "remaining": effective_remaining,
+        "usable_files": effective_usable,
         "analyze_requested": job.analyze_requested,
         "is_stalled": is_stalled,
         "updated_at": job.updated_at,
@@ -1494,9 +1506,11 @@ async def score_job_endpoint(
 
     from src.pipeline.scoring_worker import process_scoring_message
     from src.infrastructure.queue.message import QueueMessage
+    upload_sessions = _sessions_repo.list_for_job(job_id)
+    score_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
     msg = QueueMessage(
         job_id=job_id,
-        session_id=job.session_id,
+        session_id=score_session_id,
         document_id=job_id,
         org_id=ctx.org_id,
         job_version=job.job_version,

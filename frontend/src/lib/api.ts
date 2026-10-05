@@ -378,8 +378,10 @@ export async function uploadResumesViaSession(
   const boundedLimit = Math.min(Math.max(1, concurrency), 6, totalFiles);
   let nextIdx = 0;
 
+  let networkAborted = false;
+
   const worker = async () => {
-    while (nextIdx < totalFiles) {
+    while (nextIdx < totalFiles && !networkAborted) {
       const idx = nextIdx++;
       const docInfo = session.documents[idx];
       const file = files[idx];
@@ -415,6 +417,10 @@ export async function uploadResumesViaSession(
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Upload failed';
         rejected.push({ filename: docInfo.filename, reason: msg });
+        // Immediately abort remaining pool on network/DNS failure to enable instant fallback
+        if (err instanceof TypeError || (err instanceof Error && (err.name === 'TypeError' || err.message.includes('fetch')))) {
+          networkAborted = true;
+        }
       } finally {
         completedCount++;
         const pct = Math.round((completedCount / totalFiles) * 100);

@@ -2,10 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e-tests',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  workers: 1,
+  workers: 2,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5173',
@@ -23,6 +23,7 @@ export default defineConfig({
       url: 'http://localhost:8000/health',
       reuseExistingServer: !process.env.CI,
       timeout: 120000,
+      env: { ...process.env, AWS_PROFILE: 'aws' },
     },
     {
       command: 'npm run dev',

@@ -96,16 +96,18 @@ export function AnalyzeButton() {
           isDone = true;
           cleanup();
           try {
-            // Retry getResults up to 8 times with 1s backoff to handle S3 scoring write finalization
+            // Retry getResults up to 15 times with 1s backoff to handle S3 scoring write finalization
             let results: Awaited<ReturnType<typeof getResults>> | null = null;
-            for (let attempt = 1; attempt <= 8; attempt++) {
+            for (let attempt = 1; attempt <= 15; attempt++) {
               try {
                 results = await getResults(currentJobId);
-                if (results && results.candidates) break;
+                if (results && Array.isArray(results.candidates) && (results.candidates.length > 0 || totalCandidates === 0)) {
+                  break;
+                }
               } catch (resErr) {
-                if (attempt === 8) throw resErr;
-                await new Promise((r) => setTimeout(r, 1000));
+                if (attempt === 15) throw resErr;
               }
+              await new Promise((r) => setTimeout(r, 1000));
             }
             if (!results) throw new Error('No results returned from server');
             const mapped = mapScoredCandidates(results.candidates || [], currentJobId);
@@ -167,6 +169,12 @@ export function AnalyzeButton() {
               setIsStalled(true);
             }
             const st = data.job_status || data.status;
+            const termStatuses = ['DONE', 'DONE_WITH_ERRORS', 'READY', 'READY_WITH_WARNINGS', 'COMPLETED', 'complete'];
+            if ((st && termStatuses.includes(st)) || (data.status && termStatuses.includes(data.status))) {
+              handleSuccess(data.usable_files ?? data.total_files);
+              return;
+            }
+
             if (st === 'PROCESSING' || st === 'FALLBACK_PROCESSING' || st === 'FAST_PREPROCESSING' || st === 'extracting') {
               setAppPhase('processing');
             } else if (st === 'SCORING' || st === 'FINAL_RANKING' || st === 'scoring') {
@@ -186,10 +194,15 @@ export function AnalyzeButton() {
           onError: () => {
             // On SSE disconnection, smoothly activate gentle fallback poll without spamming
             if (!isDone && !fallbackTimer) {
-              fallbackTimer = setTimeout(handleFallbackPoll, 3000);
+              fallbackTimer = setTimeout(handleFallbackPoll, 2000);
             }
           },
         });
+
+        // Safety fallback timer: poll after 8s to guard against silent SSE disconnects
+        if (!fallbackTimer) {
+          fallbackTimer = setTimeout(handleFallbackPoll, 8000);
+        }
       });
     },
     [setAppPhase, setCandidates, setUpload, setEtag, setJobFiles, setIsStalled],

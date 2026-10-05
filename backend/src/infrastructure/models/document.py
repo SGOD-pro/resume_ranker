@@ -48,7 +48,11 @@ class DocumentStatus(str, Enum):
         return self in (
             DocumentStatus.STRUCTURED_PARSED,
             DocumentStatus.NEEDS_ODL,
+            DocumentStatus.ODL_QUEUED,
+            DocumentStatus.ODL_PARSING,
             DocumentStatus.NEEDS_NOVA,
+            DocumentStatus.NOVA_QUEUED,
+            DocumentStatus.NOVA_PARSING,
             DocumentStatus.REVIEW_REQUIRED,
             DocumentStatus.FAILED,
             DocumentStatus.REJECTED_DUPLICATE,

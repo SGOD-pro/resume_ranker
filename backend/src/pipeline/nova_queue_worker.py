@@ -44,6 +44,8 @@ def process_nova_message(message: QueueMessage) -> None:
         return
 
     doc = docs_repo.get(job_id, doc_id)
+    if doc and getattr(doc, "session_id", None):
+        session_id = doc.session_id
     if not doc:
         from src.infrastructure.repositories.files_repository import FilesRepository
         if FilesRepository().get_file(job_id, doc_id):
