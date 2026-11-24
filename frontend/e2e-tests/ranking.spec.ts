@@ -36,7 +36,7 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     await page.locator('input[data-testid="resume-file-input"]').setInputFiles(fiftyPdfs);
 
     // 4. Click "Analyze Resumes" when upload completes and button enables
-    const analyzeBtn1 = page.locator('button:has-text("Analyze Resumes")');
+    const analyzeBtn1 = page.locator('[data-testid="analyze-button"]');
     await expect(analyzeBtn1).toBeEnabled({ timeout: 360000 });
     await analyzeBtn1.click();
 
@@ -54,13 +54,24 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     const firstCandidateCard = candidates.first();
     await firstCandidateCard.click();
 
-    // 7. Verify right panel shows the score and details
-    // The right panel should display the candidate's score breakdown
-    const totalScoreText = page.locator('.text-5xl');
+    // 7. Verify right panel shows exact numeric score, eligibility, and breakdown
+    const totalScoreText = page.getByTestId('match-score-value');
     await expect(totalScoreText).toBeVisible();
+    const scoreContent = await totalScoreText.textContent();
+    expect(scoreContent).toMatch(/^\d+(\.\d+)?%$/);
+    const scoreNum = parseFloat(scoreContent!.replace('%', ''));
+    expect(scoreNum).toBeGreaterThanOrEqual(0);
+    expect(scoreNum).toBeLessThanOrEqual(100);
 
-    // Verify sections are present like "Match Score" and "Skills"
+    // Assert eligibility signal
+    const eligibilitySignal = page.getByTestId('eligibility-signal');
+    await expect(eligibilitySignal).toBeVisible();
+    const signalText = await eligibilitySignal.textContent();
+    expect(signalText).toMatch(/^(🟢 Strong Match|🟡 Good Match|🟠 Fair Match|🔴 Knockout)/);
+
+    // Verify sections are present: Match Score, Knockout Checks, and Skill Breakdown
     await expect(page.locator('h4:has-text("Match Score")')).toBeVisible();
+    await expect(page.locator('h4:has-text("Knockout Checks")')).toBeVisible();
     await expect(page.locator('h4:has-text("Skill Breakdown")').or(page.locator('text=Skill Breakdown'))).toBeVisible();
 
     // --------- SECOND JD ---------
@@ -78,13 +89,13 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     await page.keyboard.press('Enter');
 
     // 3. Upload multiple files for JD 2
-    const resumePath3 = path.resolve(process.cwd(), '../backend/data/resumes/3.pdf');
-    const resumePath4 = path.resolve(process.cwd(), '../backend/data/resumes/5.pdf');
+    const resumePath3 = path.resolve(process.cwd(), '../data/resumes/3.pdf');
+    const resumePath4 = path.resolve(process.cwd(), '../data/resumes/5.pdf');
     
     await page.locator('input[data-testid="resume-file-input"]').setInputFiles([resumePath3, resumePath4]);
 
     // 4. Click "Analyze Resumes" when upload completes and button enables
-    const analyzeBtn2 = page.locator('button:has-text("Analyze Resumes")');
+    const analyzeBtn2 = page.locator('[data-testid="analyze-button"]');
     await expect(analyzeBtn2).toBeEnabled({ timeout: 180000 });
     await analyzeBtn2.click();
 
@@ -105,10 +116,22 @@ test.describe('E2E UI Test - Resume Ranking', () => {
     // Click the last candidate
     await candidates2.nth(count - 1).click();
 
-    // 7. Verify right panel shows the score and details
-    const totalScoreText2 = page.locator('.text-5xl');
+    // 7. Verify right panel shows exact numeric score and eligibility for JD 2
+    const totalScoreText2 = page.getByTestId('match-score-value');
     await expect(totalScoreText2).toBeVisible();
+    const scoreContent2 = await totalScoreText2.textContent();
+    expect(scoreContent2).toMatch(/^\d+(\.\d+)?%$/);
+    const scoreNum2 = parseFloat(scoreContent2!.replace('%', ''));
+    expect(scoreNum2).toBeGreaterThanOrEqual(0);
+    expect(scoreNum2).toBeLessThanOrEqual(100);
+
+    const eligibilitySignal2 = page.getByTestId('eligibility-signal');
+    await expect(eligibilitySignal2).toBeVisible();
+    const signalText2 = await eligibilitySignal2.textContent();
+    expect(signalText2).toMatch(/^(🟢 Strong Match|🟡 Good Match|🟠 Fair Match|🔴 Knockout)/);
+
     await expect(page.locator('h4:has-text("Match Score")')).toBeVisible();
+    await expect(page.locator('h4:has-text("Knockout Checks")')).toBeVisible();
   });
 
 });

@@ -2,7 +2,7 @@
 .env
 .env.*
 !.env.example
-
+.agents
 # IDE & Editor
 .vscode
 .idea
@@ -44,3 +44,12 @@ scratch_resumes/
 *_extracted_cache.json
 _1k_extracted_cache.json
 *.cache.json
+
+# Test & profile run artifacts
+backend/import_times.log
+backend/stats
+frontend/test-results/
+*.report.json
+concurrency_matrix_report.json
+audit_*.json
+benchmark_*_report.json

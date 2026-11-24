@@ -32,7 +32,8 @@ function deriveSignal(finalScore: number, knockedOut: boolean): Signal {
 
 /** Map a single backend ScoredCandidate dict to the frontend Candidate shape */
 export function mapScoredCandidate(raw: any, index: number, defaultJobId?: string): Candidate {
-  const id = raw.document_id || raw.file_id || raw.candidate_id || raw._document_id || `candidate-${index}`;
+  const canonicalDocId = raw.document_id || raw._document_id || raw.file_id || raw.candidate_id || `candidate-${index}`;
+  const id = canonicalDocId;
   const rawName = raw.name;
   const identityStatus = raw.identity_status || (rawName && rawName !== 'Unknown' ? 'VERIFIED' : 'UNRESOLVED');
   const isUnresolvedName = !rawName || rawName === 'Unknown' || identityStatus === 'UNRESOLVED';
@@ -191,6 +192,7 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
 
   const mapped: Candidate = {
     id,
+    documentId: canonicalDocId,
     rank: typeof raw.rank === 'number' ? raw.rank : index + 1,
     name,
     title,
@@ -231,7 +233,17 @@ export function mapScoredCandidate(raw: any, index: number, defaultJobId?: strin
   return mapped;
 }
 
-/** Map an array of backend ScoredCandidate dicts to frontend Candidate[] */
+/** Map an array of backend ScoredCandidate dicts to frontend Candidate[] with deduplicated IDs */
 export function mapScoredCandidates(rawCandidates: any[], defaultJobId?: string): Candidate[] {
-  return rawCandidates.map((raw, i) => mapScoredCandidate(raw, i, defaultJobId));
+  const seenIds = new Set<string>();
+  return rawCandidates.map((raw, i) => {
+    const candidate = mapScoredCandidate(raw, i, defaultJobId);
+    const canonical = candidate.documentId || candidate.id;
+    candidate.documentId = canonical;
+    if (seenIds.has(candidate.id)) {
+      candidate.id = `${canonical}__row_${i}`;
+    }
+    seenIds.add(candidate.id);
+    return candidate;
+  });
 }

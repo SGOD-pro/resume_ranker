@@ -1,15 +1,226 @@
 import json
 import logging
+import os
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from pydantic import BaseModel, Field, field_validator
 
 from src.config.aws import get_settings
 
 logger = logging.getLogger(__name__)
+
+# ── Pydantic structured output models ──────────────────────────────────────────
+
+class NovaExperienceItem(BaseModel):
+    role: Optional[str] = ""
+    company: Optional[str] = ""
+    description: Optional[str] = ""
+
+    @field_validator("role", "company", "description", mode="before")
+    @classmethod
+    def _coerce_str(cls, v):
+        return str(v).strip() if v is not None else ""
+
+class NovaEducationItem(BaseModel):
+    degree: Optional[str] = ""
+    institution: Optional[str] = ""
+    year: Optional[str] = None
+
+    @field_validator("degree", "institution", "year", mode="before")
+    @classmethod
+    def _coerce_str(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s and s.lower() not in ("null", "none", "n/a") else None
+
+class NovaResumeSchema(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    skills: List[str] = Field(default_factory=list)
+    experience: List[NovaExperienceItem] = Field(default_factory=list)
+    education: List[NovaEducationItem] = Field(default_factory=list)
+
+    @field_validator("name", "email", "phone", mode="before")
+    @classmethod
+    def _coerce_scalar(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s and s.lower() not in ("null", "none", "n/a") else None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, v):
+        if not v:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        if isinstance(v, list):
+            res = []
+            for item in v:
+                if isinstance(item, str) and item.strip():
+                    res.append(item.strip())
+                elif isinstance(item, (int, float)):
+                    res.append(str(item))
+                elif isinstance(item, dict) and "name" in item:
+                    res.append(str(item["name"]).strip())
+            return res
+        return []
+
+    @field_validator("experience", mode="before")
+    @classmethod
+    def _coerce_experience(cls, v):
+        if not v:
+            return []
+        if isinstance(v, str) and v.strip():
+            return [{"role": v.strip(), "company": "", "description": ""}]
+        if not isinstance(v, list):
+            return []
+        res = []
+        for item in v:
+            if isinstance(item, dict):
+                res.append(item)
+            elif isinstance(item, str) and item.strip():
+                res.append({"role": item.strip(), "company": "", "description": ""})
+        return res
+
+    @field_validator("education", mode="before")
+    @classmethod
+    def _coerce_education(cls, v):
+        if not v:
+            return []
+        if isinstance(v, str) and v.strip():
+            return [{"degree": v.strip(), "institution": "", "year": None}]
+        if not isinstance(v, list):
+            return []
+        res = []
+        for item in v:
+            if isinstance(item, dict):
+                res.append(item)
+            elif isinstance(item, str) and item.strip():
+                res.append({"degree": item.strip(), "institution": "", "year": None})
+        return res
+
+
+def parse_and_validate_llm_json(raw_text: str) -> Dict[str, Any]:
+    """Robust parser & validator for LLM structured output.
+
+    Handles:
+    1. Clean JSON objects
+    2. Markdown code fences (```json ... ```)
+    3. Preamble/postscript text
+    4. Invalid JSON syntax (graceful fallback)
+    5. Schema mismatch / unexpected keys (strict filtering)
+    6. Invalid field types (coercion via Pydantic)
+    7. Empty or whitespace responses
+    8. Provider envelopes (e.g. {'output': {'message': ...}})
+    9. Multiple JSON objects returned (takes first valid)
+    10. Truncated JSON (attempts balanced closure or graceful recovery)
+    """
+    if not raw_text or not isinstance(raw_text, str) or not raw_text.strip():
+        return {}
+
+    cleaned = raw_text.strip()
+
+    # 1. Strip markdown fences if present
+    if "```" in cleaned:
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+        if fence_match:
+            cleaned = fence_match.group(1).strip()
+        else:
+            cleaned = re.sub(r"```[a-zA-Z]*", "", cleaned).replace("```", "").strip()
+
+    parsed_dict: Optional[Dict[str, Any]] = None
+
+    # First attempt: direct json.loads
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            # Check for provider envelope: {'output': ...}
+            if "output" in data and isinstance(data["output"], dict):
+                msg = data["output"].get("message", {})
+                content = msg.get("content", [])
+                if content and isinstance(content[0], dict) and "text" in content[0]:
+                    return parse_and_validate_llm_json(content[0]["text"])
+            parsed_dict = data
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Second attempt: find balanced braces { ... }
+    if parsed_dict is None:
+        start_idx = cleaned.find("{")
+        if start_idx != -1:
+            depth = 0
+            end_idx = -1
+            in_string = False
+            escape = False
+            for i in range(start_idx, len(cleaned)):
+                c = cleaned[i]
+                if escape:
+                    escape = False
+                    continue
+                if c == "\\":
+                    escape = True
+                    continue
+                if c == '"':
+                    in_string = not in_string
+                    continue
+                if not in_string:
+                    if c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            end_idx = i + 1
+                            break
+            if end_idx != -1:
+                candidate_str = cleaned[start_idx:end_idx]
+                try:
+                    candidate_data = json.loads(candidate_str)
+                    if isinstance(candidate_data, dict):
+                        parsed_dict = candidate_data
+                except Exception:
+                    pass
+
+    # Third attempt: truncated JSON recovery (e.g. unclosed brackets/braces)
+    if parsed_dict is None:
+        start_idx = cleaned.find("{")
+        if start_idx != -1:
+            sub = cleaned[start_idx:]
+            for suffix in ('"}', '"]}', '"]}}', '}'):
+                try:
+                    candidate_data = json.loads(sub + suffix)
+                    if isinstance(candidate_data, dict):
+                        parsed_dict = candidate_data
+                        break
+                except Exception:
+                    pass
+
+    if parsed_dict is None:
+        return {}
+
+    # 3. Validate against Pydantic schema
+    try:
+        model = NovaResumeSchema.model_validate(parsed_dict)
+        return model.model_dump(exclude_unset=False)
+    except Exception as val_err:
+        logger.warning("Nova schema validation error: %s", val_err)
+        res = {}
+        if "name" in parsed_dict and isinstance(parsed_dict["name"], str):
+            res["name"] = parsed_dict["name"]
+        if "skills" in parsed_dict and isinstance(parsed_dict["skills"], list):
+            res["skills"] = [str(s) for s in parsed_dict["skills"] if isinstance(s, (str, int, float))]
+        if "experience" in parsed_dict and isinstance(parsed_dict["experience"], list):
+            res["experience"] = [e for e in parsed_dict["experience"] if isinstance(e, dict)]
+        if "education" in parsed_dict and isinstance(parsed_dict["education"], list):
+            res["education"] = [e for e in parsed_dict["education"] if isinstance(e, dict)]
+        return res
 
 # ── System prompt — embeds the full JSON schema per AWS Nova docs ──────────────
 # Pattern: https://docs.aws.amazon.com/nova/latest/userguide/prompting-structured-output.html
@@ -101,10 +312,20 @@ class NovaService:
         # Cap at 10 chunks / ~4 000 chars to stay within Nova Micro context limit
         text_to_process = "\n\n".join(chunks[:10])[:4000]
 
-        user_text = (
-            "Extract all resume fields from the following text.\n\n"
-            f"<resume>\n{text_to_process}\n</resume>"
-        )
+        has_skills = bool(existing_fields.get("skills"))
+        has_exp = bool(existing_fields.get("experience"))
+        is_name_missing = not existing_fields.get("name") or existing_fields.get("name") == "Name needs review"
+
+        if is_name_missing and (has_skills or has_exp):
+            user_text = (
+                "Extract the candidate full name from the following resume header text.\n\n"
+                f"<header>\n{text_to_process[:800]}\n</header>"
+            )
+        else:
+            user_text = (
+                "Extract all resume fields from the following text.\n\n"
+                f"<resume>\n{text_to_process}\n</resume>"
+            )
 
         extracted = self._call_nova(user_text) if not self._dead else {}
 
@@ -206,14 +427,20 @@ class NovaService:
         import time
         max_retries = 2
 
-        # Enforce rate limit: 15 API calls per minute (minimum 4.0s interval)
-        now = time.time()
-        elapsed = now - NovaService._last_call_time
-        if elapsed < NovaService._min_call_interval:
-            sleep_needed = NovaService._min_call_interval - elapsed
-            logger.info("Rate limiting Bedrock API (15 calls/min limit): sleeping %.2fs", sleep_needed)
-            time.sleep(sleep_needed)
-        NovaService._last_call_time = time.time()
+        # Enforce rate limit: configurable via NOVA_MIN_INTERVAL (default 1.0s, 0.0s in tests/mocks)
+        min_interval = float(os.environ.get("NOVA_MIN_INTERVAL", "1.0"))
+        is_mock = (
+            hasattr(self.bedrock_client, "_mock_return_value")
+            or type(self.bedrock_client).__name__ == "MagicMock"
+            or (hasattr(self.bedrock_client, "converse") and type(self.bedrock_client.converse).__name__ == "MagicMock")
+        )
+        if min_interval > 0 and not is_mock:
+            now = time.time()
+            elapsed = now - NovaService._last_call_time
+            if elapsed < min_interval:
+                sleep_needed = min_interval - elapsed
+                time.sleep(sleep_needed)
+            NovaService._last_call_time = time.time()
 
         for attempt in range(max_retries):
             try:
@@ -258,26 +485,13 @@ class NovaService:
 
                 usage = response.get("usage", {})
 
-                # ── Parse JSON ─────────────────────────────────────────────────
-                try:
-                    parsed = json.loads(raw_text)
+                # ── Robust Parse & Validate JSON via Pydantic ─────────────────
+                parsed = parse_and_validate_llm_json(raw_text)
+                if parsed:
                     parsed["_nova_tokens"] = usage
                     return parsed
-                except (json.JSONDecodeError, ValueError) as parse_err:
-                    logger.warning(
-                        "Nova JSON parse error (%s). Raw response: %.300s",
-                        parse_err, raw_text,
-                    )
-                    # Best-effort: grab the first balanced { … } block
-                    m = re.search(r"\{.*?\}", raw_text, re.DOTALL)
-                    if m:
-                        try:
-                            parsed = json.loads(m.group(0))
-                            parsed["_nova_tokens"] = usage
-                            return parsed
-                        except Exception:
-                            pass
-                    return {}
+                return {}
+
 
             except ClientError as exc:
                 error_code = exc.response.get("Error", {}).get("Code", "Unknown")
@@ -366,7 +580,7 @@ class NovaService:
                     "warnings": ["Resolved via Nova LLM fallback"],
                 }
             else:
-                logger.warning("Nova LLM proposed invalid name %r (%s): rejected", raw_llm_name, neg_err or clean_err)
+                logger.warning("Nova LLM proposed invalid name candidate (%s): rejected", neg_err or clean_err)
                 merged["name"] = None
                 existing_identity = existing.get("identity") or {}
                 existing_identity["warnings"] = existing_identity.get("warnings", []) + [

@@ -59,11 +59,14 @@ async function apiFetch<T>(
   );
 
   try {
+    const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('job_session_id') : null;
     const res = await fetch(`${API_BASE}${path}`, {
       ...fetchOpts,
       signal: controller.signal,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        ...(sessionId ? { 'X-Session-ID': sessionId } : {}),
         ...fetchOpts.headers,
       },
     });
@@ -115,10 +118,14 @@ export interface CreateJobPayload {
 export async function createJob(
   payload: CreateJobPayload,
 ): Promise<CreateJobResponseV2> {
-  return apiFetch('/api/v2/jobs', {
+  const res = await apiFetch<CreateJobResponseV2>('/api/v2/jobs', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  if (res.session_id && typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('job_session_id', res.session_id);
+  }
+  return res;
 }
 
 /**
@@ -132,13 +139,17 @@ export async function createJobWithUploads(
     filename: f.name,
     file_size: f.size,
   }));
-  return apiFetch('/api/v2/jobs', {
+  const res = await apiFetch<CreateJobResponseV2>('/api/v2/jobs', {
     method: 'POST',
     body: JSON.stringify({
       ...payload,
       files: fileSpecs,
     }),
   });
+  if (res.session_id && typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('job_session_id', res.session_id);
+  }
+  return res;
 }
 
 /** Update JD config for an existing job (PATCH merge) */
@@ -624,7 +635,10 @@ export function subscribeToJobExtraction(
   jobId: string,
   callbacks: ExtractionStreamCallbacks,
 ): () => void {
-  const url = `${API_BASE}/api/v2/jobs/${jobId}/extract`;
+  const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('job_session_id') : null;
+  const url = sessionId
+    ? `${API_BASE}/api/v2/jobs/${jobId}/extract?session_id=${encodeURIComponent(sessionId)}`
+    : `${API_BASE}/api/v2/jobs/${jobId}/extract`;
   const es = new EventSource(url, { withCredentials: true });
 
   es.addEventListener('progress', (e) => {
@@ -664,6 +678,42 @@ export interface PollStatusResult {
 }
 
 /**
+ * Fetch authoritative job status without caching, ensuring full body hydration.
+ */
+export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`Status check for job ${jobId} timed out`)),
+    30_000,
+  );
+
+  try {
+    const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('job_session_id') : null;
+    const res = await fetch(`${API_BASE}/api/v2/jobs/${jobId}/status`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: sessionId ? { 'X-Session-ID': sessionId } : {},
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        body = await res.text();
+      }
+      throw new ApiError(`Status check ${res.status}`, res.status, body);
+    }
+
+    return (await res.json()) as JobStatusResponse;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * Poll job status passing If-None-Match header.
  * Returns notModified=true on HTTP 304 to eliminate redundant re-renders and bandwidth.
  */
@@ -671,7 +721,10 @@ export async function pollJobStatus(
   jobId: string,
   currentEtag?: string | null,
 ): Promise<PollStatusResult> {
-  const headers: Record<string, string> = {};
+  const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('job_session_id') : null;
+  const headers: Record<string, string> = {
+    ...(sessionId ? { 'X-Session-ID': sessionId } : {}),
+  };
   if (currentEtag) {
     headers['If-None-Match'] = currentEtag;
   }
@@ -686,6 +739,8 @@ export async function pollJobStatus(
     const res = await fetch(`${API_BASE}/api/v2/jobs/${jobId}/status`, {
       method: 'GET',
       headers,
+      credentials: 'include',
+      cache: currentEtag ? 'default' : 'no-store',
       signal: controller.signal,
     });
 
@@ -769,6 +824,7 @@ export async function checkAts(file: File): Promise<AtsCheckResponse> {
 
   const res = await fetch(`${API_BASE}/api/v2/jobs/ats-check`, {
     method: 'POST',
+    credentials: 'include',
     body: formData,
   });
 
@@ -801,6 +857,7 @@ export async function updateCandidateDecision(
 export async function exportCandidatesCsv(jobId: string): Promise<string> {
   const res = await fetch(`${API_BASE}/api/v2/jobs/${jobId}/export/csv`, {
     method: 'GET',
+    credentials: 'include',
     headers: {
       Accept: 'text/csv',
     },

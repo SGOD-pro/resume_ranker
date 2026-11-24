@@ -41,19 +41,21 @@ export function CandidateListPanel() {
       );
     }
 
-    // Dynamic Score Recalculation
+    // Authoritative scores from the backend result are preserved.
+    // If job weights were adjusted in the sidebar, an optional previewScore is calculated
+    // without overwriting the authoritative final score or relevance score.
     const totalWeight = Object.values(jobWeights).reduce((a, b) => a + b, 0) || 100;
-    
-    filtered = filtered.map(c => {
+
+    filtered = filtered.map((c) => {
       if (!c.scoreBreakdown) return c;
-      const baseScore = 
+      const baseScore =
         (c.scoreBreakdown.skills * (jobWeights.skills / totalWeight)) +
         (c.scoreBreakdown.experience * (jobWeights.experience / totalWeight)) +
         (c.scoreBreakdown.keywords * (jobWeights.keywords / totalWeight)) +
         (c.scoreBreakdown.education * (jobWeights.education / totalWeight));
-      
-      const dynamicScore = Math.round(baseScore * 10) / 10;
-      return { ...c, overallScore: dynamicScore, relevanceScore: dynamicScore };
+
+      const previewScore = Math.round(baseScore * 10) / 10;
+      return { ...c, previewScore };
     });
 
     if (sortField === 'score') {
@@ -66,6 +68,8 @@ export function CandidateListPanel() {
   }, [allCandidates, filterSignal, sortField, searchQuery, showKnockouts, jobWeights]);
 
   const showLoader = appPhase === 'extracting' || appPhase === 'processing' || appPhase === 'scoring';
+  const setFilterSignal = useCandidateStore((s) => s.setFilterSignal);
+  const setSearchQuery = useCandidateStore((s) => s.setSearchQuery);
 
   return (
     <div className="flex h-full flex-col">
@@ -81,15 +85,27 @@ export function CandidateListPanel() {
         /* Center panel loader replaces list content area only */
         <CenterPanelLoader phase={appPhase} />
       ) : allCandidates.length === 0 ? (
-        /* No analysis has been run yet — genuine empty state */
-        <div className="flex-1 flex flex-col items-center justify-center p-sp-5 gap-sp-3">
-          <p className="font-heading text-2xl uppercase tracking-brutal text-foreground text-center">
-            No Results Yet
-          </p>
-          <p className="text-small text-muted-foreground font-mono text-center max-w-xs">
-            Upload resumes and analyze them against a Job Description to generate rankings.
-          </p>
-        </div>
+        appPhase === 'complete' ? (
+          /* Analysis completed but legitimately zero candidates parsed/scored */
+          <div className="flex-1 flex flex-col items-center justify-center p-sp-5 gap-sp-3">
+            <p className="font-heading text-2xl uppercase tracking-brutal text-foreground text-center">
+              No Candidates Scored
+            </p>
+            <p className="text-small text-muted-foreground font-mono text-center max-w-xs">
+              None of the uploaded resumes could be successfully parsed or qualified for this job description.
+            </p>
+          </div>
+        ) : (
+          /* No analysis has been run yet — initial empty state */
+          <div className="flex-1 flex flex-col items-center justify-center p-sp-5 gap-sp-3">
+            <p className="font-heading text-2xl uppercase tracking-brutal text-foreground text-center">
+              No Results Yet
+            </p>
+            <p className="text-small text-muted-foreground font-mono text-center max-w-xs">
+              Upload resumes and analyze them against a Job Description to generate rankings.
+            </p>
+          </div>
+        )
       ) : (
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {/* Table header */}
@@ -106,8 +122,21 @@ export function CandidateListPanel() {
                 <CandidateRow key={candidate.id} candidate={candidate} />
               ))}
               {candidates.length === 0 && (
-                <div className="p-sp-5 text-center text-muted-foreground text-small">
-                  No candidates match the current filters.
+                <div className="p-sp-5 text-center text-muted-foreground text-small space-y-sp-2">
+                  <p>No candidates match the current filters.</p>
+                  <button
+                    data-testid="reset-filters-button"
+                    onClick={() => {
+                      setFilterSignal('all');
+                      setSearchQuery('');
+                      if (!showKnockouts) {
+                        useCandidateStore.getState().toggleShowKnockouts();
+                      }
+                    }}
+                    className="text-xs font-mono underline hover:text-foreground cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
                 </div>
               )}
             </div>

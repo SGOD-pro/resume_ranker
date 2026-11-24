@@ -155,8 +155,11 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         scores = []
         pymupdf_text_lines = []
         for page in pdf_doc:
-            scores.append(pymupdf_layout_quality(page))
-            pymupdf_text_lines.append(page.get_text())
+            p_text = page.get_text()
+            p_words = page.get_text("words")
+            p_drawings = len(page.get_drawings())
+            scores.append(pymupdf_layout_quality(page, text=p_text, words=p_words, drawings_count=p_drawings))
+            pymupdf_text_lines.append(p_text)
         pdf_doc.close()
         quality_score = round(sum(scores) / len(scores), 2) if scores else 0.0
         full_pymupdf_text = "\n".join(pymupdf_text_lines)
@@ -201,28 +204,36 @@ def process_fast_parse_message(message: QueueMessage) -> None:
         # 4. Check whether deeper ODL extraction or LLM infill is needed
         needs_odl = quality_score < QUALITY_THRESHOLD
 
+        has_skills = bool(fields.get("skills") and len(fields["skills"]) > 0)
+        has_experience = bool(fields.get("experience") and len(fields["experience"]) > 0)
+        has_critical_content = has_skills or has_experience
+
         is_unresolved_name = (
             not candidate_name
             or str(candidate_name).strip() in ("", "Name needs review", "Unknown")
             or identity_status == "UNRESOLVED"
         )
-        is_missing_experience = not fields.get("experience") or len(fields.get("experience")) == 0
+        is_unscorable = not has_critical_content
 
         if needs_odl:
             fallback_reason = f"PyMuPDF layout quality ({quality_score:.2f} < {QUALITY_THRESHOLD}) indicates complex/multi-column layout"
             fields["fallback_reason"] = fallback_reason
-            fields["unresolved_chunks"] = [full_pymupdf_text[:4000]]
+            fields["unresolved_chunks"] = [full_pymupdf_text[:1500]]
             fields["raw_text"] = full_pymupdf_text[:4000]
             target_status = DocumentStatus.NEEDS_ODL
-        elif is_unresolved_name or is_missing_experience:
+        elif is_unresolved_name or is_unscorable:
             reasons = []
             if is_unresolved_name:
                 reasons.append("candidate name unresolved")
-            if is_missing_experience:
-                reasons.append("experience records not found")
+            if is_unscorable:
+                reasons.append("no skills or experience records found")
             fallback_reason = f"Deterministic parse missed critical fields ({', '.join(reasons)}); queued for LLM fallback infill"
             fields["fallback_reason"] = fallback_reason
-            fields["unresolved_chunks"] = [full_pymupdf_text[:4000]]
+            if is_unresolved_name and not is_unscorable:
+                # Name only missing: send targeted header snippet (top 800 chars)
+                fields["unresolved_chunks"] = [full_pymupdf_text[:800]]
+            else:
+                fields["unresolved_chunks"] = [full_pymupdf_text[:2000]]
             fields["raw_text"] = full_pymupdf_text[:4000]
             target_status = DocumentStatus.NEEDS_NOVA
         else:

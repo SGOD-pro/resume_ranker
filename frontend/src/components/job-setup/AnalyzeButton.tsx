@@ -18,6 +18,7 @@ import { useCandidateStore } from '@/store/candidate-store';
 import {
   triggerAnalysis,
   pollJobStatus,
+  getJobStatus,
   getResults,
   subscribeToJobExtraction,
 } from '@/lib/api';
@@ -72,6 +73,9 @@ export function AnalyzeButton() {
     }
   };
 
+  const monitorProgressRef = useRef<(id: string) => Promise<void>>(() => Promise.resolve());
+  const handleClickRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
   /** Stream job status via Server-Sent Events (SSE) without continuous hard short-polling */
   const monitorAnalysisProgress = useCallback(
     (currentJobId: string): Promise<void> => {
@@ -98,18 +102,37 @@ export function AnalyzeButton() {
           try {
             // Retry getResults up to 15 times with 1s backoff to handle S3 scoring write finalization
             let results: Awaited<ReturnType<typeof getResults>> | null = null;
+            let lastError: unknown = null;
             for (let attempt = 1; attempt <= 15; attempt++) {
               try {
                 results = await getResults(currentJobId);
-                if (results && Array.isArray(results.candidates) && (results.candidates.length > 0 || totalCandidates === 0)) {
+                if (
+                  results &&
+                  Array.isArray(results.candidates) &&
+                  (results.candidates.length > 0 || totalCandidates === 0 || results.total_candidates === 0)
+                ) {
                   break;
                 }
-              } catch (resErr) {
+              } catch (resErr: unknown) {
+                lastError = resErr;
+                const errStatus =
+                  resErr && typeof resErr === 'object' && 'status' in resErr
+                    ? (resErr as { status: number }).status
+                    : undefined;
+                // If 409 Conflict, backend results are still being finalized -> wait and retry
+                if (errStatus === 409) {
+                  await new Promise((r) => setTimeout(r, 1000));
+                  continue;
+                }
                 if (attempt === 15) throw resErr;
               }
               await new Promise((r) => setTimeout(r, 1000));
             }
-            if (!results) throw new Error('No results returned from server');
+            if (!results) {
+              throw lastError instanceof Error
+                ? lastError
+                : new Error('No results returned from server after scoring completion.');
+            }
             const mapped = mapScoredCandidates(results.candidates || [], currentJobId);
             setCandidates(mapped);
             setUpload({
@@ -121,14 +144,25 @@ export function AnalyzeButton() {
             toast.success('Analysis complete');
             resolve();
           } catch (err) {
+            setAppPhase('ready_to_analyze');
+            setBlockingError({
+              title: 'Results Unavailable',
+              message:
+                err instanceof Error
+                  ? err.message
+                  : 'Scoring completed but results could not be retrieved from storage.',
+              onRetry: () => handleSuccess(totalCandidates),
+            });
             reject(err);
           }
         };
 
+        let consecutivePollErrors = 0;
         const handleFallbackPoll = async () => {
           if (isDone) return;
           try {
             const pollRes = await pollJobStatus(currentJobId, etagRef.current);
+            consecutivePollErrors = 0;
             if (pollRes.etag) {
               setEtag(pollRes.etag);
               etagRef.current = pollRes.etag;
@@ -138,6 +172,9 @@ export function AnalyzeButton() {
               if (statusRes.files) {
                 setJobFiles(statusRes.files);
               }
+              if (statusRes.is_stalled) {
+                setIsStalled(true);
+              }
               const termStatuses = ['DONE', 'DONE_WITH_ERRORS', 'READY', 'READY_WITH_WARNINGS', 'COMPLETED'];
               if (termStatuses.includes(statusRes.status)) {
                 await handleSuccess(statusRes.usable_files);
@@ -145,17 +182,53 @@ export function AnalyzeButton() {
               }
               if (statusRes.status === 'FAILED') {
                 cleanup();
+                setAppPhase('error');
                 reject(new Error('Analysis processing failed on server.'));
                 return;
               }
+              if (statusRes.status === 'PROCESSING' || statusRes.status === 'FALLBACK_PROCESSING') {
+                setAppPhase('processing');
+              } else if (statusRes.status === 'SCORING' || statusRes.status === 'FINAL_RANKING') {
+                setAppPhase('scoring');
+              }
             }
           } catch {
-            // ignore network glitch on single poll
+            consecutivePollErrors++;
+            if (consecutivePollErrors >= 5) {
+              cleanup();
+              // Maintain active state rather than erroneously reverting authoritative state
+              setBlockingError({
+                title: 'Connection Lost',
+                message:
+                  'Unable to reach backend status after multiple attempts. Analysis continues in the background on the server.',
+                onRetry: async () => {
+                  setBlockingError(null);
+                  try {
+                    const statusRes = await getJobStatus(currentJobId);
+                    const termStatuses = ['DONE', 'DONE_WITH_ERRORS', 'READY', 'READY_WITH_WARNINGS', 'COMPLETED'];
+                    if (termStatuses.includes(statusRes.status)) {
+                      await handleSuccess(statusRes.usable_files);
+                      return;
+                    }
+                    if (statusRes.status === 'FAILED') {
+                      setAppPhase('error');
+                      return;
+                    }
+                    monitorProgressRef.current(currentJobId).catch(() => {});
+                  } catch (pollErr) {
+                    void pollErr;
+                    monitorProgressRef.current(currentJobId).catch(() => {});
+                  }
+                },
+              });
+              reject(new Error('Connection lost after repeated polling failures.'));
+              return;
+            }
           }
 
           if (!isDone) {
-            // Adaptive retry: check again in 8s if still processing
-            fallbackTimer = setTimeout(handleFallbackPoll, 8000);
+            const pollDelay = consecutivePollErrors > 0 ? 1000 : 3000;
+            fallbackTimer = setTimeout(handleFallbackPoll, pollDelay);
           }
         };
 
@@ -192,20 +265,20 @@ export function AnalyzeButton() {
             await handleSuccess(data.usable);
           },
           onError: () => {
-            // On SSE disconnection, smoothly activate gentle fallback poll without spamming
+            // On SSE disconnection, smoothly activate gentle fallback poll without delay
             if (!isDone && !fallbackTimer) {
-              fallbackTimer = setTimeout(handleFallbackPoll, 2000);
+              fallbackTimer = setTimeout(handleFallbackPoll, 500);
             }
           },
         });
 
-        // Safety fallback timer: poll after 8s to guard against silent SSE disconnects
+        // Safety fallback timer: poll after 2s to guard against silent SSE disconnects
         if (!fallbackTimer) {
-          fallbackTimer = setTimeout(handleFallbackPoll, 8000);
+          fallbackTimer = setTimeout(handleFallbackPoll, 2000);
         }
       });
     },
-    [setAppPhase, setCandidates, setUpload, setEtag, setJobFiles, setIsStalled],
+    [setAppPhase, setCandidates, setUpload, setEtag, setJobFiles, setIsStalled, setBlockingError],
   );
 
   const handleClick = useCallback(async () => {
@@ -262,29 +335,62 @@ export function AnalyzeButton() {
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred during analysis.';
       setBlockingError({
-        title: 'Analysis Failed',
+        title: 'Analysis Interrupted',
         message,
-        onRetry: () => handleClick(),
+        onRetry: async () => {
+          setBlockingError(null);
+          if (jobId) {
+            try {
+              const statusRes = await getJobStatus(jobId);
+              const termStatuses = ['DONE', 'DONE_WITH_ERRORS', 'READY', 'READY_WITH_WARNINGS', 'COMPLETED'];
+              if (termStatuses.includes(statusRes.status) || statusRes.status === 'PROCESSING' || statusRes.status === 'SCORING' || statusRes.analyze_requested) {
+                // Recover and resume existing job without duplicate POST submission
+                await monitorProgressRef.current(jobId);
+                return;
+              }
+            } catch (err) {
+              void err;
+            }
+          }
+          handleClickRef.current();
+        },
       });
-      setAppPhase('ready_to_analyze');
     } finally {
       setAnalyzing(false);
     }
   }, [
     jobId,
     job,
+    jobFiles,
     fileIdMap,
+    resetUploadProgress,
     setAnalyzing,
     setAppPhase,
     setBlockingError,
     monitorAnalysisProgress,
   ]);
 
+  useEffect(() => {
+    monitorProgressRef.current = monitorAnalysisProgress;
+    handleClickRef.current = handleClick;
+  }, [monitorAnalysisProgress, handleClick]);
+
+  // Reattach monitoring on browser reload/navigation when job was already in progress
+  useEffect(() => {
+    if (jobId && (appPhase === 'processing' || appPhase === 'scoring') && !isAnalyzing) {
+      setAnalyzing(true);
+      monitorAnalysisProgress(jobId).finally(() => {
+        setAnalyzing(false);
+      });
+    }
+  }, [jobId, appPhase, isAnalyzing, setAnalyzing, monitorAnalysisProgress]);
+
   const tooltipText = getTooltipText();
   const showTooltip = isDisabled && tooltipText;
 
   const button = (
     <Button
+      data-testid="analyze-button"
       onClick={handleClick}
       disabled={isDisabled}
       className="w-full h-12 bg-foreground text-background border-thick border-foreground uppercase tracking-brutal text-sm font-bold hover:bg-background hover:text-foreground transition-colors active:border-heavy disabled:bg-disabled-bg disabled:text-muted-foreground disabled:border-disabled-border disabled:cursor-not-allowed"

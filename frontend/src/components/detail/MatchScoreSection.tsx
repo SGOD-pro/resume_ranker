@@ -70,8 +70,8 @@ export function MatchScoreSection({ candidate }: MatchScoreSectionProps) {
       </h4>
 
       <div className="text-center mb-sp-3">
-        <span className="font-heading text-5xl text-foreground">{candidate.overallScore}%</span>
-        <p className={cn('text-small font-semibold mt-sp-1', signal.color)}>
+        <span data-testid="match-score-value" className="font-heading text-5xl text-foreground">{candidate.overallScore}%</span>
+        <p data-testid="eligibility-signal" className={cn('text-small font-semibold mt-sp-1', signal.color)}>
           {signal.label}
         </p>
       </div>

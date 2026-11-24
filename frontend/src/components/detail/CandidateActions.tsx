@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -32,23 +32,28 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
   const { setStatus, setNote } = useCandidateStore();
   const { jobId } = useAppStore();
   const [noteInput, setNoteInput] = useState(candidate.note || '');
+  const [prevCandidateId, setPrevCandidateId] = useState(candidate.id);
+  const [prevCandidateNote, setPrevCandidateNote] = useState(candidate.note || '');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const status = statusLabels[candidate.status] || statusLabels['under-review'];
+  const targetDocId = candidate.documentId || candidate.id;
 
-  useEffect(() => {
+  if (candidate.id !== prevCandidateId || (candidate.note || '') !== prevCandidateNote) {
+    setPrevCandidateId(candidate.id);
+    setPrevCandidateNote(candidate.note || '');
     setNoteInput(candidate.note || '');
-  }, [candidate.id, candidate.note]);
+  }
 
   const handleShortlist = async () => {
     setStatus(candidate.id, 'shortlisted');
     toast.success(`${candidate.name} marked as Shortlisted.`);
     if (jobId) {
       try {
-        await updateCandidateDecision(jobId, candidate.id, { decision: 'shortlisted' });
-      } catch {
-        // Optimistic UI update already applied
+        await updateCandidateDecision(jobId, targetDocId, { decision: 'shortlisted' });
+      } catch (err) {
+        void err;
       }
     }
   };
@@ -68,13 +73,13 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
 
     if (jobId) {
       try {
-        await updateCandidateDecision(jobId, candidate.id, {
+        await updateCandidateDecision(jobId, targetDocId, {
           decision: 'rejected',
           reason: trimmed,
           note: `Rejection reason: ${trimmed}`,
         });
-      } catch {
-        // Optimistic UI
+      } catch (err) {
+        void err;
       }
     }
   };
@@ -85,11 +90,11 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
     toast.success('Note saved.');
     if (jobId) {
       try {
-        await updateCandidateDecision(jobId, candidate.id, {
+        await updateCandidateDecision(jobId, targetDocId, {
           note: noteInput,
         });
-      } catch {
-        // Optimistic UI
+      } catch (err) {
+        void err;
       }
     }
   };
@@ -99,12 +104,12 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
     toast.success(`Assessment invitation sent to ${candidate.name}.`);
     if (jobId) {
       try {
-        await updateCandidateDecision(jobId, candidate.id, {
+        await updateCandidateDecision(jobId, targetDocId, {
           decision: 'interview',
           note: 'Assessment invitation sent.',
         });
-      } catch {
-        // Optimistic UI
+      } catch (err) {
+        void err;
       }
     }
   };
@@ -114,9 +119,9 @@ export function CandidateActions({ candidate }: CandidateActionsProps) {
     toast.info(`${candidate.name} returned to Under Review.`);
     if (jobId) {
       try {
-        await updateCandidateDecision(jobId, candidate.id, { decision: 'reviewing' });
-      } catch {
-        // Optimistic UI
+        await updateCandidateDecision(jobId, targetDocId, { decision: 'reviewing' });
+      } catch (err) {
+        void err;
       }
     }
   };

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 EXPECTED_CHARS_PER_PAGE = 1500
 
 # ODL fallback threshold: quality below this triggers the slow path.
-QUALITY_THRESHOLD = 0.90
+QUALITY_THRESHOLD = 0.75
 
 
 def cluster_word_x_positions(page: Optional[fitz.Page] = None, words: Optional[list] = None) -> list:
@@ -78,24 +78,8 @@ def pymupdf_layout_quality(
     words: Optional[list] = None,
     drawings_count: Optional[int] = None,
 ) -> float:
-    """
-    Scores a page 0.0–1.0 for how reliably PyMuPDF can extract its text in
-    reading order. Reuses pre-extracted text, words, and drawings when provided.
-    """
-    if text is None and page is not None:
-        text = page.get_text()
-    if words is None and page is not None:
-        words = page.get_text("words")
-    if drawings_count is None and page is not None:
-        drawings_count = len(page.get_drawings())
-
-    ro = reading_order_monotonicity(page, words=words)
-    cd = min(1.0, len(text or "") / EXPECTED_CHARS_PER_PAGE)
-    nt = 0.0 if looks_tabular(page, drawings_count=drawings_count) else 1.0
-    x_clusters = cluster_word_x_positions(page, words=words)
-    cp = 1.0 if len(x_clusters) <= 1 else 0.0
-
-    return cp * 0.35 + ro * 0.30 + cd * 0.20 + nt * 0.15
+    """Scores a page 0.0–1.0 for how reliably PyMuPDF can extract its text in reading order."""
+    return pymupdf_layout_quality_signals(page, text=text, words=words, drawings_count=drawings_count)["score"]
 
 
 def pymupdf_layout_quality_signals(
@@ -117,7 +101,14 @@ def pymupdf_layout_quality_signals(
     ro = reading_order_monotonicity(page, words=words)
     cd = min(1.0, len(text or "") / EXPECTED_CHARS_PER_PAGE)
     nt = 0.0 if looks_tabular(page, drawings_count=drawings_count) else 1.0
-    cp = 1.0 if n_cols <= 1 else 0.0
+    if n_cols <= 1:
+        cp = 1.0
+    elif n_cols == 2 and ro >= 0.80:
+        cp = 0.85
+    elif n_cols == 2:
+        cp = 0.50
+    else:
+        cp = 0.0
     score = cp * 0.35 + ro * 0.30 + cd * 0.20 + nt * 0.15
     return {
         "reading_order": round(ro, 3),

@@ -10,7 +10,7 @@ top candidate for fast display.
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from boto3.dynamodb.conditions import Key
 
@@ -149,3 +149,37 @@ class ScoringRepository:
         )
         logger.info("Failed scoring: %s", scoring_id)
         return ScoringItem.from_dynamodb_item(response["Attributes"])
+
+    def save_candidate_decision(
+        self,
+        job_id: str,
+        document_id: str,
+        decision_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Persist recruiter candidate decision, reason, and notes to DynamoDB atomically."""
+        now = _utcnow_iso()
+        item = {
+            "PK": f"JOB#{job_id}",
+            "SK": f"DECISION#{document_id}",
+            "entity_type": "DECISION",
+            "job_id": job_id,
+            "document_id": document_id,
+            "updated_at": now,
+            **decision_data,
+        }
+        self._table.put_item(Item=item)
+        logger.info("Persisted decision for candidate %s in job %s to DynamoDB", document_id, job_id)
+        return item
+
+    def get_candidate_decisions(self, job_id: str) -> Dict[str, Dict[str, Any]]:
+        """Retrieve all recruiter candidate decisions for a job from DynamoDB."""
+        from boto3.dynamodb.conditions import Key
+        resp = self._table.query(
+            KeyConditionExpression=Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("DECISION#")
+        )
+        decisions: Dict[str, Dict[str, Any]] = {}
+        for it in resp.get("Items", []):
+            doc_id = it.get("document_id")
+            if doc_id:
+                decisions[doc_id] = it
+        return decisions

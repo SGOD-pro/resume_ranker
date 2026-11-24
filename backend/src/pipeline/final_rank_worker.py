@@ -6,6 +6,7 @@ over the complete set of extracted documents for a pinned job_version.
 Guarantees idempotency and version consistency; prevents stale ranking overwrites.
 """
 
+import concurrent.futures
 import json
 import logging
 import uuid
@@ -118,17 +119,24 @@ def process_final_rank_message(message: QueueMessage) -> None:
                 queue_adapter.delete_message(FINAL_RANK_QUEUE, message.receipt_handle)
             return
 
-        # Load extracted JSON from S3
-        candidates: List[Dict[str, Any]] = []
-        for d in valid_docs:
+        # Load extracted JSON from S3 concurrently
+        def _fetch_extracted_json(doc):
             try:
-                fields = storage.get_extracted_json(d.job_id, d.document_id)
-                fields["_document_id"] = d.document_id
-                if "extraction_quality" not in fields:
-                    fields["extraction_quality"] = d.extraction_quality or 0.0
-                candidates.append(fields)
+                f = storage.get_extracted_json(doc.job_id, doc.document_id)
+                f["_document_id"] = doc.document_id
+                if "extraction_quality" not in f:
+                    f["extraction_quality"] = doc.extraction_quality or 0.0
+                return f
             except Exception as e:
-                logger.error("FinalRankWorker: Could not load extracted JSON for doc %s: %s", d.document_id, e)
+                logger.error("FinalRankWorker: Could not load extracted JSON for doc %s: %s", doc.document_id, e)
+                return None
+
+        candidates: List[Dict[str, Any]] = []
+        max_workers = min(16, max(1, len(valid_docs)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for item in executor.map(_fetch_extracted_json, valid_docs):
+                if item is not None:
+                    candidates.append(item)
 
         # Build JobDescription
         raw_weights = getattr(job, "weights", {}) or {
@@ -211,12 +219,12 @@ def process_final_rank_message(message: QueueMessage) -> None:
         )
         scoring_repo.create(scoring_item)
 
-        # Update candidate document items to SCORED
-        for d in valid_docs:
+        # Update candidate document items to SCORED concurrently
+        def _mark_scored(doc):
             try:
                 docs_repo.update_status_conditional(
                     job_id=job_id,
-                    document_id=d.document_id,
+                    document_id=doc.document_id,
                     new_status=DocumentStatus.SCORED,
                     allowed_current_statuses=[
                         DocumentStatus.STRUCTURED_PARSED,
@@ -226,6 +234,9 @@ def process_final_rank_message(message: QueueMessage) -> None:
                 )
             except Exception:
                 pass
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(_mark_scored, valid_docs))
 
         # Determine terminal job & session status
         has_warnings = len(failed_docs) > 0
@@ -239,14 +250,16 @@ def process_final_rank_message(message: QueueMessage) -> None:
         sessions_repo.update_status(
             job_id, session_id, final_session_status, expected_version=session.version
         )
-        try:
-            fresh_job = jobs_repo.get(job_id)
-            if fresh_job:
-                jobs_repo.update_status(
-                    job_id, final_job_status, expected_version=fresh_job.version
-                )
-        except Exception:
-            pass
+        for _ in range(3):
+            try:
+                fresh_job = jobs_repo.get(job_id)
+                if fresh_job:
+                    jobs_repo.update_status(
+                        job_id, final_job_status, expected_version=fresh_job.version
+                    )
+                    break
+            except Exception:
+                time.sleep(0.05)
 
         logger.info(
             "FinalRankWorker: Completed final ranking for job %s (session %s) -> status %s, %d scored",

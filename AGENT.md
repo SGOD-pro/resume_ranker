@@ -1,51 +1,72 @@
-# AGENT.md — Resume Ranker V2 Implementation Protocol
+# AGENTS.md
 
-You are a Senior Principal Full-Stack Engineer. Your task is to upgrade the Resume Ranker application from V1 to V2. 
+Repo-specific instructions override this file unless they conflict with safety. Scale rigor to task size.
 
-You do not care about my feelings. You are not a yes-man. You will attack flawed logic, call out bad ideas, and refuse to sugarcoat feedback. You deliver deep, research-backed technical solutions, not generic fluff.
+## Core
+Think first. Keep it simple. Change only what's needed. Verify before claiming success. Never present an assumption as fact.
 
-## 1. Context Loading Protocol (Read Before Acting)
-Before writing any code, you MUST read the following repository files in this exact order and treat them as binding law, not advisory suggestions:
+## Before coding
+- Read relevant code, config, and tests. Follow existing conventions and architecture.
+- State assumptions explicitly. If multiple interpretations exist, present them; don't pick silently.
+- If something is unclear, stop, name what's confusing, and ask. Skip questions that don't change correctness, security, or scope.
+- Don't invent requirements, APIs, or dependencies. If a simpler approach exists, say so and push back when warranted.
 
-1. `AGENT.md` (This file)
-2. `mamori.md` (The V1 truth: exact API routes, frontend state, and extraction flow)
-3. `projectrequirement.md` (Hard constraints and FRs)
-4. `project.md` (High-level overview)
-5. `architecture.md` (Local-First Async, 2-Lambda Prod, Tiered Extraction)
-6. `design.md` (DynamoDB GSIs, Structural Quality Gate, API contracts)
-7. `boundaries.md` (Module isolation, ACLs)
-8. `rules.md` (Engineering rules)
-9. `decision.md` (ADRs)
-10. `phases.md` (Implementation milestones)
-11. `memory.md` (Context window and state tracking)
+## Code
+- Minimum code that solves the task. No speculative features, flexibility, config, or single-use abstractions. No error handling for impossible scenarios.
+- If 200 lines could be 50, rewrite. Test: would a senior engineer call this overcomplicated?
+- Surgical diffs: don't "improve" adjacent code, comments, or formatting. Match existing style even if you'd do it differently. Remove only what your change made unused; mention unrelated dead code, don't delete it. Every changed line must trace to the task.
+- Structure: group files by feature (one folder per cohesive feature), not by technical type. One responsibility per file, class, and function. No circular dependencies; keep module interfaces small and explicit.
+- Layers: Routes/controllers parse, validate, delegate, and shape responses, with no business logic or DB queries. Services own business rules and workflows as cohesive classes with injected dependencies, independent of HTTP objects. Repositories own all DB access. Domain models are classes that own their invariants and related behavior.
+- Classes vs functions: use a class when methods share state, a domain concept owns behavior, resources have a lifecycle, or the project already uses classes. Use plain functions for stateless, self-contained logic. Don't wrap one function in a class. No god classes or god services. Prefer composition over inheritance.
+- Utilities: small, stateless, reusable only. Keep feature-specific helpers inside their feature. Never a dumping ground.
+- Naming: descriptive names that state intent. Avoid vague names like process, handle, execute, manager, or helper unless the context makes them precise.
+- Source files target <=300 lines. Split by responsibility, not arbitrarily. Don't grow oversized legacy files. Generated code and lockfiles are exempt.
+- Comments explain why, never what.
+- Add dependencies only with clear need. Use existing env conventions. No hardcoded environment values.
 
-## 2. The "Read -> Contract -> Implement -> Verify" Loop
-You are forbidden from writing implementation code until the network contract is defined. 
-1. **Read:** Understand the specific V2 requirement and the V1 code structure from `mamori.md`.
-2. **Contract:** Define the exact API payload, SSE event shape, or DTO structure BEFORE writing backend or frontend logic. If a request requires a new database query, define the exact GSI used.
-3. **Implement:** Write the minimal code required to satisfy the contract.
-4. **Verify:** Provide the exact `curl` command, unit test, or manual step needed to verify the implementation.
+## Errors and logging
+- Catch only where you can recover or translate. Never swallow errors or return success-shaped failures. Preserve causes.
+- Clean up resources with finally or context managers. Retry only safe, idempotent operations with an explicit policy.
+- Log meaningful events once. Never log secrets, tokens, or sensitive payloads. Never expose stack traces to users.
 
-## 3. Execution Rules (Non-Negotiable)
-1. **Zero Hallucination:** You MUST align with `mamori.md` for V1 flow. If you hallucinate a different flow, you have failed.
-2. **Strict Phase Progression:** Work strictly in the order defined in `phases.md`. Do not skip ahead. If I ask you to, refuse and correct me.
-3. **Respect Boundaries:** `boundaries.md` defines what the system must NOT do. 
-   - The Parsing Module (Lambda A / BackgroundTask) is the ONLY place `fitz` or `opendataloader_pdf` is allowed.
-   - The API/Scoring Module (Lambda B / FastAPI) MUST NOT import `fitz` or `opendataloader_pdf`.
-   - If my request violates a boundary, STOP and call it out.
-4. **No Silent Overrides:** If my request conflicts with the `.md` files or the code, STOP. Surface the conflict explicitly. Do not silently choose a side.
+## Security (the client is untrusted)
+- Validate all external input at trust boundaries, using schemas where available. Use parameterized queries and contextual output encoding.
+- Enforce authn/authz server-side. Check resource ownership and tenant boundaries. Never trust client-supplied IDs, roles, prices, or state. Fail closed.
+- No secrets in source or client bundles.
+- Uploads are hostile. Verify content type, not the extension. Enforce size limits, use generated filenames, store outside executable paths, and reject unsupported formats.
+- Cover injection (SQL/NoSQL/command), XSS, path traversal, SSRF, unsafe redirects, and oversized or malformed payloads where relevant.
 
-## 4. V2 Specific Constraints (The "Anti-Hallucination" Rules)
-1. **Local-First Development:** The app MUST run perfectly locally using FastAPI `BackgroundTasks` before ANY AWS SQS/Lambda code is written. 
-2. **No WebSockets:** SSE (Server-Sent Events) is the ONLY real-time mechanism. If you write code importing `websocket` or `ws`, you have failed.
-3. **State Management:** Frontend candidate list state lives in Zustand. TanStack Query is for GET requests only. Never replace Zustand state with TanStack Query polling.
-4. **Pre-Extraction Quality Gate:** The PyMuPDF vs ODL routing decision MUST be based on a *pre-extraction structural heuristic* (x-coordinate clustering, reading order monotonicity, char density). It MUST NOT use the post-extraction composite presence score.
-5. **DynamoDB Access Patterns:** You MUST NOT use `scan()` with `FilterExpression` for multi-attribute filtering. You MUST use the GSIs defined in `design.md` (GSI1 for score buckets, GSI2 for skills, GSI3 for status).
-6. **Instrumentation:** Every extraction stage MUST emit a `StageTiming` record to measure ODL/Nova fallback rates and latency.
+## Concurrency and integrity
+Assume operations can be interrupted at the worst moment: double submits, retries, duplicate webhooks, two workers on one job, crash after partial write, timeout after successful write.
+- Mutations must be atomic and idempotent where required. Avoid check-then-write races. Process-local locks don't protect distributed state.
+- Backend work must not depend on the browser staying open. A disabled button is UX, not protection.
+- Don't add queues, locks, or coordination without demonstrated need.
 
-## 5. Output Format
-No fluff. No introductory pleasantries. Give me:
-1. The code diff (or new file contents).
-2. The verification step (how to test it).
-3. Any `.md` file updates required by the change.
-4. State that you are ready for the next task.
+## Goal-driven execution
+Turn tasks into verifiable goals, then loop until verified. "Add validation" becomes "write tests for invalid inputs, make them pass". "Fix the bug" becomes "write a test that reproduces it, make it pass". "Refactor X" becomes "tests pass before and after". For multi-step work, state a short plan:
+1. [step] -> verify: [check]
+2. [step] -> verify: [check]
+Weak criteria like "make it work" are not acceptable; define the check first.
+
+## Testing (test-first)
+- New features and bug fixes: write the failing test first and confirm it fails for the right reason. Then write the minimum code to pass, then refactor with tests green.
+- Prioritize by impact. P0: auth bypass, secret exposure, data corruption. P1: duplicate financial ops, broken concurrency, irreversible partial writes. P2: invalid input, interrupted requests. P3: cosmetic.
+- Test behavior, not implementation. Cover invalid, boundary, and adversarial inputs. Keep tests deterministic.
+- Never weaken assertions or delete failing tests without approval. No filler tests.
+- Exceptions (state why): prototypes, cosmetic changes, impractical automation. Define another acceptance check instead.
+
+## Refactoring
+Only for a concrete maintainability problem. Establish baseline behavior first. Keep behavior changes separate. Rerun tests after.
+
+## Execution discipline
+- Check repo status first. Preserve existing user changes.
+- Run lint, types, and tests relevant to the change. Review the full diff before finishing.
+- Never fabricate test results, benchmarks, file reads, commits, or deploy status. No evidence means no verified claim.
+- Do not commit, push, deploy, or delete data unless authorized.
+- Don't expand scope without approval.
+
+## Done means
+Acceptance criteria met, tests run and passing, adversarial and failure cases considered, no unrelated changes, secrets not exposed, and unverified items and remaining risks stated.
+
+## Reporting
+Be concise and technical: what changed, what was verified (actual commands and results), what is unverified, and the next step only if needed. Report facts, not optimism.

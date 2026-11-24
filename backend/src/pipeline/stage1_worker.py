@@ -42,8 +42,25 @@ from src.infrastructure.storage.storage_service import StorageService
 logger = logging.getLogger(__name__)
 
 from urllib.parse import unquote_plus
+import threading
+import atexit
 
 _process_pool: Optional[concurrent.futures.ProcessPoolExecutor] = None
+_pool_lock = threading.Lock()
+
+
+def _cleanup_process_pool() -> None:
+    global _process_pool
+    with _pool_lock:
+        if _process_pool is not None:
+            try:
+                _process_pool.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+            _process_pool = None
+
+
+atexit.register(_cleanup_process_pool)
 
 
 def _parse_pdf_in_process(pdf_bytes: bytes) -> Dict[str, Any]:
@@ -117,17 +134,21 @@ def run_isolated_pdf_parse(pdf_bytes: bytes) -> Dict[str, Any]:
     """Execute PDF parsing in a bounded process pool, falling back to sequential in-process if pool unavailable."""
     global _process_pool
     # If running in serverless / AWS Lambda, execute directly within the isolated Lambda process
-    from src.config.aws import is_running_in_lambda
+    from src.config.aws import is_running_in_lambda, get_settings
     if is_running_in_lambda():
         return _parse_pdf_in_process(pdf_bytes)
 
     if _process_pool is None:
-        try:
-            max_workers = max(1, min(4, os.cpu_count() or 1))
-            _process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
-        except Exception as pool_err:
-            logger.warning("Could not initialize ProcessPoolExecutor: %s; falling back to direct parse", pool_err)
-            _process_pool = None
+        with _pool_lock:
+            if _process_pool is None:
+                try:
+                    s = get_settings()
+                    configured_workers = getattr(s, "STAGE1_MAX_WORKERS", 4)
+                    max_workers = max(1, min(configured_workers, os.cpu_count() or 1))
+                    _process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+                except Exception as pool_err:
+                    logger.warning("Could not initialize ProcessPoolExecutor: %s; falling back to direct parse", pool_err)
+                    _process_pool = None
 
     if _process_pool is not None:
         try:
@@ -135,8 +156,27 @@ def run_isolated_pdf_parse(pdf_bytes: bytes) -> Dict[str, Any]:
             return future.result(timeout=30)
         except Exception as exc:
             logger.warning("Process pool submission failed: %s; falling back to sequential parse", exc)
+            with _pool_lock:
+                if _process_pool is not None:
+                    try:
+                        _process_pool.shutdown(wait=False, cancel_futures=True)
+                    except Exception:
+                        pass
+                    _process_pool = None
 
     return _parse_pdf_in_process(pdf_bytes)
+
+
+def shutdown_stage1_pool() -> None:
+    """Gracefully shut down the Stage 1 isolated process pool if initialized."""
+    global _process_pool
+    with _pool_lock:
+        if _process_pool is not None:
+            try:
+                _process_pool.shutdown(wait=True, cancel_futures=True)
+            except Exception:
+                pass
+            _process_pool = None
 
 
 def parse_s3_key_for_job_and_file(s3_key: str) -> Optional[Tuple[str, str]]:
@@ -375,8 +415,8 @@ def process_stage1_message(message: Any) -> bool:
                 candidate_name=candidate_name,
                 s3_extracted_key=s3_stage2_key,
             )
-            logger.info("|PYMUPDF| [Job: %s, File: %s] Clean fast-path -> S2_DONE (quality %.2f, candidate: '%s')",
-                        job_id, file_id, min_quality, candidate_name)
+            logger.info("|PYMUPDF| [Job: %s, File: %s] Clean fast-path -> S2_DONE (quality %.2f, resolved_name=%s)",
+                        job_id, file_id, min_quality, bool(candidate_name))
         else:
             # Needs Stage 2 fallback (ODL / Nova)
             files_repo.update_file_non_terminal(
@@ -388,8 +428,8 @@ def process_stage1_message(message: Any) -> bool:
                 candidate_name=candidate_name,
                 file_size=len(pdf_bytes),
             )
-            logger.info("|PYMUPDF| [Job: %s, File: %s] Fallback required -> S1_DONE (quality %.2f, unresolved: %d, candidate: '%s')",
-                        job_id, file_id, min_quality, len(unresolved), candidate_name)
+            logger.info("|PYMUPDF| [Job: %s, File: %s] Fallback required -> S1_DONE (quality %.2f, unresolved: %d, resolved_name=%s)",
+                        job_id, file_id, min_quality, len(unresolved), bool(candidate_name))
 
             # If recruiter already requested analysis, handle routing to Stage 2
             job = jobs_repo.get(job_id)

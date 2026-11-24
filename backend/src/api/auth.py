@@ -81,9 +81,23 @@ _ORGANIZATIONS: Dict[str, Organization] = {
     )
 }
 
-def _hash_password(password: str) -> str:
-    salt = b"sortlist_v2_salt"
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000).hex()
+def _hash_password(password: str, salt: Optional[bytes] = None) -> str:
+    if salt is None:
+        salt = os.urandom(16)
+    pw_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000).hex()
+    return f"{salt.hex()}${pw_hash}"
+
+
+def _verify_password(password: str, stored_hash: str) -> bool:
+    if "$" in stored_hash:
+        salt_hex, hash_hex = stored_hash.split("$", 1)
+        salt = bytes.fromhex(salt_hex)
+        candidate_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000).hex()
+        return hmac.compare_digest(hash_hex, candidate_hash)
+    # Backward compatibility with legacy static salt
+    legacy_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), b"sortlist_v2_salt", 100_000).hex()
+    return hmac.compare_digest(stored_hash, legacy_hash)
+
 
 _USERS: Dict[str, User] = {
     "recruiter@sortlist.local": User(
@@ -92,7 +106,7 @@ _USERS: Dict[str, User] = {
         email="recruiter@sortlist.local",
         name="Lead Recruiter",
         role="recruiter",
-        password_hash=_hash_password("recruiter123"),
+        password_hash=_hash_password("recruiter123", salt=b"sortlist_v2_salt"),
         created_at=time.time(),
     )
 }
@@ -143,7 +157,7 @@ def verify_session_token(token: str) -> Optional[AuthContext]:
         payload = json.loads(_b64decode(payload_b64).decode("utf-8"))
         exp = payload.get("exp", 0)
         if time.time() > exp:
-            logger.info("Session token expired for user: %s", payload.get("email"))
+            logger.info("Session token expired for user_id: %s", payload.get("sub", "unknown"))
             return None
 
         return AuthContext(
@@ -160,18 +174,83 @@ def verify_session_token(token: str) -> Optional[AuthContext]:
 
 # ── User and Org Management Helpers ──────────────────────────────────────────
 
+def _persist_user_dynamo(user: User) -> None:
+    try:
+        from src.infrastructure.repositories.base import _get_table
+        table = _get_table()
+        table.put_item(
+            Item={
+                "PK": f"USER#{user.email}",
+                "SK": "METADATA",
+                "entity_type": "USER",
+                "user_id": user.user_id,
+                "org_id": user.org_id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "password_hash": user.password_hash,
+                "created_at": str(user.created_at),
+            }
+        )
+    except Exception as exc:
+        logger.debug("DynamoDB user persistence fallback: %s", exc)
+
+
+def _persist_org_dynamo(org: Organization) -> None:
+    try:
+        from src.infrastructure.repositories.base import _get_table
+        table = _get_table()
+        table.put_item(
+            Item={
+                "PK": f"ORG#{org.org_id}",
+                "SK": "METADATA",
+                "entity_type": "ORG",
+                "org_id": org.org_id,
+                "name": org.name,
+                "created_at": str(org.created_at),
+            }
+        )
+    except Exception as exc:
+        logger.debug("DynamoDB org persistence fallback: %s", exc)
+
+
+def _fetch_user_dynamo(email: str) -> Optional[User]:
+    try:
+        from src.infrastructure.repositories.base import _get_table
+        table = _get_table()
+        resp = table.get_item(Key={"PK": f"USER#{email}", "SK": "METADATA"})
+        it = resp.get("Item")
+        if it:
+            u = User(
+                user_id=it["user_id"],
+                org_id=it["org_id"],
+                email=it["email"],
+                name=it["name"],
+                role=it["role"],
+                password_hash=it["password_hash"],
+                created_at=float(it.get("created_at", 0.0) or 0.0),
+            )
+            _USERS[email] = u
+            return u
+    except Exception as exc:
+        logger.debug("DynamoDB user fetch fallback: %s", exc)
+    return None
+
+
 def register_user(org_name: str, email: str, name: str, password: str, role: str = "recruiter") -> User:
     """Register a new organization and initial user."""
     norm_email = email.strip().lower()
-    if norm_email in _USERS:
+    if norm_email in _USERS or _fetch_user_dynamo(norm_email):
         raise ValueError("User with this email already exists")
 
     org_id = f"org_{uuid.uuid4().hex[:10]}"
-    _ORGANIZATIONS[org_id] = Organization(
+    org = Organization(
         org_id=org_id,
         name=org_name.strip(),
         created_at=time.time(),
     )
+    _ORGANIZATIONS[org_id] = org
+    _persist_org_dynamo(org)
 
     user = User(
         user_id=f"user_{uuid.uuid4().hex[:10]}",
@@ -183,17 +262,18 @@ def register_user(org_name: str, email: str, name: str, password: str, role: str
         created_at=time.time(),
     )
     _USERS[norm_email] = user
+    _persist_user_dynamo(user)
     return user
 
 
 def authenticate_user(email: str, password: str) -> Optional[User]:
     """Authenticate user with email and password."""
     norm_email = email.strip().lower()
-    user = _USERS.get(norm_email)
+    user = _USERS.get(norm_email) or _fetch_user_dynamo(norm_email)
     if not user:
         return None
 
-    if hmac.compare_digest(user.password_hash, _hash_password(password)):
+    if _verify_password(password, user.password_hash):
         return user
     return None
 

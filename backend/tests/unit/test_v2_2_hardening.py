@@ -229,7 +229,7 @@ def test_duplicate_pdf_marked_rejected_duplicate_in_worker(client, auth_headers)
     process_fast_parse_message(msg1)
 
     item1 = docs_repo.get(job_id, doc1["document_id"])
-    assert item1.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.NEEDS_ODL)
+    assert item1.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.NEEDS_ODL, DocumentStatus.NEEDS_NOVA)
     assert item1.content_hash is not None
 
     # Process second message (identical hash)

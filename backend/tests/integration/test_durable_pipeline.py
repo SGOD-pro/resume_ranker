@@ -372,7 +372,7 @@ def test_scenario_3_stage_routing_odl_and_nova(client, auth_headers, monkeypatch
     # Mock PyMuPDF layout score conditionally BEFORE finalize triggers queue drain
     from src.pipeline import fast_parse_worker
 
-    def mock_analyze(page):
+    def mock_analyze(page, *args, **kwargs):
         text = page.get_text()
         if "Bob Complex" in text:
             return 0.45  # Below threshold -> NEEDS_ODL

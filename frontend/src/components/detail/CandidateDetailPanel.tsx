@@ -33,9 +33,9 @@ export function CandidateDetailPanel() {
       (sb.experience * (jobWeights.experience / totalWeight)) +
       (sb.keywords   * (jobWeights.keywords   / totalWeight)) +
       (sb.education  * (jobWeights.education  / totalWeight));
-    // v2.2: Do not zero score on knockout; retain calculated relevance score for explainability
-    const dynamicScore = Math.round(baseScore * 10) / 10;
-    return { ...c, overallScore: dynamicScore };
+    // Retain authoritative backend overallScore and compute previewScore separately
+    const previewScore = Math.round(baseScore * 10) / 10;
+    return { ...c, previewScore };
   }, [selectedId, candidates, jobWeights]);
 
   if (!candidate) {

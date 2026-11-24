@@ -9,7 +9,7 @@ Bucket name and endpoint are read from AWSSettings.
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import boto3
 
@@ -61,9 +61,10 @@ class StorageService:
         s3_key: str,
         content_type: str = "application/pdf",
         expires_in: int = 900,
+        content_length: Optional[int] = None,
     ) -> str:
         """Generate a presigned PUT URL for direct browser-to-S3 upload."""
-        params = {
+        params: Dict[str, Any] = {
             "Bucket": self._bucket,
             "Key": s3_key,
             "ContentType": content_type,

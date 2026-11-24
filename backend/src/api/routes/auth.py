@@ -5,6 +5,7 @@ Provides session management, registration, and user identity endpoints.
 Sets secure httpOnly cookies and returns bearer tokens.
 """
 
+import os
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -58,6 +59,7 @@ def register(body: RegisterRequest, response: Response):
         raise HTTPException(status_code=400, detail=str(exc))
 
     token = create_session_token(user)
+    is_prod = os.environ.get("ENVIRONMENT", "dev").lower() in ("prod", "production")
 
     # Set httpOnly secure session cookie
     response.set_cookie(
@@ -66,7 +68,7 @@ def register(body: RegisterRequest, response: Response):
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=False,  # Set to True behind TLS in production
+        secure=is_prod,
     )
 
     return AuthResponse(
@@ -90,6 +92,7 @@ def login(body: LoginRequest, response: Response):
         )
 
     token = create_session_token(user)
+    is_prod = os.environ.get("ENVIRONMENT", "dev").lower() in ("prod", "production")
 
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -97,7 +100,7 @@ def login(body: LoginRequest, response: Response):
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=is_prod,
     )
 
     return AuthResponse(

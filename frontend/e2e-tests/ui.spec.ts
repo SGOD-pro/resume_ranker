@@ -32,7 +32,7 @@ test.describe('E2E UI Test - Dashboard and ATS Checker', () => {
     await page.locator('input[data-testid="resume-file-input"]').setInputFiles(resumePath);
     
     // Wait for upload to complete: "Analyze Resumes" button becomes enabled
-    const analyzeBtn = page.locator('button:has-text("Analyze Resumes")');
+    const analyzeBtn = page.locator('[data-testid="analyze-button"]');
     await expect(analyzeBtn).toBeEnabled({ timeout: 180000 });
     await analyzeBtn.click();
 

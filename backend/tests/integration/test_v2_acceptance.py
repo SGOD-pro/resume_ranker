@@ -51,14 +51,15 @@ def test_security_headers(client):
 
 def test_auth_registration_and_login(client):
     """Verify user/organization registration, login, and session cookie generation."""
-    email = "recruiter_test@example.com"
+    uid = uuid.uuid4().hex[:8]
+    email = f"recruiter_{uid}@example.com"
     password = "SuperSecurePassword123!"
 
     # Register
     reg_resp = client.post(
         "/api/v2/auth/register",
         json={
-            "org_name": "Acme Talent Partners",
+            "org_name": f"Acme Talent Partners {uid}",
             "email": email,
             "name": "Jane Doe",
             "password": password,
@@ -91,12 +92,13 @@ def test_auth_registration_and_login(client):
 
 def test_tenant_isolation(client):
     """Verify that Org A cannot read or mutate resources belonging to Org B."""
+    uid = uuid.uuid4().hex[:8]
     # Register Org A
     resp_a = client.post(
         "/api/v2/auth/register",
         json={
-            "org_name": "Org Alpha",
-            "email": "alpha_admin@example.com",
+            "org_name": f"Org Alpha {uid}",
+            "email": f"alpha_{uid}@example.com",
             "name": "Alpha Lead",
             "password": "PasswordAlpha123!",
         },
@@ -107,8 +109,8 @@ def test_tenant_isolation(client):
     resp_b = client.post(
         "/api/v2/auth/register",
         json={
-            "org_name": "Org Beta",
-            "email": "beta_admin@example.com",
+            "org_name": f"Org Beta {uid}",
+            "email": f"beta_{uid}@example.com",
             "name": "Beta Lead",
             "password": "PasswordBeta123!",
         },

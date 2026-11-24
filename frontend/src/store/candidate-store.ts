@@ -20,6 +20,7 @@ type SortField = 'score' | 'name';
 interface CandidateStore {
   candidates: Candidate[];
   selectedId: string | null;
+  selectedJobId: string | null;
   filterSignal: Signal | 'all';
   sortField: SortField;
   searchQuery: string;
@@ -27,20 +28,35 @@ interface CandidateStore {
   upload: UploadState;
 
   // Actions (only primitive state mutations — no computed selectors)
-  selectCandidate: (id: string) => void;
+  selectCandidate: (id: string | null, jobId?: string | null) => void;
   setFilterSignal: (signal: Signal | 'all') => void;
   setSortField: (field: SortField) => void;
   setSearchQuery: (query: string) => void;
   toggleShowKnockouts: () => void;
-  setCandidates: (candidates: Candidate[]) => void;
+  setCandidates: (candidates: Candidate[], jobId?: string | null) => void;
   setStatus: (id: string, status: CandidateStatus) => void;
   setNote: (id: string, note: string) => void;
   setUpload: (upload: Partial<UploadState>) => void;
 }
 
+function getInitialSelectedId(jobId?: string | null): string | null {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const activeJobId = jobId || sessionStorage.getItem('active_job_id');
+      if (activeJobId) {
+        return sessionStorage.getItem(`selected_candidate_${activeJobId}`);
+      }
+    }
+  } catch (err) {
+    void err;
+  }
+  return null;
+}
+
 export const useCandidateStore = create<CandidateStore>((set) => ({
   candidates: [],
-  selectedId: null,
+  selectedId: getInitialSelectedId(),
+  selectedJobId: null,
   filterSignal: 'all',
   sortField: 'score',
   searchQuery: '',
@@ -52,9 +68,60 @@ export const useCandidateStore = create<CandidateStore>((set) => ({
     isUploading: false,
   },
 
-  setCandidates: (candidates) => set({ candidates, selectedId: null }),
+  setCandidates: (candidates, jobId) =>
+    set((state) => {
+      const activeJobId =
+        jobId ||
+        state.selectedJobId ||
+        (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('active_job_id') : null);
+      let targetId = state.selectedId;
+      if (activeJobId && typeof sessionStorage !== 'undefined') {
+        const storedForJob = sessionStorage.getItem(`selected_candidate_${activeJobId}`);
+        if (storedForJob) {
+          targetId = storedForJob;
+        } else if (state.selectedJobId && state.selectedJobId !== activeJobId) {
+          targetId = null;
+        }
+      }
+      const validSelectedId =
+        targetId && candidates.some((c) => c.id === targetId)
+          ? targetId
+          : null;
+      try {
+        if (activeJobId && typeof sessionStorage !== 'undefined') {
+          if (validSelectedId) {
+            sessionStorage.setItem(`selected_candidate_${activeJobId}`, validSelectedId);
+          } else {
+            sessionStorage.removeItem(`selected_candidate_${activeJobId}`);
+          }
+        }
+      } catch (err) {
+        void err;
+      }
+      return {
+        candidates,
+        selectedId: validSelectedId,
+        selectedJobId: activeJobId,
+      };
+    }),
 
-  selectCandidate: (id) => set({ selectedId: id }),
+  selectCandidate: (id, jobId) => {
+    try {
+      const activeJobId =
+        jobId ||
+        (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('active_job_id') : null);
+      if (activeJobId && typeof sessionStorage !== 'undefined') {
+        if (id) {
+          sessionStorage.setItem(`selected_candidate_${activeJobId}`, id);
+        } else {
+          sessionStorage.removeItem(`selected_candidate_${activeJobId}`);
+        }
+      }
+    } catch (err) {
+      void err;
+    }
+    set({ selectedId: id });
+  },
 
   setFilterSignal: (signal) => set({ filterSignal: signal }),
 

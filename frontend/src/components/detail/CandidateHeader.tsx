@@ -34,7 +34,7 @@ export function CandidateHeader({ candidate }: CandidateHeaderProps) {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-heading text-2xl uppercase tracking-brutal text-foreground">
+            <h3 data-testid="candidate-detail-name" className="font-heading text-2xl uppercase tracking-brutal text-foreground">
               {candidate.name}
             </h3>
 
@@ -155,10 +155,11 @@ export function CandidateHeader({ candidate }: CandidateHeaderProps) {
           const { jobId: storeJobId, jobFiles } = useAppStore.getState();
 
           // Resolve true file UUID from store jobFiles if possible
-          let realFileId = candidate.id;
+          const targetDocId = candidate.documentId || candidate.id;
+          let realFileId = targetDocId;
           const matchedFile = (jobFiles || []).find(
             (f) =>
-              f.file_id === candidate.id ||
+              f.file_id === targetDocId ||
               (f.candidate_name && f.candidate_name.toLowerCase() === candidate.name.toLowerCase()) ||
               f.filename === candidate.name
           );

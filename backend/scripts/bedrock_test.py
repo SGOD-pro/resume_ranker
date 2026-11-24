@@ -15,25 +15,32 @@ for p in [str(BACKEND_DIR), str(PROJECT_ROOT)]:
         sys.path.insert(0, p)
 
 import boto3
-
 from src.config.aws import get_settings
-settings = get_settings()
-client = boto3.client(
-    "bedrock-runtime",
-    region_name=settings.aws_default_region,
-    aws_access_key_id=settings.aws_access_key_id,
-    aws_secret_access_key=settings.aws_secret_access_key,
-)
 
-try:
-    response = client.converse(
-        modelId="amazon.nova-micro-v1:0",
-        messages=[
-            {
-                "role": "user",
-                "content": [{"text": "Hello"}]
-            }
-        ]
+
+def main():
+    settings = get_settings()
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=getattr(settings, "AWS_DEFAULT_REGION", "us-east-1"),
+        aws_access_key_id=getattr(settings, "AWS_ACCESS_KEY_ID", None),
+        aws_secret_access_key=getattr(settings, "AWS_SECRET_ACCESS_KEY", None),
     )
-except ClientError as e:
-    print(json.dumps(e.response, indent=2))
+
+    try:
+        response = client.converse(
+            modelId="amazon.nova-micro-v1:0",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"text": "Hello"}]
+                }
+            ]
+        )
+        print(response)
+    except ClientError as e:
+        print(json.dumps(e.response, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import type { JobFileStatus } from './types';
+import { useCandidateStore } from './candidate-store';
 
 export type BackendStatus = 'checking' | 'waking-up' | 'ready' | 'unreachable';
 export type AppPhase =
@@ -98,7 +99,21 @@ export const useAppStore = create<AppStore>((set) => ({
     set({ uploadProgress: { ...defaultUploadProgress } }),
   setSseRetryCount: (count) => set({ sseRetryCount: count }),
   setBlockingError: (error) => set({ blockingError: error }),
-  setJobId: (id) => set({ jobId: id }),
+  setJobId: (id) => {
+    try {
+      if (id && typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('active_job_id', id);
+        const storedSelected = sessionStorage.getItem(`selected_candidate_${id}`);
+        useCandidateStore.setState({ selectedId: storedSelected || null, selectedJobId: id });
+      } else if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('active_job_id');
+        useCandidateStore.setState({ selectedId: null, selectedJobId: null });
+      }
+    } catch {
+      // ignore storage access errors
+    }
+    set({ jobId: id });
+  },
   setSessionId: (id) => set({ sessionId: id }),
   setJobFiles: (files) => set({ jobFiles: files }),
   setFileIdMap: (map) => set({ fileIdMap: map }),

@@ -67,7 +67,7 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
             <span className="font-semibold text-sm truncate">{displayName}</span>
           )}
         </div>
-        <span className="w-16 text-right font-mono text-sm font-bold">
+        <span data-testid="candidate-row-score" className="w-16 text-right font-mono text-sm font-bold">
           {formattedScore}
         </span>
         <div className="flex items-center justify-end gap-2 shrink-0">

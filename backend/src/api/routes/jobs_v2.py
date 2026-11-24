@@ -4,14 +4,13 @@ jobs_v2.py — Job lifecycle API routes (API version: v2)
 Public API prefix: /api/v2/jobs
 
 Implements Phase 1 Architecture & Amendments:
-1. Security: session ownership enforcement on every job route, max 100 files per job,
-   max 20 jobs per session per day, no static credentials.
+1. Security: strict tenant isolation and session ownership enforcement on every job route,
+   max 100 files per job, max 20 jobs per session per day, no static credentials.
 2. Terminal-state accounting: S1_FAILED, S2_DONE, S2_FAILED, REMOVED decrement remaining.
    POST /jobs/{id}/analyze accepts explicit file_ids list, marks others REMOVED.
    GET /jobs/{id}/status uses single DynamoDB query + ETag/304 short-polling + 10-minute stalling detection.
-3. Presigned POST direct upload: content-length-range 1..10MB. Paginated when files > 50.
-   /complete and /finalize endpoints permanently removed.
-4. No WebSockets, no SSE.
+3. Durable upload sessions and transactional outbox pattern for decoupled direct-to-S3 ingestion.
+4. Server-Sent Events (SSE) real-time extraction and analysis progress streaming.
 """
 
 import asyncio
@@ -20,7 +19,9 @@ import json
 import logging
 import math
 import os
+import re
 import time
+import urllib.parse
 import uuid
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
@@ -67,6 +68,7 @@ from src.infrastructure.queue.queue_manager import (
     get_queue_adapter,
     enqueue_fast_parse,
 )
+from src.infrastructure.queue.outbox import write_outbox_and_send
 from src.pipeline.coordinator import check_and_progress_session
 from src.pipeline.worker_runner import dispatch_fast_parse
 
@@ -144,26 +146,40 @@ def get_session_id(request: Request, response: Optional[Response] = None) -> str
 
 def enforce_session_ownership(job: JobItem, request: Request, ctx: Optional[AuthContext] = None) -> None:
     """Verify session or tenant ownership of the requested job."""
-    job_org = getattr(job, "org_id", None)
-    if ctx and ctx.org_id and ctx.org_id != "org_default" and job_org and job_org != "org_default":
-        if ctx.org_id != job_org:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Access denied: tenant organization mismatch."},
-            )
-        return
+    job_org = getattr(job, "org_id", None) or "org_default"
+    caller_org = ctx.org_id if ctx and ctx.org_id else "org_default"
 
+    # 1. Strict tenant isolation
+    if caller_org != job_org and (not ctx or ctx.role != "superadmin"):
+        logger.warning(
+            "Tenant access violation: caller org %s attempted access to job org %s",
+            caller_org,
+            job_org,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Access denied: tenant organization mismatch."},
+        )
+
+    # 2. Session isolation: If job belongs to an authenticated custom tenant,
+    # authenticated members of that tenant have organization-level access.
+    # Otherwise (for org_default / public / unauthenticated sessions),
+    # verify matching session_id to prevent cross-session IDOR.
     caller_session = (
         request.cookies.get("job_session_id")
         or request.cookies.get("session_id")
         or request.headers.get("X-Session-ID")
+        or request.query_params.get("session_id")
     )
     job_session = getattr(job, "session_id", None)
-    if job_session and caller_session and job_session != caller_session:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "Access denied: session ownership mismatch."},
-        )
+    is_dedicated_tenant = bool(ctx and ctx.org_id and ctx.org_id != "org_default" and caller_org == job_org)
+
+    if job_session and isinstance(job_session, str) and job_session.strip() and not is_dedicated_tenant:
+        if not caller_session or caller_session != job_session:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "FORBIDDEN", "message": "Access denied: session ownership mismatch."},
+            )
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -214,6 +230,7 @@ class CreateJobResponse(BaseModel):
     has_more: bool
     next_page: Optional[int] = None
     files: List[PresignedPostInfo]
+    session_id: Optional[str] = None
 
 
 class PaginatedPresignedPostsResponse(BaseModel):
@@ -462,6 +479,7 @@ async def create_job(
         has_more=has_more,
         next_page=2 if has_more else None,
         files=returned_files,
+        session_id=session_id,
     )
 
 @router.post("/ats-check")
@@ -646,6 +664,7 @@ async def notify_files_uploaded(
     upload_sessions = _sessions_repo.list_for_job(job_id)
     resolved_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
 
+    failed_enqueue_count = 0
     for f in all_files:
         if f.file_id in target_ids and not f.is_terminal and f.status not in (FileStatus.S1_DONE, FileStatus.S2_DONE):
             msg = QueueMessage(
@@ -668,16 +687,17 @@ async def notify_files_uploaded(
                     s3_key=f.s3_raw_key,
                     content_hash="",
                 )
+                enqueued_count += 1
             except Exception as e:
-                logger.warning("Could not enqueue via enqueue_fast_parse: %s", e)
+                logger.warning("Could not enqueue via enqueue_fast_parse for file %s: %s", f.file_id, e)
+                failed_enqueue_count += 1
 
-            enqueued_count += 1
-
-    logger.info("|PYMUPDF| Enqueued and started %d files for background PyMuPDF extraction for job %s", enqueued_count, job_id)
+    logger.info("|PYMUPDF| Enqueued and started %d files (failed: %d) for background PyMuPDF extraction for job %s", enqueued_count, failed_enqueue_count, job_id)
+    status_str = "processing" if enqueued_count > 0 else ("failed" if failed_enqueue_count > 0 else "noop")
     return {
         "job_id": job_id,
         "enqueued": enqueued_count,
-        "status": "processing",
+        "status": status_str,
         "message": f"PyMuPDF background extraction started for {enqueued_count} files.",
     }
 
@@ -703,17 +723,33 @@ async def upload_resumes_multipart(
 
     logger.info("|PYMUPDF| Backend received %d resumes from frontend for job %s. Uploading to S3 and starting extraction...", len(files), job_id)
 
-    # Read all file contents and validate PDF magic bytes (%PDF)
+    # Read all file contents and validate PDF header and structural trailer
     file_payloads = []
     rejected = []
     for f in files:
-        content = await f.read()
         f_name = f.filename or "resume.pdf"
-        if not content.startswith(b"%PDF"):
-            logger.warning("Rejected file %s: invalid PDF magic bytes", f_name)
-            rejected.append({"filename": f_name, "reason": "Invalid PDF magic bytes: file is not a valid PDF document."})
-            continue
-        file_payloads.append((f_name, content))
+        try:
+            content = await f.read()
+            if len(content) < 32:
+                logger.warning("Rejected file %s: size < 32 bytes", f_name)
+                rejected.append({"filename": f_name, "reason": "Corrupted or empty file: size under 32 bytes."})
+                continue
+            if len(content) > settings.MAX_FILE_SIZE_BYTES:
+                logger.warning("Rejected file %s: size > %d bytes", f_name, settings.MAX_FILE_SIZE_BYTES)
+                rejected.append({"filename": f_name, "reason": f"File exceeds {settings.MAX_FILE_SIZE_BYTES // (1024 * 1024)}MB limit."})
+                continue
+            if not content.startswith(b"%PDF-"):
+                logger.warning("Rejected file %s: invalid PDF magic bytes", f_name)
+                rejected.append({"filename": f_name, "reason": "Invalid PDF header: file is not a valid PDF document."})
+                continue
+            if b"%%EOF" not in content[-1024:]:
+                logger.warning("Rejected file %s: missing %%EOF trailer", f_name)
+                rejected.append({"filename": f_name, "reason": "Corrupted PDF: missing %%EOF trailer."})
+                continue
+            file_payloads.append((f_name, content))
+        except Exception as read_err:
+            logger.warning("Rejected file %s: read error %s", f_name, read_err)
+            rejected.append({"filename": f_name, "reason": f"Read error: {str(read_err)}"})
 
     upload_sessions = _sessions_repo.list_for_job(job_id)
     multipart_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
@@ -746,10 +782,21 @@ async def upload_resumes_multipart(
         )
         return f_item, q_msg
 
-    # Parallel S3 uploads
-    upload_results = await asyncio.gather(
-        *(asyncio.to_thread(_upload_single_s3, fn, c) for fn, c in file_payloads)
-    )
+    # Bounded concurrent S3 uploads (semaphore of 4 to bound RAM and sockets)
+    upload_sem = asyncio.Semaphore(4)
+
+    async def _bounded_upload(fn: str, c: bytes):
+        async with upload_sem:
+            return await asyncio.to_thread(_upload_single_s3, fn, c)
+
+    upload_results = []
+    for fn, c in file_payloads:
+        try:
+            res = await _bounded_upload(fn, c)
+            upload_results.append(res)
+        except Exception as up_err:
+            logger.error("S3 upload failed for %s: %s", fn, up_err)
+            rejected.append({"filename": fn, "reason": f"S3 upload failed: {str(up_err)}"})
 
     file_items = [r[0] for r in upload_results]
     messages = [r[1] for r in upload_results]
@@ -888,6 +935,7 @@ async def create_upload_session(
 
     doc_infos: List[DocumentPresignedUrlInfo] = []
     file_items: List[FileItem] = []
+    doc_items: List[DocumentItem] = []
     for f in body.files:
         doc_id = str(uuid.uuid4())
         s3_key = f"{ctx.org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
@@ -895,6 +943,7 @@ async def create_upload_session(
             s3_key=s3_key,
             content_type=f.content_type or "application/pdf",
             expires_in=settings.PRESIGNED_URL_EXPIRY_SECONDS,
+            content_length=f.file_size if f.file_size > 0 else None,
         )
 
         doc_item = DocumentItem(
@@ -907,7 +956,7 @@ async def create_upload_session(
             s3_pdf_key=s3_key,
             status=DocumentStatus.UPLOAD_INITIALIZED,
         )
-        _docs_repo.create(doc_item)
+        doc_items.append(doc_item)
 
         file_items.append(
             FileItem(
@@ -928,6 +977,9 @@ async def create_upload_session(
                 presigned_url=presigned_url,
             )
         )
+
+    if doc_items:
+        _docs_repo.create_batch(doc_items)
 
     if file_items:
         _files_repo.create_files(job_id, file_items)
@@ -998,8 +1050,10 @@ async def complete_document_upload(
     actual_size = head.get("ContentLength", 0)
     if actual_size > settings.MAX_FILE_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="Uploaded file exceeds 10MB limit")
+    if actual_size < 32:
+        raise HTTPException(status_code=400, detail="Corrupted file: file size too small to be a valid PDF")
 
-    # 2. Verify PDF magic bytes (%PDF-) via Range read
+    # 2. Lightweight verification of PDF header (%PDF-) via Range read (bytes=0-9)
     try:
         magic_bytes = _storage.get_object_byte_range(s3_key, 0, 10)
         if not magic_bytes.startswith(b"%PDF-"):
@@ -1034,17 +1088,29 @@ async def complete_document_upload(
     if fresh_job:
         _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
 
-    # 4. Enqueue to FAST_PARSE_QUEUE
+    # 4. Enqueue to FAST_PARSE_QUEUE via transactional outbox
     job_version = getattr(fresh_job, "job_version", 1) if fresh_job else 1
-    enqueue_fast_parse(
-        job_id=job_id,
-        session_id=resolved_session_id,
-        document_id=document_id,
-        org_id=ctx.org_id,
-        job_version=job_version,
-        s3_key=s3_key,
-        content_hash="",
-    )
+    try:
+        write_outbox_and_send(
+            job_id=job_id,
+            session_id=resolved_session_id,
+            document_id=document_id,
+            org_id=ctx.org_id,
+            job_version=job_version,
+            s3_key=s3_key,
+            stage="FAST_PARSE",
+        )
+    except Exception as outbox_err:
+        logger.debug("write_outbox_and_send direct fallback: %s", outbox_err)
+        enqueue_fast_parse(
+            job_id=job_id,
+            session_id=resolved_session_id,
+            document_id=document_id,
+            org_id=ctx.org_id,
+            job_version=job_version,
+            s3_key=s3_key,
+            content_hash="",
+        )
 
     return CompleteDocumentUploadResponse(
         document_id=document_id,
@@ -1242,17 +1308,28 @@ async def analyze_job(
     for f in all_files:
         if f.file_id in selected_file_ids and not f.is_terminal and f.status not in (FileStatus.S1_DONE, FileStatus.S2_DONE):
             try:
-                enqueue_fast_parse(
+                write_outbox_and_send(
                     job_id=job_id,
                     session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
                     document_id=f.file_id,
                     org_id=ctx.org_id,
                     job_version=current_job_version,
                     s3_key=f.s3_raw_key,
-                    content_hash="",
+                    stage="FAST_PARSE",
                 )
             except Exception:
-                pass
+                try:
+                    enqueue_fast_parse(
+                        job_id=job_id,
+                        session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
+                        document_id=f.file_id,
+                        org_id=ctx.org_id,
+                        job_version=current_job_version,
+                        s3_key=f.s3_raw_key,
+                        content_hash="",
+                    )
+                except Exception:
+                    pass
 
     # Execute request_analysis (conditionally marks REMOVED, advances fallback, triggers scoring if remaining == 0)
     updated_job = _jobs_repo.request_analysis(job_id, selected_file_ids)
@@ -1336,13 +1413,20 @@ async def get_job_status(
     ]
 
     docs = _docs_repo.list_for_job(job_id)
+    sessions = _sessions_repo.list_for_job(job_id)
+    effective_status = job.status.value
+    if sessions:
+        sessions.sort(key=lambda s: getattr(s, "created_at", ""), reverse=True)
+        if sessions[0].status.value in ("READY", "READY_WITH_WARNINGS", "DONE", "DONE_WITH_ERRORS"):
+            effective_status = sessions[0].status.value
+
     effective_total = job.total_files or len(files) or len(docs)
     effective_remaining = job.remaining if job.total_files > 0 else (sum(1 for f in files if not f.is_terminal) if files else sum(1 for d in docs if not d.status.is_terminal_fast_parse()))
     effective_usable = job.usable_files if job.usable_files > 0 else (sum(1 for f in files if f.status == FileStatus.S2_DONE) if files else sum(1 for d in docs if d.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.SCORED)))
 
     payload = {
         "job_id": job.job_id,
-        "status": job.status.value,
+        "status": effective_status,
         "total_files": effective_total,
         "remaining": effective_remaining,
         "usable_files": effective_usable,
@@ -1350,6 +1434,19 @@ async def get_job_status(
         "is_stalled": is_stalled,
         "updated_at": job.updated_at,
         "files": file_summaries,
+        "config": {
+            "title": job.title,
+            "department": job.department,
+            "description": job.description,
+            "must_have_skills": job.must_have_skills,
+            "nice_to_have_skills": job.nice_to_have_skills,
+            "min_years": job.min_years,
+            "max_years": job.max_years,
+            "education_level": job.education_level,
+            "education_field": job.education_field,
+            "keywords": job.keywords,
+            "weights": job.weights,
+        },
     }
 
     response.headers["ETag"] = etag
@@ -1415,6 +1512,10 @@ async def extract_resumes_stream(
 
                 if is_complete and total_docs > 0:
                     yield f"event: complete\ndata: {json.dumps({'type': 'complete', 'status': job.status.value, 'total': total_docs, 'usable': succeeded, 'succeeded': succeeded, 'failed': failed})}\n\n"
+                    break
+
+                if job.status == JobStatus.FAILED:
+                    yield f"event: error\ndata: {json.dumps({'type': 'error', 'status': 'FAILED', 'message': job.error_message or 'Job processing failed'})}\n\n"
                     break
 
                 await asyncio.sleep(0.5)
@@ -1561,6 +1662,28 @@ async def get_results(
                 if not c.get("pdf_url"):
                     c["pdf_url"] = f"/api/v2/jobs/{job_id}/resumes/{doc_id}/download"
 
+        # Overlay authoritative recruiter decisions from DynamoDB
+        try:
+            decisions = _scoring_repo.get_candidate_decisions(job_id)
+            if decisions:
+                for c in candidates:
+                    doc_id = c.get("document_id") or c.get("id")
+                    if doc_id and doc_id in decisions:
+                        dec = decisions[doc_id]
+                        if "decision" in dec and dec["decision"]:
+                            c["decision"] = dec["decision"]
+                            c["human_decision"] = dec["decision"].upper()
+                        if "status" in dec and dec["status"]:
+                            c["status"] = dec["status"]
+                        if "decision_reason" in dec and dec["decision_reason"] is not None:
+                            c["decision_reason"] = dec["decision_reason"]
+                        if "note" in dec and dec["note"] is not None:
+                            c["note"] = dec["note"]
+                        if "tags" in dec and dec["tags"] is not None:
+                            c["tags"] = dec["tags"]
+        except Exception as dec_err:
+            logger.debug("Overlaying candidate decisions fallback: %s", dec_err)
+
         return {
             "job_id": job_id,
             "status": "scored",
@@ -1569,13 +1692,36 @@ async def get_results(
         }
     except Exception as e:
         logger.info("Results JSON not yet available for job %s: %s", job_id, e)
-        # Return fallback empty shape if still in progress
-        return {
-            "job_id": job_id,
-            "status": job.status.value,
-            "total_candidates": 0,
-            "candidates": [],
+        terminal_statuses = {
+            JobStatus.DONE,
+            JobStatus.DONE_WITH_ERRORS,
+            JobStatus.READY,
+            JobStatus.READY_WITH_WARNINGS,
         }
+        if job.status in terminal_statuses:
+            if getattr(job, "usable_files", 0) == 0:
+                # Legitimately zero candidates usable or scored
+                return {
+                    "job_id": job_id,
+                    "status": job.status.value,
+                    "total_candidates": 0,
+                    "candidates": [],
+                }
+            # Terminal job with usable files, but results missing from storage -> 500
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Scoring results could not be retrieved from storage for terminal job {job_id}: {e}",
+            )
+        if job.status == JobStatus.FAILED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Job failed: {job.error_message or 'Analysis processing failed'}",
+            )
+        # Job is still in progress (e.g. PROCESSING, SCORING, UPLOADING) -> 409 Conflict
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Results not ready yet. Current job status: {job.status.value}",
+        )
 
 
 @router.get("/{job_id}/resumes/{document_id}/download")
@@ -1614,11 +1760,13 @@ async def download_resume(
         logger.error("Failed to download resume %s: %s", document_id, e)
         raise HTTPException(status_code=404, detail="Resume PDF not found in storage.")
 
-    filename = (file_item.filename if file_item else (doc_item.filename if doc_item else None)) or f"{document_id}.pdf"
+    raw_filename = (file_item.filename if file_item else (doc_item.filename if doc_item else None)) or f"{document_id}.pdf"
+    safe_filename = re.sub(r'[\r\n"]+', '_', raw_filename)
+    encoded_filename = urllib.parse.quote(safe_filename)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}'},
     )
 
 
@@ -1683,6 +1831,11 @@ async def delete_resume(
         terminal_status=FileStatus.REMOVED.value,
         error_message="User deleted resume",
     )
+    try:
+        from src.infrastructure.models.document import DocumentStatus
+        _docs_repo.update_status(job_id, document_id, DocumentStatus.FAILED, error_message="User deleted resume")
+    except Exception as doc_err:
+        logger.debug("DocumentItem sync on delete: %s", doc_err)
 
     try:
         _storage._client.delete_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/raw/{document_id}.pdf")
@@ -1718,7 +1871,25 @@ async def update_candidate_decision(
             detail="Non-negotiable policy: Rejections require a documented, evidence-backed reason.",
         )
 
-    # Persist decision to S3 results.json if it exists
+    # 1. Persist decision atomically to DynamoDB
+    status_mapped = (
+        "shortlisted" if raw_decision == "shortlisted"
+        else ("rejected" if raw_decision == "rejected"
+        else ("assessment-sent" if raw_decision in ("interview", "assessment-sent") else "under-review"))
+    ) if raw_decision else None
+
+    decision_payload = {
+        "decision": raw_decision,
+        "human_decision": raw_decision.upper() if raw_decision else None,
+        "status": status_mapped,
+        "decision_reason": body.reason,
+        "note": body.note,
+        "tags": body.tags,
+        "updated_by": ctx.user_id,
+    }
+    _scoring_repo.save_candidate_decision(job_id, document_id, decision_payload)
+
+    # 2. Best-effort sync to S3 results.json if it exists
     try:
         resp = _storage._client.get_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/results.json")
         body_content = resp["Body"].read().decode("utf-8")
@@ -1731,14 +1902,7 @@ async def update_candidate_decision(
                 if raw_decision:
                     c["decision"] = raw_decision
                     c["human_decision"] = raw_decision.upper()
-                    if raw_decision == "shortlisted":
-                        c["status"] = "shortlisted"
-                    elif raw_decision == "rejected":
-                        c["status"] = "rejected"
-                    elif raw_decision in ("interview", "assessment-sent"):
-                        c["status"] = "assessment-sent"
-                    else:
-                        c["status"] = "under-review"
+                    c["status"] = status_mapped
                 if body.reason is not None:
                     c["decision_reason"] = body.reason
                 if body.note is not None:
@@ -1756,7 +1920,7 @@ async def update_candidate_decision(
             )
             logger.info("Updated decision for candidate %s in job %s results.json", document_id, job_id)
     except Exception as e:
-        logger.warning("Could not update decision in results.json for job %s: %s", job_id, e)
+        logger.debug("S3 results.json sync fallback for job %s: %s", job_id, e)
 
     audit_logger.record(
         ctx.org_id,
@@ -1807,20 +1971,34 @@ async def export_job_csv(
         "Knocked Out", "Knockout Reasons",
     ])
 
+    try:
+        decisions = _scoring_repo.get_candidate_decisions(job_id)
+    except Exception:
+        decisions = {}
+
+    def _sanitize_csv_cell(val: Any) -> Any:
+        if isinstance(val, str) and val.startswith(("=", "+", "-", "@")):
+            return f"'{val}"
+        return val
+
     for i, c in enumerate(candidates):
+        doc_id = c.get("document_id") or c.get("id")
+        dec = decisions.get(doc_id, {})
         score = c.get("final_score", 0.0)
         signal = "Knockout" if c.get("knocked_out") else ("Strong" if score >= 75 else ("Good" if score >= 50 else "Fair"))
-        decision = c.get("decision") or c.get("human_decision") or "NEW"
+        decision = dec.get("decision") or c.get("decision") or c.get("human_decision") or "NEW"
+        reason = dec.get("decision_reason") if dec.get("decision_reason") is not None else c.get("decision_reason", "")
+        note = dec.get("note") if dec.get("note") is not None else c.get("note", "")
         writer.writerow([
-            c.get("rank", i + 1),
-            c.get("name", "Unknown"),
-            c.get("email", ""),
-            c.get("phone", ""),
+            _sanitize_csv_cell(c.get("rank", i + 1)),
+            _sanitize_csv_cell(c.get("name", "Unknown")),
+            _sanitize_csv_cell(c.get("email", "")),
+            _sanitize_csv_cell(c.get("phone", "")),
             f"{score:.1f}",
             signal,
             decision.upper(),
-            c.get("decision_reason", ""),
-            c.get("note", ""),
+            _sanitize_csv_cell(reason),
+            _sanitize_csv_cell(note),
             f"{c.get('skill_score', 0.0):.1f}",
             f"{c.get('experience_score', 0.0):.1f}",
             f"{c.get('keyword_score', 0.0):.1f}",
@@ -1848,11 +2026,20 @@ async def get_extraction_metrics(
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    enforce_session_ownership(job, request, ctx)
 
     docs = _docs_repo.list_for_job(job_id)
     total_docs = len(docs)
-    extracted = [d for d in docs if d.status == DocumentStatus.PARSED]
-    failed = [d for d in docs if d.status == DocumentStatus.PARSE_FAILED]
+    extracted = [
+        d for d in docs
+        if d.status in (
+            DocumentStatus.PARSED,
+            DocumentStatus.STRUCTURED_PARSED,
+            DocumentStatus.REVIEW_REQUIRED,
+            DocumentStatus.SCORED,
+        )
+    ]
+    failed = [d for d in docs if d.status in (DocumentStatus.PARSE_FAILED, DocumentStatus.FAILED)]
     pending = total_docs - len(extracted) - len(failed)
 
     avg_quality = sum(d.extraction_quality for d in extracted) / len(extracted) if extracted else 0.0

@@ -85,6 +85,7 @@ export interface AtsCheckResponse {
 
 export interface Candidate {
   id: string;
+  documentId?: string;
   rank: number;
   name: string;
   title: string;
@@ -94,6 +95,7 @@ export interface Candidate {
   pdfUrl: string;
   overallScore: number;
   relevanceScore?: number;
+  previewScore?: number;
   eligibilityStatus?: 'ELIGIBLE' | 'REVIEW_REQUIRED' | 'DOES_NOT_MEET_CRITERIA' | string;
   humanDecision?: string;
   identityStatus?: 'VERIFIED' | 'PLAUSIBLE' | 'UNRESOLVED' | string;
@@ -187,7 +189,13 @@ export type JobPipelineStatus =
   | 'SCORING'
   | 'DONE'
   | 'DONE_WITH_ERRORS'
-  | 'FAILED';
+  | 'FAILED'
+  | 'FAST_PREPROCESSING'
+  | 'FAST_PARSING'
+  | 'FALLBACK_PROCESSING'
+  | 'FINAL_RANKING'
+  | 'READY'
+  | 'READY_WITH_WARNINGS';
 
 export interface JobFileStatus {
   file_id: string;
@@ -210,6 +218,7 @@ export interface JobStatusResponse {
   is_stalled: boolean;
   updated_at?: string;
   files: JobFileStatus[];
+  config?: Record<string, unknown>;
 }
 
 export interface PresignedPostInfo {
@@ -236,6 +245,7 @@ export interface CreateJobResponseV2 {
   status: string;
   total_files: number;
   remaining: number;
+  session_id?: string;
   page?: number;
   page_size?: number;
   total_pages?: number;

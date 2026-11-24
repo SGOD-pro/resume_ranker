@@ -68,7 +68,7 @@ def merge_extracted_fields(
     fallback_name = (fallback_fields.get("name") or "").strip()
     if not base_name and fallback_name:
         merged["name"] = fallback_name
-        logger.info("Merged %s candidate name: %s", source_name, fallback_name)
+        logger.info("Merged %s candidate name (resolved=%s)", source_name, bool(fallback_name))
 
     # 2. Skills: Merge distinct skills
     base_skills = base_fields.get("skills") or []
@@ -377,7 +377,7 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                             odl_fields = odl_extracted.get("fields", {})
                             d["fields"] = merge_extracted_fields(d["fields"], odl_fields, "ODL")
                             d["unresolved"] = odl_extracted.get("unresolved_chunks", [])
-                            logger.info("|ODL-PARSER| [Job: %s, File: %s] ODL extraction succeeded for candidate='%s'", d["job_id"], fid, d["fields"].get("name"))
+                            logger.info("|ODL-PARSER| [Job: %s, File: %s] ODL extraction succeeded (resolved_name=%s)", d["job_id"], fid, bool(d["fields"].get("name")))
                         except Exception as parse_e:
                             logger.warning(
                                 "Stage2Worker: Markdown extraction error on ODL result for %s/%s: %s",
@@ -439,8 +439,8 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                     nova_fields = nova.resolve_chunks(chunks, existing_fields=fields)
                     doc["fields"] = merge_extracted_fields(fields, nova_fields, "Nova")
                     fields = doc["fields"]
-                    logger.info("|LLM| [Job: %s, File: %s] Nova fallback completed successfully. Resolved candidate='%s'",
-                                job_id, file_id, fields.get("name"))
+                    logger.info("|LLM| [Job: %s, File: %s] Nova fallback completed successfully (resolved_name=%s)",
+                                job_id, file_id, bool(fields.get("name")))
                 except NovaThrottlingError as nte:
                     logger.warning("Stage2Worker: Nova throttled for %s/%s (retryable): %s", job_id, file_id, nte)
                     if doc.get("msg_id"):

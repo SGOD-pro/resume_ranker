@@ -61,7 +61,7 @@ class AWSSettings(BaseSettings):
     MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
     MAX_PAGE_COUNT: int = 50
     MAX_BATCH_BYTES: int = 200 * 1024 * 1024  # 200 MB
-    MAX_ACTIVE_SESSIONS_PER_ORG: int = 10
+    MAX_ACTIVE_SESSIONS_PER_ORG: int = 5
     CLIENT_UPLOAD_CONCURRENCY: int = 4
     PRESIGNED_URL_EXPIRY_SECONDS: int = 900  # 15 minutes
 
@@ -69,6 +69,7 @@ class AWSSettings(BaseSettings):
     ODL_BATCH_SIZE: int = 10
     ODL_WORKER_CONCURRENCY: int = 2
     NOVA_WORKER_CONCURRENCY: int = 2
+    STAGE1_MAX_WORKERS: int = 4
 
     def is_local(self) -> bool:
         if is_running_in_lambda():
@@ -106,6 +107,11 @@ def is_running_in_lambda() -> bool:
     return "AWS_LAMBDA_FUNCTION_NAME" in os.environ or "AWS_EXECUTION_ENV" in os.environ
 
 
+_CLIENT_CACHE: dict = {}
+_RESOURCE_CACHE: dict = {}
+_SESSION_CACHE: dict = {}
+
+
 def _get_session_for_service(service: str) -> boto3.Session:
     """Helper to return a properly profiled session depending on the service."""
     import os
@@ -126,53 +132,54 @@ def _get_session_for_service(service: str) -> boto3.Session:
             elif s.ENVIRONMENT in ("prod", "production"):
                 session_kwargs["profile_name"] = "aws"
                 
-    return boto3.Session(**session_kwargs)
+    cache_key = (service, session_kwargs.get("profile_name", ""))
+    if cache_key not in _SESSION_CACHE:
+        _SESSION_CACHE[cache_key] = boto3.Session(**session_kwargs)
+    return _SESSION_CACHE[cache_key]
+
+
+def _get_service_kwargs(service: str, config=None) -> dict:
+    import os
+    from botocore.config import Config as BotoConfig
+    s = get_settings()
+
+    default_config = BotoConfig(
+        max_pool_connections=50,
+        retries={"max_attempts": 3, "mode": "adaptive"},
+    )
+    effective_config = default_config.merge(config) if config is not None else default_config
+    kwargs: dict = {"config": effective_config}
+
+    if s.AWS_ENDPOINT_URL:
+        kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
+    elif not is_running_in_lambda() and os.environ.get("AWS_PROFILE") != "aws":
+        if s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
+            kwargs["endpoint_url"] = "http://localhost:4566"
+    return kwargs
+
+
+def _make_config_sig(cfg) -> str:
+    if cfg is None:
+        return ""
+    return f"{getattr(cfg, 'region_name', '')}:{getattr(cfg, 'max_pool_connections', '')}:{getattr(cfg, 'retries', '')}"
 
 
 def get_client(service: str, config=None):
-    """Get a boto3 client."""
-    import os
-    s = get_settings()
-    extra = {} if config is None else {"config": config}
-    kwargs: dict = {}
-    kwargs.update(extra)
-    
-    if is_running_in_lambda():
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-    elif os.environ.get("AWS_PROFILE") == "aws":
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-    else:
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-        elif s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
-            kwargs["endpoint_url"] = "http://localhost:4566"
-    
-    session = _get_session_for_service(service)
-    return session.client(service, **kwargs)
+    """Get a pooled and cached boto3 client."""
+    kwargs = _get_service_kwargs(service, config)
+    cache_key = (service, kwargs.get("endpoint_url"), _make_config_sig(kwargs.get("config")))
+    if cache_key not in _CLIENT_CACHE:
+        session = _get_session_for_service(service)
+        _CLIENT_CACHE[cache_key] = session.client(service, **kwargs)
+    return _CLIENT_CACHE[cache_key]
 
 
 def get_resource(service: str, config=None):
-    """Get a boto3 resource."""
-    import os
-    s = get_settings()
-    extra = {} if config is None else {"config": config}
-    kwargs: dict = {}
-    kwargs.update(extra)
-    
-    if is_running_in_lambda():
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-    elif os.environ.get("AWS_PROFILE") == "aws":
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-    else:
-        if s.AWS_ENDPOINT_URL:
-            kwargs["endpoint_url"] = s.AWS_ENDPOINT_URL
-        elif s.is_local() and service not in ("bedrock-runtime", "lambda", "sqs", "sns"):
-            kwargs["endpoint_url"] = "http://localhost:4566"
-    
-    session = _get_session_for_service(service)
-    return session.resource(service, **kwargs)
+    """Get a pooled and cached boto3 resource."""
+    kwargs = _get_service_kwargs(service, config)
+    cache_key = (service, kwargs.get("endpoint_url"), _make_config_sig(kwargs.get("config")))
+    if cache_key not in _RESOURCE_CACHE:
+        session = _get_session_for_service(service)
+        _RESOURCE_CACHE[cache_key] = session.resource(service, **kwargs)
+    return _RESOURCE_CACHE[cache_key]
 

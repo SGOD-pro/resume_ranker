@@ -43,18 +43,18 @@ async def get_auth_context(request: Request) -> AuthContext:
     if not token and SESSION_COOKIE_NAME in request.cookies:
         token = request.cookies[SESSION_COOKIE_NAME]
 
-    # 3. Query parameter (direct browser links/downloads)
-    if not token and "token" in request.query_params:
-        token = request.query_params["token"]
-
     env = os.environ.get("ENVIRONMENT", "dev").lower()
     is_prod = STRICT_AUTH or env in ("prod", "production")
+    allow_dev_anonymous = os.environ.get(
+        "ALLOW_DEV_ANONYMOUS_AUTH",
+        "true" if env in ("local", "dev", "test") else "false",
+    ).lower() == "true"
 
     if token:
         ctx = verify_session_token(token)
         if ctx:
             return ctx
-        elif is_prod:
+        elif is_prod or not allow_dev_anonymous:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired session. Please log in again.",
@@ -63,8 +63,8 @@ async def get_auth_context(request: Request) -> AuthContext:
             logger.debug("Invalid session token in dev mode, using default recruiter context")
             return get_default_auth_context()
 
-    # If strict auth is enabled, require valid token
-    if is_prod:
+    # If strict auth is enabled or dev anonymous auth not explicitly permitted, require valid token
+    if is_prod or not allow_dev_anonymous:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",

@@ -390,12 +390,13 @@ class FilesRepository:
             try:
                 if event_type == "STAGE2_DISPATCH":
                     file_id = payload.get("file_id")
+                    ev_org = payload.get("org_id", "org_default")
                     msg = QueueMessage(
                         job_id=job_id,
                         session_id=job_id,
                         document_id=file_id,
-                        org_id="org_default",
-                        job_version=1,
+                        org_id=ev_org,
+                        job_version=payload.get("job_version", 1),
                         s3_key=payload.get("s3_key"),
                         stage="ODL_BATCH",
                         body=payload,
@@ -403,7 +404,17 @@ class FilesRepository:
                     adapter.send_message(ODL_BATCH_QUEUE, msg)
                     dispatched_count += 1
                 elif event_type == "SCORING_DISPATCH":
-                    self._trigger_scoring(job_id)
+                    jv = payload.get("job_version")
+                    ev_org_id = payload.get("org_id")
+                    kwargs = {}
+                    if jv is not None:
+                        kwargs["job_version"] = jv
+                    if ev_org_id is not None:
+                        kwargs["org_id"] = ev_org_id
+                    if kwargs:
+                        self._trigger_scoring(job_id, **kwargs)
+                    else:
+                        self._trigger_scoring(job_id)
                     dispatched_count += 1
                     try:
                         self._table.update_item(
@@ -450,57 +461,100 @@ class FilesRepository:
                     )
                     self._handle_zero_remaining(job_id, usable_count, analyze_req, now_str)
                 else:
+                    item_job_version = int(job_item.get("job_version", 1))
+                    item_org_id = job_item.get("org_id", "org_default")
+                    now_dt = datetime.now(timezone.utc)
                     for f in non_terminal_files:
                         claim_exp = getattr(f, "claim_expires_at", None) or ""
-                        is_lease_expired = not claim_exp or claim_exp < now_str
+                        if claim_exp:
+                            is_stranded = claim_exp < now_str
+                        else:
+                            file_ts = getattr(f, "updated_at", None) or getattr(f, "created_at", None) or ""
+                            if file_ts:
+                                try:
+                                    file_dt = datetime.fromisoformat(file_ts.replace("Z", "+00:00"))
+                                    is_stranded = (now_dt - file_dt).total_seconds() >= 30.0
+                                except Exception:
+                                    is_stranded = True
+                            else:
+                                is_stranded = True
+
+                        if not is_stranded:
+                            continue
+
+                        cooldown_exp = (now_dt + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
                         if f.status in (FileStatus.UPLOADED, FileStatus.S1_PROCESSING):
-                            if is_lease_expired:
-                                logger.info("reconcile_outbox: re-dispatching stranded %s file %s/%s (lease expired: %s) to Stage 1",
-                                            f.status, job_id, f.file_id, claim_exp)
-                                msg = QueueMessage(
-                                    job_id=job_id,
-                                    session_id=job_id,
-                                    document_id=f.file_id,
-                                    org_id="org_default",
-                                    job_version=1,
-                                    s3_key=f.s3_raw_key,
-                                    stage="FAST_PARSE",
-                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            logger.info("reconcile_outbox: re-dispatching stranded %s file %s/%s (lease expired: %s) to Stage 1",
+                                        f.status, job_id, f.file_id, claim_exp)
+                            msg = QueueMessage(
+                                job_id=job_id,
+                                session_id=job_id,
+                                document_id=f.file_id,
+                                org_id=item_org_id,
+                                job_version=item_job_version,
+                                s3_key=f.s3_raw_key,
+                                stage="FAST_PARSE",
+                                body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            )
+                            adapter.send_message(FAST_PARSE_QUEUE, msg)
+                            dispatched_count += 1
+                            try:
+                                self._table.update_item(
+                                    Key={"PK": f"JOB#{job_id}", "SK": f"FILE#{f.file_id}"},
+                                    UpdateExpression="SET #claim_exp = :cooldown, #upd = :now",
+                                    ExpressionAttributeNames={"#claim_exp": "claim_expires_at", "#upd": "updated_at"},
+                                    ExpressionAttributeValues={":cooldown": cooldown_exp, ":now": now_str},
                                 )
-                                adapter.send_message(FAST_PARSE_QUEUE, msg)
-                                dispatched_count += 1
+                            except Exception as update_err:
+                                logger.warning("Could not set reconciliation cooldown for %s: %s", f.file_id, update_err)
                         elif f.status == FileStatus.S1_DONE and f.needs_fallback:
-                            if is_lease_expired:
-                                logger.info("reconcile_outbox: re-dispatching stuck S1_DONE file %s/%s to Stage 2", job_id, f.file_id)
-                                msg = QueueMessage(
-                                    job_id=job_id,
-                                    session_id=job_id,
-                                    document_id=f.file_id,
-                                    org_id="org_default",
-                                    job_version=1,
-                                    s3_key=f.s3_raw_key,
-                                    stage="ODL_BATCH",
-                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            logger.info("reconcile_outbox: re-dispatching stuck S1_DONE file %s/%s to Stage 2", job_id, f.file_id)
+                            msg = QueueMessage(
+                                job_id=job_id,
+                                session_id=job_id,
+                                document_id=f.file_id,
+                                org_id=item_org_id,
+                                job_version=item_job_version,
+                                s3_key=f.s3_raw_key,
+                                stage="ODL_BATCH",
+                                body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            )
+                            adapter.send_message(ODL_BATCH_QUEUE, msg)
+                            dispatched_count += 1
+                            try:
+                                self._table.update_item(
+                                    Key={"PK": f"JOB#{job_id}", "SK": f"FILE#{f.file_id}"},
+                                    UpdateExpression="SET #claim_exp = :cooldown, #upd = :now",
+                                    ExpressionAttributeNames={"#claim_exp": "claim_expires_at", "#upd": "updated_at"},
+                                    ExpressionAttributeValues={":cooldown": cooldown_exp, ":now": now_str},
                                 )
-                                adapter.send_message(ODL_BATCH_QUEUE, msg)
-                                dispatched_count += 1
+                            except Exception as update_err:
+                                logger.warning("Could not set reconciliation cooldown for %s: %s", f.file_id, update_err)
                         elif f.status == FileStatus.S2_PROCESSING:
-                            if is_lease_expired:
-                                logger.info("reconcile_outbox: re-dispatching stranded S2_PROCESSING file %s/%s (lease expired: %s) to Stage 2",
-                                            job_id, f.file_id, claim_exp)
-                                msg = QueueMessage(
-                                    job_id=job_id,
-                                    session_id=job_id,
-                                    document_id=f.file_id,
-                                    org_id="org_default",
-                                    job_version=1,
-                                    s3_key=f.s3_raw_key,
-                                    stage="ODL_BATCH",
-                                    body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            logger.info("reconcile_outbox: re-dispatching stranded S2_PROCESSING file %s/%s (lease expired: %s) to Stage 2",
+                                        job_id, f.file_id, claim_exp)
+                            msg = QueueMessage(
+                                job_id=job_id,
+                                session_id=job_id,
+                                document_id=f.file_id,
+                                org_id=item_org_id,
+                                job_version=item_job_version,
+                                s3_key=f.s3_raw_key,
+                                stage="ODL_BATCH",
+                                body={"job_id": job_id, "file_id": f.file_id, "s3_key": f.s3_raw_key},
+                            )
+                            adapter.send_message(ODL_BATCH_QUEUE, msg)
+                            dispatched_count += 1
+                            try:
+                                self._table.update_item(
+                                    Key={"PK": f"JOB#{job_id}", "SK": f"FILE#{f.file_id}"},
+                                    UpdateExpression="SET #claim_exp = :cooldown, #upd = :now",
+                                    ExpressionAttributeNames={"#claim_exp": "claim_expires_at", "#upd": "updated_at"},
+                                    ExpressionAttributeValues={":cooldown": cooldown_exp, ":now": now_str},
                                 )
-                                adapter.send_message(ODL_BATCH_QUEUE, msg)
-                                dispatched_count += 1
+                            except Exception as update_err:
+                                logger.warning("Could not set reconciliation cooldown for %s: %s", f.file_id, update_err)
 
             total_files = int(job_item.get("total_files", 0))
             if total_files > 0 and rem == 0 and analyze_req and current_st not in (
@@ -701,11 +755,22 @@ class FilesRepository:
                         ":now": now_iso,
                     },
                 )
+                job_rec_item = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"}).get("Item", {})
+                payload: Dict[str, Any] = {
+                    "job_id": job_id,
+                    "session_id": job_id,
+                    "stage": "FINAL_RANK",
+                }
+                if "job_version" in job_rec_item:
+                    payload["job_version"] = int(job_rec_item["job_version"])
+                if "org_id" in job_rec_item:
+                    payload["org_id"] = str(job_rec_item["org_id"])
+
                 self.record_outbox_event(
                     job_id=job_id,
                     outbox_sk="OUTBOX#SCORING",
                     event_type="SCORING_DISPATCH",
-                    payload={"job_id": job_id, "session_id": job_id, "stage": "FINAL_RANK"},
+                    payload=payload,
                 )
                 self.reconcile_outbox(job_id)
         else:
@@ -721,8 +786,13 @@ class FilesRepository:
                 },
             )
 
-    def _trigger_scoring(self, job_id: str) -> None:
-        """Enqueue scoring event to scoring queue."""
+    def _trigger_scoring(
+        self,
+        job_id: str,
+        job_version: Optional[int] = None,
+        org_id: Optional[str] = None,
+    ) -> None:
+        """Enqueue scoring event to scoring queue with pinned job_version and authoritative org_id."""
         adapter = get_queue_adapter()
         session_id = job_id
         try:
@@ -731,19 +801,44 @@ class FilesRepository:
             if sessions:
                 sessions.sort(key=lambda s: getattr(s, "created_at", "") or "", reverse=True)
                 session_id = sessions[0].session_id
+                if job_version is None:
+                    job_version = getattr(sessions[0], "job_version", None)
+                if org_id is None and getattr(sessions[0], "org_id", None):
+                    org_id = sessions[0].org_id
         except Exception:
             pass
+
+        if org_id is None:
+            try:
+                job_item = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"}).get("Item")
+                if job_item and job_item.get("org_id"):
+                    org_id = str(job_item["org_id"])
+            except Exception:
+                pass
+
+        if not org_id:
+            org_id = "org_default"
+
+        if job_version is None:
+            # Stale or unversioned events must strictly default to base version 1.
+            # NEVER fetch latest JobsRepository().get(job_id).job_version or METADATA job_version here,
+            # as that would improperly upgrade a stale event to the latest job version
+            # and bypass stale-message safety discards in FinalRankWorker.
+            job_version = 1
 
         msg = QueueMessage(
             job_id=job_id,
             session_id=session_id,
             document_id=job_id,
-            org_id="org_default",
-            job_version=1,
+            org_id=org_id,
+            job_version=job_version,
             stage="FINAL_RANK",
         )
         adapter.send_message(FINAL_RANK_QUEUE, msg)
-        logger.info("Enqueued scoring message for job %s (session %s)", job_id, session_id)
+        logger.info(
+            "Enqueued scoring message for job %s (session %s, job_version %s, org_id %s)",
+            job_id, session_id, job_version, org_id,
+        )
 
     def check_and_increment_daily_llm_cap(self, limit: int = 100) -> bool:
         """Atomically check and increment global daily LLM count.

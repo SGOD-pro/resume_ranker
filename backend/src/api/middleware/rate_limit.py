@@ -39,12 +39,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._history: Dict[str, List[float]] = defaultdict(list)
 
     def _get_client_key(self, request: Request, endpoint_tag: str) -> str:
-        # Check forward headers if behind reverse proxy
+        # Check forward headers only if behind local reverse proxy
+        direct_ip = request.client.host if request.client else "unknown"
         forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
+        if forwarded and direct_ip in ("127.0.0.1", "::1", "localhost", "testclient"):
             client_ip = forwarded.split(",")[0].strip()
         else:
-            client_ip = request.client.host if request.client else "unknown"
+            client_ip = direct_ip
         return f"{client_ip}:{endpoint_tag}"
 
     async def dispatch(self, request: Request, call_next):
@@ -60,13 +61,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         for pattern, max_requests, window_seconds in RATE_LIMIT_RULES:
             if pattern in path and request.method == "POST":
                 key = self._get_client_key(request, pattern)
-                timestamps = self._history[key]
+                timestamps = self._history.get(key, [])
 
                 # Purge timestamps outside sliding window
                 cutoff = now - window_seconds
-                self._history[key] = [t for t in timestamps if t > cutoff]
+                valid_timestamps = [t for t in timestamps if t > cutoff]
+                if valid_timestamps:
+                    self._history[key] = valid_timestamps
+                elif key in self._history:
+                    del self._history[key]
 
-                if len(self._history[key]) >= max_requests:
+                if len(valid_timestamps) >= max_requests:
                     logger.warning(
                         "Rate limit exceeded for %s on %s (limit: %d/%ds)",
                         key, path, max_requests, window_seconds

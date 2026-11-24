@@ -223,3 +223,13 @@ class DocumentsRepository:
             Key={"PK": f"JOB#{job_id}", "SK": f"DOC#{document_id}"},
         )
         logger.info("Deleted document: %s from job: %s", document_id, job_id)
+
+    def create_batch(self, docs: List[DocumentItem]) -> List[DocumentItem]:
+        """Batch insert document items using batch_writer to eliminate serial O(N) latency."""
+        if not docs:
+            return []
+        with self._table.batch_writer() as batch:
+            for d in docs:
+                batch.put_item(Item=d.to_dynamodb_item())
+        logger.info("Batch created %d document records for job", len(docs))
+        return docs
