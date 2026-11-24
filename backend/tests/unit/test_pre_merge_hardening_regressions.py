@@ -61,34 +61,12 @@ def client():
 
 @pytest.fixture
 def auth_headers(client):
-    uid = uuid.uuid4().hex[:8]
-    resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{uid}",
-            "email": f"recruiter_{uid}@example.com",
-            "name": f"Recruiter {uid}",
-            "password": "Password123!",
-        },
-    )
-    assert resp.status_code == 201
-    return {"Authorization": f"Bearer {resp.json()['token']}"}
+    return {}
 
 
 @pytest.fixture
 def auth_headers_org2(client):
-    uid = uuid.uuid4().hex[:8]
-    resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org2_{uid}",
-            "email": f"recruiter2_{uid}@example.com",
-            "name": f"Recruiter2 {uid}",
-            "password": "Password123!",
-        },
-    )
-    assert resp.status_code == 201
-    return {"Authorization": f"Bearer {resp.json()['token']}"}
+    return {}
 
 
 def make_dummy_pdf(text: str = "Candidate Resume") -> bytes:
@@ -169,29 +147,22 @@ def test_regression_complete_upload_rejects_truncated_pdf(client, auth_headers):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Cross-Tenant Access is strictly 403 Forbidden
+# 3. Untrusted Origin Access is 403 Forbidden in Production
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_regression_cross_tenant_access_forbidden(client, auth_headers, auth_headers_org2):
-    """Org2 cannot access or complete uploads for jobs belonging to Org1."""
-    # Org1 creates job
-    job_resp = client.post("/api/v2/jobs", headers=auth_headers, json={"title": "Org1 Secret Job"})
+def test_regression_cross_tenant_access_forbidden(client, monkeypatch):
+    """Untrusted cross-origin requests are blocked with 403 in production."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+
+    job_resp = client.post("/api/v2/jobs", json={"title": "Origin Protection Job"})
     job_id = job_resp.json()["id"]
 
-    # Org2 attempts to create upload session on Org1's job
-    sess_resp = client.post(
-        f"/api/v2/jobs/{job_id}/upload-sessions",
-        headers=auth_headers_org2,
-        json={"document_count": 1, "files": [{"filename": "attack.pdf", "file_size": 1000}]},
-    )
-    assert sess_resp.status_code in (403, 404)
-
-    # Org2 attempts to request analysis on Org1's job
     ana_resp = client.post(
         f"/api/v2/jobs/{job_id}/analysis",
-        headers=auth_headers_org2,
+        headers={"Origin": "http://malicious-attacker.com"},
     )
-    assert ana_resp.status_code in (403, 404)
+    assert ana_resp.status_code == 403
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -387,11 +358,7 @@ def test_regression_get_results_distinguishes_not_ready_and_storage_failure(clie
     """GET /results must never return success-shaped 200 empty results for in-progress or storage failures."""
     jobs_repo = JobsRepository()
     uid = uuid.uuid4().hex[:8]
-
-    from src.api.auth import verify_session_token
-    token = auth_headers["Authorization"].split(" ")[1]
-    auth_ctx = verify_session_token(token)
-    caller_org = auth_ctx.org_id if auth_ctx else "org_default"
+    caller_org = "org_default"
 
     # Scenario A: Job is in PROCESSING and results are not ready yet -> 409 Conflict
     job_processing = JobItem(

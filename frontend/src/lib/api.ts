@@ -124,6 +124,9 @@ export async function createJob(
   });
   if (res.session_id && typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem('job_session_id', res.session_id);
+    if (typeof document !== 'undefined') {
+      document.cookie = `job_session_id=${encodeURIComponent(res.session_id)}; path=/; SameSite=Lax`;
+    }
   }
   return res;
 }
@@ -148,6 +151,9 @@ export async function createJobWithUploads(
   });
   if (res.session_id && typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem('job_session_id', res.session_id);
+    if (typeof document !== 'undefined') {
+      document.cookie = `job_session_id=${encodeURIComponent(res.session_id)}; path=/; SameSite=Lax`;
+    }
   }
   return res;
 }
@@ -636,7 +642,13 @@ export function subscribeToJobExtraction(
   callbacks: ExtractionStreamCallbacks,
 ): () => void {
   const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('job_session_id') : null;
-  const url = sessionId
+  if (sessionId && typeof document !== 'undefined' && !document.cookie.includes('job_session_id=')) {
+    document.cookie = `job_session_id=${encodeURIComponent(sessionId)}; path=/; SameSite=Lax`;
+  }
+
+  // Prefer cookie-authorized EventSource to prevent session_id credential leakage in server URL logs
+  const isDev = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV);
+  const url = isDev && sessionId && typeof document !== 'undefined' && !document.cookie.includes('job_session_id=')
     ? `${API_BASE}/api/v2/jobs/${jobId}/extract?session_id=${encodeURIComponent(sessionId)}`
     : `${API_BASE}/api/v2/jobs/${jobId}/extract`;
   const es = new EventSource(url, { withCredentials: true });

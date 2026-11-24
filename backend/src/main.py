@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes.health import router as health_router
 from src.api.routes.jobs_v2 import router as jobs_v2_router
-from src.api.routes.auth import router as auth_router
 from src.api.middleware.security import SecurityHeadersMiddleware
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.infrastructure.health import check_all
@@ -138,7 +137,6 @@ def create_app() -> FastAPI:
 
     # Register route modules
     app.include_router(health_router)
-    app.include_router(auth_router)
     app.include_router(jobs_v2_router, prefix="/api/v2/jobs", tags=["jobs_v2"])
     app.include_router(jobs_v2_router, prefix="/jobs", tags=["jobs_legacy_alias"])
 

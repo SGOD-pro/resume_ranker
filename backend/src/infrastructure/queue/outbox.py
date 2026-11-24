@@ -53,6 +53,7 @@ def write_outbox_and_send(
 
     If the SQS send succeeds in-line, the outbox record is deleted immediately.
     If the SQS send fails, the record remains for the relay to pick up.
+    If both persistence and SQS publish fail, raises RuntimeError to prevent phantom dispatch.
     """
     from src.config.aws import get_client, get_settings
     from src.infrastructure.queue.queue_manager import enqueue_fast_parse
@@ -61,6 +62,7 @@ def write_outbox_and_send(
     settings = get_settings()
     event_id = str(uuid.uuid4())
     ttl = _utcnow_epoch() + _OUTBOX_TTL_SECONDS
+    db_success = False
 
     # 1. Write outbox record to DynamoDB
     try:
@@ -80,15 +82,17 @@ def write_outbox_and_send(
                 "s3_key": {"S": s3_key},
                 "stage": {"S": stage},
                 "status": {"S": "PENDING"},
+                "attempts": {"N": "0"},
                 "created_at": {"S": datetime.now(timezone.utc).isoformat()},
                 "ttl": {"N": str(ttl)},
             },
         )
+        db_success = True
     except Exception as db_err:
         logger.error("Outbox: failed to write outbox record for doc %s: %s", document_id, db_err)
-        # Fall through — attempt SQS send anyway (best-effort without outbox)
 
     # 2. Attempt immediate SQS dispatch
+    sqs_success = False
     try:
         enqueue_fast_parse(
             job_id=job_id,
@@ -99,13 +103,109 @@ def write_outbox_and_send(
             s3_key=s3_key,
             content_hash="",
         )
+        sqs_success = True
         # 3. SQS send succeeded — mark outbox record as SENT and delete
-        _delete_outbox_record(job_id, event_id)
-        logger.debug("Outbox: doc %s dispatched to SQS and outbox record cleaned up", document_id)
+        if db_success:
+            _delete_outbox_record(job_id, event_id)
+            logger.debug("Outbox: doc %s dispatched to SQS and outbox record cleaned up", document_id)
     except Exception as sqs_err:
         logger.warning(
             "Outbox: SQS send failed for doc %s (event %s), record retained for relay: %s",
             document_id, event_id, sqs_err,
+        )
+
+    if not db_success and not sqs_success:
+        raise RuntimeError(
+            f"Durable dispatch failed for document {document_id}: DB persistence and SQS dispatch both failed."
+        )
+
+    return event_id
+
+
+def commit_file_upload_with_outbox(
+    *,
+    job_id: str,
+    file_id: str,
+    actual_size: int,
+    session_id: str,
+    org_id: str,
+    job_version: int,
+    s3_key: str,
+    stage: str = "FAST_PARSE",
+) -> str:
+    """Commit file status transition to UPLOADED and outbox record atomically in DynamoDB,
+    then attempt immediate SQS dispatch.
+    """
+    from src.config.aws import get_client, get_settings
+    from src.infrastructure.queue.queue_manager import enqueue_fast_parse
+    from src.infrastructure.models.file import FileStatus
+
+    settings = get_settings()
+    event_id = str(uuid.uuid4())
+    ttl = _utcnow_epoch() + _OUTBOX_TTL_SECONDS
+    now_iso = datetime.now(timezone.utc).isoformat()
+    dynamodb = get_client("dynamodb")
+
+    transact_items = [
+        {
+            "Update": {
+                "TableName": settings.dynamodb_table_name,
+                "Key": {
+                    "PK": {"S": f"JOB#{job_id}"},
+                    "SK": {"S": f"FILE#{file_id}"},
+                },
+                "UpdateExpression": "SET #st = :st, file_size = :fs, updated_at = :now, version = if_not_exists(version, :zero) + :one",
+                "ExpressionAttributeNames": {"#st": "status"},
+                "ExpressionAttributeValues": {
+                    ":st": {"S": FileStatus.UPLOADED.value},
+                    ":fs": {"N": str(actual_size)},
+                    ":now": {"S": now_iso},
+                    ":zero": {"N": "0"},
+                    ":one": {"N": "1"},
+                },
+            }
+        },
+        {
+            "Put": {
+                "TableName": settings.dynamodb_table_name,
+                "Item": {
+                    "PK": {"S": f"OUTBOX#{job_id}"},
+                    "SK": {"S": f"OUTBOX#{event_id}"},
+                    "entity_type": {"S": "OUTBOX"},
+                    "event_id": {"S": event_id},
+                    "job_id": {"S": job_id},
+                    "session_id": {"S": session_id},
+                    "document_id": {"S": file_id},
+                    "org_id": {"S": org_id},
+                    "job_version": {"N": str(job_version)},
+                    "s3_key": {"S": s3_key},
+                    "stage": {"S": stage},
+                    "status": {"S": "PENDING"},
+                    "attempts": {"N": "0"},
+                    "created_at": {"S": now_iso},
+                    "ttl": {"N": str(ttl)},
+                },
+            }
+        },
+    ]
+
+    dynamodb.transact_write_items(TransactItems=transact_items)
+
+    try:
+        enqueue_fast_parse(
+            job_id=job_id,
+            session_id=session_id,
+            document_id=file_id,
+            org_id=org_id,
+            job_version=job_version,
+            s3_key=s3_key,
+            content_hash="",
+        )
+        _delete_outbox_record(job_id, event_id)
+    except Exception as sqs_err:
+        logger.warning(
+            "Outbox: Transactional file upload committed to DB, but immediate SQS send failed for doc %s (event %s), record retained for relay: %s",
+            file_id, event_id, sqs_err,
         )
 
     return event_id

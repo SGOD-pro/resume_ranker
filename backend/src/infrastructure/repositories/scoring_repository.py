@@ -155,21 +155,72 @@ class ScoringRepository:
         job_id: str,
         document_id: str,
         decision_data: Dict[str, Any],
+        expected_version: Optional[int] = None,
+        client_timestamp: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Persist recruiter candidate decision, reason, and notes to DynamoDB atomically."""
+        """Persist recruiter candidate decision, reason, and notes to DynamoDB atomically.
+
+        Uses field-specific update_item rather than put_item to preserve independent fields
+        (e.g. notes, tags, decision, reason) updated by separate recruiters or requests.
+        Supports optimistic concurrency via expected_version and out-of-order protection via client_timestamp.
+        """
         now = _utcnow_iso()
-        item = {
-            "PK": f"JOB#{job_id}",
-            "SK": f"DECISION#{document_id}",
-            "entity_type": "DECISION",
-            "job_id": job_id,
-            "document_id": document_id,
-            "updated_at": now,
-            **decision_data,
+        expr_names: Dict[str, str] = {
+            "#et": "entity_type",
+            "#jid": "job_id",
+            "#did": "document_id",
         }
-        self._table.put_item(Item=item)
+        expr_vals: Dict[str, Any] = {
+            ":et": "DECISION",
+            ":jid": job_id,
+            ":did": document_id,
+            ":now": now,
+            ":zero": 0,
+            ":one": 1,
+        }
+
+        set_clauses = [
+            "#et = if_not_exists(#et, :et)",
+            "#jid = if_not_exists(#jid, :jid)",
+            "#did = if_not_exists(#did, :did)",
+            "updated_at = :now",
+            "version = if_not_exists(version, :zero) + :one",
+        ]
+
+        for i, (k, v) in enumerate(decision_data.items()):
+            field_alias = f"#field_{i}"
+            val_alias = f":{k}"
+            expr_names[field_alias] = k
+            expr_vals[val_alias] = v
+            set_clauses.append(f"{field_alias} = {val_alias}")
+
+        update_expr = f"SET {', '.join(set_clauses)}"
+
+        cond_clauses = []
+        if expected_version is not None:
+            expr_names["#v"] = "version"
+            expr_vals[":expected_v"] = expected_version
+            cond_clauses.append("(attribute_not_exists(#v) OR #v = :expected_v)")
+        if client_timestamp is not None:
+            expr_vals[":client_ts"] = client_timestamp
+            cond_clauses.append("(attribute_not_exists(updated_at) OR updated_at <= :client_ts)")
+
+        cond_expr = " AND ".join(cond_clauses) if cond_clauses else None
+
+        update_kwargs: Dict[str, Any] = {
+            "Key": {"PK": f"JOB#{job_id}", "SK": f"DECISION#{document_id}"},
+            "UpdateExpression": update_expr,
+            "ExpressionAttributeNames": expr_names,
+            "ExpressionAttributeValues": expr_vals,
+            "ReturnValues": "ALL_NEW",
+        }
+        if cond_expr:
+            update_kwargs["ConditionExpression"] = cond_expr
+
+        response = self._table.update_item(**update_kwargs)
+        attrs = response.get("Attributes", {})
         logger.info("Persisted decision for candidate %s in job %s to DynamoDB", document_id, job_id)
-        return item
+        return attrs
 
     def get_candidate_decisions(self, job_id: str) -> Dict[str, Dict[str, Any]]:
         """Retrieve all recruiter candidate decisions for a job from DynamoDB."""

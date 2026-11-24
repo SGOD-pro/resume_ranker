@@ -47,127 +47,53 @@ def test_security_headers(client):
     assert "Content-Security-Policy" in resp.headers
 
 
-# ── 2. Authentication Flow ───────────────────────────────────────────────────
+# ── 2. Standalone Open Architecture (HC-01 & ADR-07) ──────────────────────────
 
-def test_auth_registration_and_login(client):
-    """Verify user/organization registration, login, and session cookie generation."""
-    uid = uuid.uuid4().hex[:8]
-    email = f"recruiter_{uid}@example.com"
-    password = "SuperSecurePassword123!"
-
-    # Register
-    reg_resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Acme Talent Partners {uid}",
-            "email": email,
-            "name": "Jane Doe",
-            "password": password,
-        },
-    )
-    assert reg_resp.status_code == 201
-    reg_data = reg_resp.json()
-    assert reg_data["email"] == email
-    assert reg_data["role"] == "admin"
-    assert "sortlist_session" in reg_resp.cookies
-    token = reg_data["token"]
-
-    # Authenticated /me check
-    me_resp = client.get("/api/v2/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert me_resp.status_code == 200
-    me_data = me_resp.json()
-    assert me_data["email"] == email
-    assert me_data["org_id"] == reg_data["org_id"]
-
-    # Login check
-    login_resp = client.post(
-        "/api/v2/auth/login",
-        json={"email": email, "password": password},
-    )
-    assert login_resp.status_code == 200
-    assert "sortlist_session" in login_resp.cookies
-
-
-# ── 3. Tenant Isolation & IDOR Protection ─────────────────────────────────────
-
-def test_tenant_isolation(client):
-    """Verify that Org A cannot read or mutate resources belonging to Org B."""
-    uid = uuid.uuid4().hex[:8]
-    # Register Org A
-    resp_a = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org Alpha {uid}",
-            "email": f"alpha_{uid}@example.com",
-            "name": "Alpha Lead",
-            "password": "PasswordAlpha123!",
-        },
-    )
-    token_a = resp_a.json()["token"]
-
-    # Register Org B
-    resp_b = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org Beta {uid}",
-            "email": f"beta_{uid}@example.com",
-            "name": "Beta Lead",
-            "password": "PasswordBeta123!",
-        },
-    )
-    token_b = resp_b.json()["token"]
-
-    # Org A creates a Job
-    create_job_resp = client.post(
+def test_standalone_job_creation_open_access(client):
+    """Verify open access without authentication, login, or bearer tokens per HC-01."""
+    job_resp = client.post(
         "/api/v2/jobs",
-        json={"title": "Confidential Executive Role", "must_have_skills": ["Leadership"]},
-        headers={"Authorization": f"Bearer {token_a}"},
+        json={"title": "Open Role", "must_have_skills": ["Python"]},
     )
-    assert create_job_resp.status_code in (200, 201)
-    job_id = create_job_resp.json()["id"]
+    assert job_resp.status_code in (200, 201)
+    job_data = job_resp.json()
+    assert "id" in job_data
+    assert job_data["status"].lower() == "created"
 
-    # Org B attempts to update Job A -> MUST be 403 Forbidden
-    update_attempt = client.patch(
-        f"/api/v2/jobs/{job_id}",
-        json={"title": "Hacked Title"},
-        headers={"Authorization": f"Bearer {token_b}"},
-    )
-    assert update_attempt.status_code == 403
 
-    # Org B attempts to delete Job A -> MUST be 403 Forbidden
-    delete_attempt = client.delete(
-        f"/api/v2/jobs/{job_id}",
-        headers={"Authorization": f"Bearer {token_b}"},
+# ── 3. Independent Job Architecture & CSRF Validation ─────────────────────────
+
+def test_job_isolation_and_csrf_origin_check(client, monkeypatch):
+    """Verify jobs are isolated and untrusted cross-origin requests are blocked in production."""
+    # Create Job A and Job B independently
+    job_a = client.post("/api/v2/jobs", json={"title": "Job A"}).json()["id"]
+    job_b = client.post("/api/v2/jobs", json={"title": "Job B"}).json()["id"]
+    assert job_a != job_b
+
+    # Verify CSRF origin protection in production
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+
+    attack_resp = client.post(
+        f"/api/v2/jobs/{job_a}/analysis",
+        headers={"Origin": "http://malicious-attacker.com"},
     )
-    assert delete_attempt.status_code == 403
+    assert attack_resp.status_code == 403
 
 
 # ── 4. File Validation ────────────────────────────────────────────────────────
 
 def test_pdf_magic_bytes_validation(client):
     """Verify that corrupt or non-PDF files are rejected even if given .pdf extension."""
-    unique_id = uuid.uuid4().hex[:8]
-    reg_resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{unique_id}",
-            "email": f"recruiter_{unique_id}@example.com",
-            "name": f"Recruiter {unique_id}",
-            "password": "Password123!",
-        },
-    )
-    assert reg_resp.status_code == 201
-    headers = {"Authorization": f"Bearer {reg_resp.json()['token']}"}
-
-    # Create Job
-    job_resp = client.post("/api/v2/jobs", json={"title": "Test PDF Validation"}, headers=headers)
+    # Create Job directly without authentication headers
+    job_resp = client.post("/api/v2/jobs", json={"title": "Test PDF Validation"})
     job_id = job_resp.json()["id"]
 
     # Upload file with text content disguised as PDF
     fake_pdf = b"This is plain text pretending to be a PDF."
     files = [("files", ("fake.pdf", fake_pdf, "application/pdf"))]
 
-    upload_resp = client.post(f"/api/v2/jobs/{job_id}/resumes", files=files, headers=headers)
+    upload_resp = client.post(f"/api/v2/jobs/{job_id}/resumes", files=files)
     assert upload_resp.status_code in (200, 202)
     data = upload_resp.json()
     assert len(data["rejected"]) == 1

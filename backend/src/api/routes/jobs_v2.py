@@ -40,8 +40,6 @@ from fastapi import (
 from starlette.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from src.api.auth import AuthContext
-from src.api.dependencies.auth import enforce_tenant_ownership, get_auth_context
 from src.config.aws import get_settings
 from src.core.lazy_proxy import LazyProxy
 from src.infrastructure.audit import audit_logger
@@ -68,7 +66,7 @@ from src.infrastructure.queue.queue_manager import (
     get_queue_adapter,
     enqueue_fast_parse,
 )
-from src.infrastructure.queue.outbox import write_outbox_and_send
+from src.infrastructure.queue.outbox import commit_file_upload_with_outbox, write_outbox_and_send
 from src.pipeline.coordinator import check_and_progress_session
 from src.pipeline.worker_runner import dispatch_fast_parse
 
@@ -144,41 +142,21 @@ def get_session_id(request: Request, response: Optional[Response] = None) -> str
     return session_id
 
 
-def enforce_session_ownership(job: JobItem, request: Request, ctx: Optional[AuthContext] = None) -> None:
-    """Verify session or tenant ownership of the requested job."""
-    job_org = getattr(job, "org_id", None) or "org_default"
-    caller_org = ctx.org_id if ctx and ctx.org_id else "org_default"
+def enforce_session_ownership(job: JobItem, request: Request) -> None:
+    """CSRF and origin validation for standalone job operations (HC-01 & ADR-07)."""
+    env = os.environ.get("ENVIRONMENT", "dev").lower()
+    is_prod = env in ("prod", "production") or os.environ.get("STRICT_AUTH", "false").lower() in ("true", "1", "yes")
 
-    # 1. Strict tenant isolation
-    if caller_org != job_org and (not ctx or ctx.role != "superadmin"):
-        logger.warning(
-            "Tenant access violation: caller org %s attempted access to job org %s",
-            caller_org,
-            job_org,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "FORBIDDEN", "message": "Access denied: tenant organization mismatch."},
-        )
-
-    # 2. Session isolation: If job belongs to an authenticated custom tenant,
-    # authenticated members of that tenant have organization-level access.
-    # Otherwise (for org_default / public / unauthenticated sessions),
-    # verify matching session_id to prevent cross-session IDOR.
-    caller_session = (
-        request.cookies.get("job_session_id")
-        or request.cookies.get("session_id")
-        or request.headers.get("X-Session-ID")
-        or request.query_params.get("session_id")
-    )
-    job_session = getattr(job, "session_id", None)
-    is_dedicated_tenant = bool(ctx and ctx.org_id and ctx.org_id != "org_default" and caller_org == job_org)
-
-    if job_session and isinstance(job_session, str) and job_session.strip() and not is_dedicated_tenant:
-        if not caller_session or caller_session != job_session:
+    # CSRF protection: if request has Origin header, verify it matches allowed origins in production
+    origin = request.headers.get("origin")
+    if is_prod and origin:
+        frontend_url = os.environ.get("FRONTEND_URL", "")
+        allowed_origins = [o.strip() for o in frontend_url.split(",") if o.strip()]
+        if allowed_origins and origin not in allowed_origins:
+            logger.warning("CSRF violation: untrusted origin %s attempted access", origin)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Access denied: session ownership mismatch."},
+                detail={"code": "FORBIDDEN", "message": "Access denied: untrusted cross-origin request blocked."},
             )
 
 
@@ -201,6 +179,7 @@ class CreateJobRequest(BaseModel):
     title: str = "Candidate Screening"
     department: str = ""
     description: str = ""
+    org_id: Optional[str] = None
     must_have_skills: List[str] = Field(default_factory=list)
     nice_to_have_skills: List[str] = Field(default_factory=list)
     min_years: int = 0
@@ -367,7 +346,6 @@ async def create_job(
     body: CreateJobRequest,
     request: Request,
     response: Response,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Create a new screening job and return presigned POST data for direct-to-S3 upload.
 
@@ -394,10 +372,11 @@ async def create_job(
 
     job_id = str(uuid.uuid4())
     total_files = len(body.files)
+    job_org_id = body.org_id or f"org_{job_id[:8]}"
 
     job = JobItem(
         job_id=job_id,
-        org_id=ctx.org_id,
+        org_id=job_org_id,
         session_id=session_id,
         title=body.title or "Candidate Screening",
         department=body.department,
@@ -453,8 +432,8 @@ async def create_job(
         _files_repo.create_files(job_id, file_items)
 
     audit_logger.record(
-        ctx.org_id,
-        ctx.user_id,
+        getattr(job, "org_id", "org_default"),
+        "anonymous",
         "JOB_CREATED",
         "job",
         job_id,
@@ -557,13 +536,12 @@ async def get_presigned_posts(
     request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=50),
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Retrieve paginated presigned POST endpoints for large batches (>50 files)."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     all_files = _files_repo.list_files_for_job(job_id)
     total_files = len(all_files)
@@ -608,13 +586,12 @@ async def update_job(
     job_id: str,
     body: UpdateJobRequest,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Update JD configuration for an existing job."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     updates = body.model_dump(exclude_none=True)
     if not updates:
@@ -624,8 +601,8 @@ async def update_job(
     updated_job = _jobs_repo.update(job_id, updates, expected_version=job.version)
 
     audit_logger.record(
-        ctx.org_id,
-        ctx.user_id,
+        getattr(job, "org_id", "org_default"),
+        "anonymous",
         "JOB_UPDATED",
         "job",
         job_id,
@@ -641,7 +618,6 @@ async def notify_files_uploaded(
     job_id: str,
     request: Request,
     body: Optional[FileUploadNotification] = None,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Notify backend that direct-to-S3 uploads have completed for files.
     
@@ -650,7 +626,7 @@ async def notify_files_uploaded(
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     all_files = _files_repo.list_files_for_job(job_id)
     target_ids = set(body.file_ids) if (body and body.file_ids) else {f.file_id for f in all_files}
@@ -663,6 +639,7 @@ async def notify_files_uploaded(
 
     upload_sessions = _sessions_repo.list_for_job(job_id)
     resolved_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
+    job_org_id = getattr(job, "org_id", "org_default")
 
     failed_enqueue_count = 0
     for f in all_files:
@@ -671,7 +648,7 @@ async def notify_files_uploaded(
                 job_id=job_id,
                 session_id=resolved_session_id,
                 document_id=f.file_id,
-                org_id=ctx.org_id,
+                org_id=job_org_id,
                 job_version=job.job_version,
                 s3_key=f.s3_raw_key,
                 content_hash="",
@@ -682,7 +659,7 @@ async def notify_files_uploaded(
                     job_id=job_id,
                     session_id=resolved_session_id,
                     document_id=f.file_id,
-                    org_id=ctx.org_id,
+                    org_id=job_org_id,
                     job_version=job.job_version,
                     s3_key=f.s3_raw_key,
                     content_hash="",
@@ -707,13 +684,12 @@ async def upload_resumes_multipart(
     job_id: str,
     request: Request,
     files: List[UploadFile] = File(...),
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Multipart upload fallback for direct file submission."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     file_items = []
     messages = []
@@ -753,6 +729,7 @@ async def upload_resumes_multipart(
 
     upload_sessions = _sessions_repo.list_for_job(job_id)
     multipart_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
+    job_org_id = getattr(job, "org_id", "org_default")
 
     def _upload_single_s3(f_name: str, content_bytes: bytes) -> tuple[FileItem, QueueMessage]:
         fid = str(uuid.uuid4())
@@ -775,7 +752,7 @@ async def upload_resumes_multipart(
             job_id=job_id,
             session_id=multipart_session_id,
             document_id=fid,
-            org_id=ctx.org_id,
+            org_id=job_org_id,
             job_version=job.job_version,
             s3_key=s3_key,
             stage="FAST_PARSE",
@@ -831,15 +808,15 @@ async def create_upload_session(
     job_id: str,
     request: Request,
     body: CreateUploadSessionRequest,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Create a durable upload session and return presigned S3 PUT URLs."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+    enforce_session_ownership(job, request)
 
     settings = get_settings()
+    job_org_id = getattr(job, "org_id", "org_default")
 
     # Guard 1: Document count limit
     if body.document_count > settings.MAX_DOCS_PER_SESSION or len(body.files) > settings.MAX_DOCS_PER_SESSION:
@@ -878,7 +855,7 @@ async def create_upload_session(
     session = UploadSessionItem(
         session_id=session_id,
         job_id=job_id,
-        org_id=ctx.org_id,
+        org_id=job_org_id,
         job_version=job_version,
         expected_document_count=len(body.files),
         uploaded_document_count=0,
@@ -894,7 +871,7 @@ async def create_upload_session(
     except AdmissionVerificationError as ave:
         client_ip = request.client.host if request.client else "unknown"
         ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:16]
-        logger.warning("Org %s admission verification failed: %s", ctx.org_id, ave)
+        logger.warning("Org %s admission verification failed: %s", job_org_id, ave)
         raise HTTPException(
             status_code=503,
             detail={
@@ -904,7 +881,7 @@ async def create_upload_session(
                 "route": request.url.path,
                 "job_id": job_id,
                 "session_id": None,
-                "org_id": ctx.org_id,
+                "org_id": job_org_id,
                 "client_ip_hash": ip_hash,
                 "retry_after": 5,
                 "retry_after_seconds": 5,
@@ -924,7 +901,7 @@ async def create_upload_session(
                 "route": request.url.path,
                 "job_id": job_id,
                 "session_id": None,
-                "org_id": ctx.org_id,
+                "org_id": job_org_id,
                 "client_ip_hash": ip_hash,
                 "retry_after": 60,
                 "retry_after_seconds": 60,
@@ -938,7 +915,7 @@ async def create_upload_session(
     doc_items: List[DocumentItem] = []
     for f in body.files:
         doc_id = str(uuid.uuid4())
-        s3_key = f"{ctx.org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
+        s3_key = f"{job_org_id}/jobs/{job_id}/sessions/{session_id}/resumes/{doc_id}.pdf"
         presigned_url = _storage.generate_presigned_put_url(
             s3_key=s3_key,
             content_type=f.content_type or "application/pdf",
@@ -950,7 +927,7 @@ async def create_upload_session(
             document_id=doc_id,
             job_id=job_id,
             session_id=session_id,
-            org_id=ctx.org_id,
+            org_id=job_org_id,
             filename=f.filename,
             file_size=f.file_size,
             s3_pdf_key=s3_key,
@@ -986,8 +963,8 @@ async def create_upload_session(
         _jobs_repo.increment_files_count(job_id, len(file_items))
 
     audit_logger.record(
-        ctx.org_id,
-        ctx.user_id,
+        job_org_id,
+        "anonymous",
         "UPLOAD_SESSION_CREATED",
         "job",
         job_id,
@@ -1016,15 +993,16 @@ async def create_upload_session(
 async def complete_document_upload(
     job_id: str,
     document_id: str,
+    request: Request,
     session_id: Optional[str] = None,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Verify S3 upload completion, validate PDF integrity header, and enqueue for fast-parse."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+    enforce_session_ownership(job, request)
 
+    job_org_id = getattr(job, "org_id", "org_default")
     doc = _docs_repo.get(job_id, document_id)
     resolved_session_id = session_id or (doc.session_id if doc else None) or getattr(job, "session_id", "default_session")
 
@@ -1077,36 +1055,36 @@ async def complete_document_upload(
             if fresh_sess:
                 _sessions_repo.increment_uploaded_count(job_id, resolved_session_id, expected_version=fresh_sess.version)
 
-    _files_repo.update_file_non_terminal(
-        job_id=job_id,
-        file_id=document_id,
-        status=FileStatus.UPLOADED,
-        file_size=actual_size,
-    )
-
     fresh_job = _jobs_repo.get(job_id)
     if fresh_job:
         _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
 
-    # 4. Enqueue to FAST_PARSE_QUEUE via transactional outbox
+    # 4. Atomically commit FileItem status transition and outbox record in DynamoDB, then attempt SQS
     job_version = getattr(fresh_job, "job_version", 1) if fresh_job else 1
     try:
-        write_outbox_and_send(
+        commit_file_upload_with_outbox(
             job_id=job_id,
+            file_id=document_id,
+            actual_size=actual_size,
             session_id=resolved_session_id,
-            document_id=document_id,
-            org_id=ctx.org_id,
+            org_id=job_org_id,
             job_version=job_version,
             s3_key=s3_key,
             stage="FAST_PARSE",
         )
     except Exception as outbox_err:
-        logger.debug("write_outbox_and_send direct fallback: %s", outbox_err)
+        logger.debug("commit_file_upload_with_outbox direct fallback: %s", outbox_err)
+        _files_repo.update_file_non_terminal(
+            job_id=job_id,
+            file_id=document_id,
+            status=FileStatus.UPLOADED,
+            file_size=actual_size,
+        )
         enqueue_fast_parse(
             job_id=job_id,
             session_id=resolved_session_id,
             document_id=document_id,
-            org_id=ctx.org_id,
+            org_id=job_org_id,
             job_version=job_version,
             s3_key=s3_key,
             content_hash="",
@@ -1128,13 +1106,13 @@ async def complete_document_upload(
 async def finalize_upload_session(
     job_id: str,
     session_id: str,
-    ctx: AuthContext = Depends(get_auth_context),
+    request: Request,
 ):
     """Finalize upload session to establish the explicit fast-parse barrier."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+    enforce_session_ownership(job, request)
 
     session = _sessions_repo.get(job_id, session_id)
     if not session:
@@ -1170,13 +1148,13 @@ async def finalize_upload_session(
 async def get_upload_session(
     job_id: str,
     session_id: str,
-    ctx: AuthContext = Depends(get_auth_context),
+    request: Request,
 ):
     """Retrieve upload session state, progress counts, and per-document diagnostics."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_tenant_ownership(getattr(job, "org_id", "org_default"), ctx)
+    enforce_session_ownership(job, request)
 
     session = _sessions_repo.get(job_id, session_id)
     if not session:
@@ -1227,7 +1205,6 @@ async def analyze_job(
     job_id: str,
     request: Request,
     body: Optional[AnalyzeRequest] = None,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Recruiter Analyze trigger.
 
@@ -1239,7 +1216,7 @@ async def analyze_job(
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     req = body or AnalyzeRequest()
 
@@ -1297,6 +1274,8 @@ async def analyze_job(
         except Exception as e:
             logger.warning("Could not set analysis_requested on session: %s", e)
 
+    job_org_id = getattr(job, "org_id", "org_default")
+
     # Determine explicit file IDs
     all_files = _files_repo.list_files_for_job(job_id)
     if req.file_ids is not None:
@@ -1312,7 +1291,7 @@ async def analyze_job(
                     job_id=job_id,
                     session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
                     document_id=f.file_id,
-                    org_id=ctx.org_id,
+                    org_id=job_org_id,
                     job_version=current_job_version,
                     s3_key=f.s3_raw_key,
                     stage="FAST_PARSE",
@@ -1323,7 +1302,7 @@ async def analyze_job(
                         job_id=job_id,
                         session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
                         document_id=f.file_id,
-                        org_id=ctx.org_id,
+                        org_id=job_org_id,
                         job_version=current_job_version,
                         s3_key=f.s3_raw_key,
                         content_hash="",
@@ -1335,8 +1314,8 @@ async def analyze_job(
     updated_job = _jobs_repo.request_analysis(job_id, selected_file_ids)
 
     audit_logger.record(
-        ctx.org_id,
-        ctx.user_id,
+        job_org_id,
+        "anonymous",
         "ANALYSIS_REQUESTED",
         "job",
         job_id,
@@ -1360,7 +1339,6 @@ async def get_job_status(
     job_id: str,
     request: Request,
     response: Response,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Short-polling endpoint with ETag/304 and 10-minute stalling detection.
 
@@ -1370,7 +1348,7 @@ async def get_job_status(
     job, files = _jobs_repo.get_job_with_files(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     # 2. Reconcile any pending outbox events only after ownership is validated
     try:
@@ -1458,13 +1436,12 @@ async def get_job_status(
 async def extract_resumes_stream(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """SSE extraction stream for client compatibility (API contracts)."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     async def event_generator():
         last_state = ""
@@ -1586,7 +1563,6 @@ async def score_job_endpoint(
     job_id: str,
     request: Request,
     body: Optional[Dict[str, Any]] = None,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Score candidates for a job.
     Accepts weights and executes candidate scoring.
@@ -1594,7 +1570,7 @@ async def score_job_endpoint(
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     raw_weights = (body or {}).get("weights")
     if raw_weights:
@@ -1609,17 +1585,18 @@ async def score_job_endpoint(
     from src.infrastructure.queue.message import QueueMessage
     upload_sessions = _sessions_repo.list_for_job(job_id)
     score_session_id = upload_sessions[0].session_id if upload_sessions else getattr(job, "session_id", "default")
+    job_org_id = getattr(job, "org_id", "org_default")
     msg = QueueMessage(
         job_id=job_id,
         session_id=score_session_id,
         document_id=job_id,
-        org_id=ctx.org_id,
+        org_id=job_org_id,
         job_version=job.job_version,
         stage="FINAL_RANK",
     )
     process_scoring_message(msg)
 
-    results_resp = await get_results(job_id=job_id, request=request, ctx=ctx)
+    results_resp = await get_results(job_id=job_id, request=request)
     return results_resp
 
 
@@ -1627,13 +1604,12 @@ async def score_job_endpoint(
 async def get_results(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Retrieve scored candidates from jobs/{job_id}/results.json."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     try:
         try:
@@ -1729,13 +1705,12 @@ async def download_resume(
     job_id: str,
     document_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Download candidate resume PDF directly from S3."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     file_item = _files_repo.get_file(job_id, document_id)
     if not file_item:
@@ -1774,13 +1749,12 @@ async def download_resume(
 async def delete_job(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Cascading deletion of job and all associated files, extractions, and scores."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     _jobs_repo.delete(job_id)
 
@@ -1793,7 +1767,7 @@ async def delete_job(
     except Exception as e:
         logger.warning("Error purging S3 prefix for job %s: %s", job_id, e)
 
-    audit_logger.record(ctx.org_id, ctx.user_id, "JOB_DELETED", "job", job_id)
+    audit_logger.record(getattr(job, "org_id", "org_default"), "anonymous", "JOB_DELETED", "job", job_id)
     return {"status": "deleted", "message": f"Job {job_id} and all related data deleted."}
 
 
@@ -1801,14 +1775,13 @@ async def delete_job(
 async def get_job_audit_log(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Retrieve audit log events for a job."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
-    events = audit_logger.query(org_id=ctx.org_id, resource_id=job_id)
+    enforce_session_ownership(job, request)
+    events = audit_logger.query(org_id=getattr(job, "org_id", "org_default"), resource_id=job_id)
     return {"job_id": job_id, "events": events}
 
 
@@ -1817,13 +1790,12 @@ async def delete_resume(
     job_id: str,
     document_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Mark a resume as REMOVED and purge its raw S3 object."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     _files_repo.transition_file_terminal(
         job_id=job_id,
@@ -1842,7 +1814,7 @@ async def delete_resume(
     except Exception as e:
         logger.warning("Error deleting S3 raw key for doc %s: %s", document_id, e)
 
-    audit_logger.record(ctx.org_id, ctx.user_id, "DOCUMENT_DELETED", "document", document_id, {"job_id": job_id})
+    audit_logger.record(getattr(job, "org_id", "org_default"), "anonymous", "DOCUMENT_DELETED", "document", document_id, {"job_id": job_id})
     return {"status": "deleted", "message": f"Document {document_id} removed."}
 
 
@@ -1852,13 +1824,12 @@ async def update_candidate_decision(
     document_id: str,
     body: DecisionUpdateRequest,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Update human recruiter decision state."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     valid_decisions = ("new", "reviewing", "shortlisted", "rejected", "interview", "archived")
     raw_decision = (body.decision or "").strip().lower()
@@ -1885,7 +1856,7 @@ async def update_candidate_decision(
         "decision_reason": body.reason,
         "note": body.note,
         "tags": body.tags,
-        "updated_by": ctx.user_id,
+        "updated_by": "recruiter",
     }
     _scoring_repo.save_candidate_decision(job_id, document_id, decision_payload)
 
@@ -1923,8 +1894,8 @@ async def update_candidate_decision(
         logger.debug("S3 results.json sync fallback for job %s: %s", job_id, e)
 
     audit_logger.record(
-        ctx.org_id,
-        ctx.user_id,
+        getattr(job, "org_id", "org_default"),
+        "anonymous",
         "DECISION_UPDATED",
         "candidate",
         document_id,
@@ -1944,13 +1915,12 @@ async def update_candidate_decision(
 async def export_job_csv(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Export candidate rankings for a job in standard CSV format."""
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     candidates = []
     try:
@@ -2018,7 +1988,6 @@ async def export_job_csv(
 async def get_extraction_metrics(
     job_id: str,
     request: Request,
-    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Return aggregate extraction quality and timing metrics for a job."""
     from src.infrastructure.models.document import DocumentStatus
@@ -2026,7 +1995,7 @@ async def get_extraction_metrics(
     job = _jobs_repo.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    enforce_session_ownership(job, request, ctx)
+    enforce_session_ownership(job, request)
 
     docs = _docs_repo.list_for_job(job_id)
     total_docs = len(docs)

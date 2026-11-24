@@ -54,20 +54,8 @@ def client():
 
 @pytest.fixture
 def auth_headers(client):
-    """Create a unique authenticated organization context for each test."""
-    unique_id = uuid.uuid4().hex[:8]
-    reg_resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{unique_id}",
-            "email": f"recruiter_{unique_id}@example.com",
-            "name": f"Recruiter {unique_id}",
-            "password": "Password123!",
-        },
-    )
-    assert reg_resp.status_code == 201
-    token = reg_resp.json()["token"]
-    return {"Authorization": f"Bearer {token}"}
+    """Standalone architecture: endpoints are open without authentication headers."""
+    return {}
 
 
 def make_pdf(text: str = "Candidate Resume Content") -> bytes:
@@ -433,14 +421,10 @@ def test_odl_batch_worker_bounded_batches_and_isolation(client, auth_headers):
 
 def test_structured_429_error_diagnostics(client):
     """Breaching active upload sessions quota returns structured 429 diagnostic payload."""
-    import time
-    from src.api.auth import create_session_token, User
     test_org = f"org_429_{uuid.uuid4().hex[:8]}"
-    test_user = User(f"user_{uuid.uuid4().hex[:6]}", test_org, "test@429.local", "Test User", "admin", "hash", time.time())
-    token = create_session_token(test_user)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {}
 
-    job_resp = client.post("/api/v2/jobs", headers=headers, json={"title": "Quota 429 Test"})
+    job_resp = client.post("/api/v2/jobs", headers=headers, json={"title": "Quota 429 Test", "org_id": test_org})
     job_id = job_resp.json()["id"]
 
     # Settings allows max 5 active upload sessions per org

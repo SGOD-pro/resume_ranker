@@ -95,8 +95,11 @@ def test_deleted_complete_and_finalize_endpoints_return_404(client):
     assert resp_finalize.status_code == 404
 
 
-def test_session_ownership_enforcement(client):
-    """Mismatched session ID on job route returns HTTP 403 Forbidden."""
+def test_session_ownership_enforcement(client, monkeypatch):
+    """Untrusted cross-origin request on job route returns HTTP 403 Forbidden in production."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+
     job_item = JobItem(
         job_id="job-owned-by-alice",
         session_id="session-alice-123",
@@ -106,18 +109,18 @@ def test_session_ownership_enforcement(client):
     with patch("src.infrastructure.repositories.jobs_repository.JobsRepository.get", return_value=job_item), \
          patch("src.infrastructure.repositories.jobs_repository.JobsRepository.get_job_with_files", return_value=(job_item, [])):
 
-        # Request from Bob's session
+        # Untrusted origin request -> 403 Forbidden
         resp = client.get(
             "/api/v2/jobs/job-owned-by-alice/status",
-            headers={"X-Session-ID": "session-bob-456"},
+            headers={"Origin": "http://evil-attacker.com"},
         )
         assert resp.status_code == 403
         data = resp.json()
         assert "FORBIDDEN" in str(data) or "Access denied" in str(data)
 
-        # Request from Alice's session -> OK
-        resp_alice = client.get(
+        # Trusted origin request -> 200 OK
+        resp_trusted = client.get(
             "/api/v2/jobs/job-owned-by-alice/status",
-            headers={"X-Session-ID": "session-alice-123"},
+            headers={"Origin": "http://localhost:3000"},
         )
-        assert resp_alice.status_code == 200
+        assert resp_trusted.status_code == 200

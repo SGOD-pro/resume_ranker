@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 # Route pattern -> (max_requests, window_seconds)
 RATE_LIMIT_RULES = [
     ("/ats-check", 10, 60),
-    ("/auth/login", 20, 60),
-    ("/auth/register", 10, 60),
 ]
 
 

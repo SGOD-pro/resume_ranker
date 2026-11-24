@@ -756,19 +756,21 @@ def test_independent_outbox_recovery_without_browser_polling(mock_table):
 # ---------------------------------------------------------------------------
 # Drill 12: Ownership enforcement before outbox reconciliation
 # ---------------------------------------------------------------------------
-def test_get_job_status_enforces_ownership_before_outbox_reconciliation(mock_table):
-    """GET /api/v2/jobs/{job_id}/status verifies ownership and raises 403 BEFORE reconcile_outbox."""
+def test_get_job_status_enforces_ownership_before_outbox_reconciliation(mock_table, monkeypatch):
+    """GET /api/v2/jobs/{job_id}/status validates origin and raises 403 BEFORE reconcile_outbox in production."""
     from fastapi import HTTPException
     from unittest.mock import MagicMock
     import asyncio
     from src.api.routes.jobs_v2 import get_job_status
     from src.infrastructure.models.job import JobItem, JobStatus
-    from src.api.auth import AuthContext
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
 
     job_id = "job-auth-ownership"
     job = JobItem(
         job_id=job_id,
-        org_id="org_owner",
+        org_id="org_default",
         session_id="session_owner",
         title="Ownership Test",
         status=JobStatus.PROCESSING,
@@ -777,18 +779,16 @@ def test_get_job_status_enforces_ownership_before_outbox_reconciliation(mock_tab
         usable_files=0,
     )
 
-    # Context belonging to a different org
-    attacker_ctx = AuthContext(user_id="user_attacker", org_id="org_attacker", email="attacker@example.com", role="recruiter")
     req = MagicMock()
     req.cookies = {}
-    req.headers = {"X-Session-ID": "session_attacker"}
+    req.headers = {"origin": "http://malicious-attacker.com"}
     resp = MagicMock()
 
     with patch("src.infrastructure.repositories.jobs_repository.JobsRepository.get_job_with_files", return_value=(job, [])), \
          patch("src.infrastructure.repositories.files_repository.FilesRepository.reconcile_outbox") as mock_reconcile:
 
         with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(get_job_status(job_id=job_id, request=req, response=resp, ctx=attacker_ctx))
+            asyncio.run(get_job_status(job_id=job_id, request=req, response=resp))
 
         assert exc_info.value.status_code == 403
         mock_reconcile.assert_not_called()

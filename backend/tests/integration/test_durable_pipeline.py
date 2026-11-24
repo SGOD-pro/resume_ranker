@@ -62,20 +62,8 @@ def client():
 
 @pytest.fixture
 def auth_headers(client):
-    """Create a unique authenticated organization context for each test."""
-    unique_id = uuid.uuid4().hex[:8]
-    reg_resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{unique_id}",
-            "email": f"recruiter_{unique_id}@example.com",
-            "name": f"Recruiter {unique_id}",
-            "password": "Password123!",
-        },
-    )
-    assert reg_resp.status_code == 201
-    token = reg_resp.json()["token"]
-    return {"Authorization": f"Bearer {token}"}
+    """Standalone architecture: endpoints are open without authentication headers."""
+    return {}
 
 
 def create_sample_pdf(name: str, skills: List[str] = None, experience_years: int = 3) -> bytes:

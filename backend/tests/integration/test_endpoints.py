@@ -31,18 +31,7 @@ def test_api_flow():
     # context manager, which verifies DynamoDB and S3 connectivity on startup.
     client = TestClient(app)
 
-    unique_id = uuid.uuid4().hex[:8]
-    reg_resp = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{unique_id}",
-            "email": f"recruiter_{unique_id}@example.com",
-            "name": f"Recruiter {unique_id}",
-            "password": "Password123!",
-        },
-    )
-    assert reg_resp.status_code == 201
-    auth_headers = {"Authorization": f"Bearer {reg_resp.json()['token']}"}
+    auth_headers = {}
 
     # 1. Health check
     print("\n--- 1. Testing /health ---")

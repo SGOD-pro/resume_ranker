@@ -50,18 +50,7 @@ def client():
 
 @pytest.fixture
 def auth_headers(client):
-    uid = uuid.uuid4().hex[:8]
-    r = client.post(
-        "/api/v2/auth/register",
-        json={
-            "org_name": f"Org_{uid}",
-            "email": f"rec_{uid}@example.com",
-            "name": f"Rec {uid}",
-            "password": "Password123!",
-        },
-    )
-    assert r.status_code == 201
-    return {"Authorization": f"Bearer {r.json()['token']}"}
+    return {}
 
 
 def test_concurrent_duplicate_message_delivery_idempotency():
