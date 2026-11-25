@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { CandidateHeader } from './CandidateHeader';
 import { MatchScoreSection } from './MatchScoreSection';
+import { AtsHealthSection } from './AtsHealthSection';
 import { SkillBreakdown } from './SkillBreakdown';
 import { KnockoutChecks } from './KnockoutChecks';
 import { ExperienceTimeline } from './ExperienceTimeline';
@@ -9,11 +11,32 @@ import { EducationSection } from './EducationSection';
 import { FlagsSection } from './FlagsSection';
 import { CandidateActions } from './CandidateActions';
 import { useCandidateStore } from '@/store/candidate-store';
+import { useJobStore } from '@/store/job-store';
+
 
 export function CandidateDetailPanel() {
-  const selectedId = useCandidateStore((s) => s.selectedId);
-  const candidates = useCandidateStore((s) => s.candidates);
-  const candidate = selectedId ? candidates.find((c) => c.id === selectedId) ?? null : null;
+  // ── Use stable primitive selectors — never call computed functions as selectors.
+  const selectedId  = useCandidateStore((s) => s.selectedId);
+  const candidates  = useCandidateStore((s) => s.candidates);
+  const jobWeights  = useJobStore((s) => s.job.weights);
+
+  // Compute the candidate with dynamic score inside useMemo so the reference
+  // is stable and only recalculates when the selected id, list, or weights change.
+  const candidate = useMemo(() => {
+    if (!selectedId) return null;
+    const c = candidates.find((c) => c.id === selectedId);
+    if (!c) return null;
+    const totalWeight = Object.values(jobWeights).reduce((a, b) => a + b, 0) || 100;
+    const sb = c.scoreBreakdown ?? { skills: 0, experience: 0, keywords: 0, education: 0 };
+    const baseScore =
+      (sb.skills     * (jobWeights.skills     / totalWeight)) +
+      (sb.experience * (jobWeights.experience / totalWeight)) +
+      (sb.keywords   * (jobWeights.keywords   / totalWeight)) +
+      (sb.education  * (jobWeights.education  / totalWeight));
+    // Retain authoritative backend overallScore and compute previewScore separately
+    const previewScore = Math.round(baseScore * 10) / 10;
+    return { ...c, previewScore };
+  }, [selectedId, candidates, jobWeights]);
 
   if (!candidate) {
     return (
@@ -38,6 +61,10 @@ export function CandidateDetailPanel() {
         <Separator className="bg-border h-[3px] my-sp-4" />
 
         <MatchScoreSection candidate={candidate} />
+
+        <Separator className="bg-border h-[3px] my-sp-4" />
+
+        <AtsHealthSection candidate={candidate} />
 
         <Separator className="bg-border h-[3px] my-sp-4" />
 

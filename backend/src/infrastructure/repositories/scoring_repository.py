@@ -10,12 +10,12 @@ top candidate for fast display.
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from boto3.dynamodb.conditions import Key
 
 from src.infrastructure.models.scoring import ScoringItem, ScoringStatus
-from src.infrastructure.repositories.base import _get_table
+from src.infrastructure.repositories.base import _get_table, to_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +149,88 @@ class ScoringRepository:
         )
         logger.info("Failed scoring: %s", scoring_id)
         return ScoringItem.from_dynamodb_item(response["Attributes"])
+
+    def save_candidate_decision(
+        self,
+        job_id: str,
+        document_id: str,
+        decision_data: Dict[str, Any],
+        expected_version: Optional[int] = None,
+        client_timestamp: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Persist recruiter candidate decision, reason, and notes to DynamoDB atomically.
+
+        Uses field-specific update_item rather than put_item to preserve independent fields
+        (e.g. notes, tags, decision, reason) updated by separate recruiters or requests.
+        Supports optimistic concurrency via expected_version and out-of-order protection via client_timestamp.
+        """
+        now = _utcnow_iso()
+        expr_names: Dict[str, str] = {
+            "#et": "entity_type",
+            "#jid": "job_id",
+            "#did": "document_id",
+        }
+        expr_vals: Dict[str, Any] = {
+            ":et": "DECISION",
+            ":jid": job_id,
+            ":did": document_id,
+            ":now": now,
+            ":zero": 0,
+            ":one": 1,
+        }
+
+        set_clauses = [
+            "#et = if_not_exists(#et, :et)",
+            "#jid = if_not_exists(#jid, :jid)",
+            "#did = if_not_exists(#did, :did)",
+            "updated_at = :now",
+            "version = if_not_exists(version, :zero) + :one",
+        ]
+
+        for i, (k, v) in enumerate(decision_data.items()):
+            field_alias = f"#field_{i}"
+            val_alias = f":val_{i}"
+            expr_names[field_alias] = k
+            expr_vals[val_alias] = to_decimal(v)
+            set_clauses.append(f"{field_alias} = {val_alias}")
+
+        update_expr = f"SET {', '.join(set_clauses)}"
+
+        cond_clauses = []
+        if expected_version is not None:
+            expr_names["#v"] = "version"
+            expr_vals[":expected_v"] = expected_version
+            cond_clauses.append("(attribute_not_exists(#v) OR #v = :expected_v)")
+        if client_timestamp is not None:
+            expr_vals[":client_ts"] = client_timestamp
+            cond_clauses.append("(attribute_not_exists(updated_at) OR updated_at <= :client_ts)")
+
+        cond_expr = " AND ".join(cond_clauses) if cond_clauses else None
+
+        update_kwargs: Dict[str, Any] = {
+            "Key": {"PK": f"JOB#{job_id}", "SK": f"DECISION#{document_id}"},
+            "UpdateExpression": update_expr,
+            "ExpressionAttributeNames": expr_names,
+            "ExpressionAttributeValues": expr_vals,
+            "ReturnValues": "ALL_NEW",
+        }
+        if cond_expr:
+            update_kwargs["ConditionExpression"] = cond_expr
+
+        response = self._table.update_item(**update_kwargs)
+        attrs = response.get("Attributes", {})
+        logger.info("Persisted decision for candidate %s in job %s to DynamoDB", document_id, job_id)
+        return attrs
+
+    def get_candidate_decisions(self, job_id: str) -> Dict[str, Dict[str, Any]]:
+        """Retrieve all recruiter candidate decisions for a job from DynamoDB."""
+        from boto3.dynamodb.conditions import Key
+        resp = self._table.query(
+            KeyConditionExpression=Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("DECISION#")
+        )
+        decisions: Dict[str, Dict[str, Any]] = {}
+        for it in resp.get("Items", []):
+            doc_id = it.get("document_id")
+            if doc_id:
+                decisions[doc_id] = it
+        return decisions

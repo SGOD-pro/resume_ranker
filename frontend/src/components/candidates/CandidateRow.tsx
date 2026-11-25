@@ -6,7 +6,7 @@ const signalConfig: Record<Signal, { label: string; color: string; dot: string }
   strong: { label: 'Strong', color: 'text-success', dot: 'bg-success' },
   good: { label: 'Good', color: 'text-warning', dot: 'bg-warning' },
   fair: { label: 'Fair', color: 'text-warning', dot: 'bg-warning' },
-  knockout: { label: 'Knockout', color: 'text-error', dot: 'bg-error' },
+  knockout: { label: 'Criteria Not Met', color: 'text-error', dot: 'bg-error' },
   processing: { label: 'Processing', color: 'text-muted-foreground', dot: 'bg-muted-foreground' },
   'parse-failed': { label: 'Failed', color: 'text-error', dot: 'bg-error' },
 };
@@ -20,8 +20,23 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
   const isSelected = selectedId === candidate.id;
   const signal = signalConfig[candidate.signal];
 
+  const isUnresolvedName =
+    candidate.name === 'Name needs review' ||
+    candidate.identityStatus === 'UNRESOLVED' ||
+    !candidate.name;
+  const displayName = isUnresolvedName ? 'Name needs review' : candidate.name;
+
+  const scoreValue = typeof candidate.overallScore === 'number'
+    ? candidate.overallScore
+    : (candidate.relevanceScore ?? 0);
+  const formattedScore = typeof scoreValue === 'number'
+    ? (scoreValue % 1 === 0 ? `${scoreValue}%` : `${scoreValue.toFixed(1)}%`)
+    : '0%';
+
+
   return (
     <button
+      data-testid="candidate-row"
       onClick={() => selectCandidate(candidate.id)}
       className={cn(
         'w-full text-left border-b border-border px-sp-4 py-sp-2 transition-colors cursor-pointer',
@@ -35,21 +50,51 @@ export function CandidateRow({ candidate }: CandidateRowProps) {
         <span className="w-8 font-mono text-small font-bold">
           {candidate.rank}
         </span>
-        <span className="flex-1 font-semibold text-sm truncate">
-          {candidate.name}
-        </span>
-        <span className="w-16 text-right font-mono text-sm font-bold">
-          {candidate.overallScore}%
-        </span>
-        <span
-          className={cn(
-            'w-20 text-right text-sm uppercase tracking-chip font-bold flex items-center justify-end gap-1',
-            isSelected ? 'text-current' : signal.color
+        <div className="flex-1 truncate flex items-center gap-1.5">
+          {isUnresolvedName ? (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium border',
+                isSelected
+                  ? 'bg-warning/20 text-warning-foreground border-warning/40'
+                  : 'bg-warning/10 text-warning border-warning/30'
+              )}
+            >
+              <span aria-hidden="true">⚠</span>
+              {displayName}
+            </span>
+          ) : (
+            <span className="font-semibold text-sm truncate">{displayName}</span>
           )}
-        >
-          <span className={cn('inline-block w-2 h-2 rounded-full', isSelected ? 'bg-current' : signal.dot)} />
-          {signal.label}
+        </div>
+        <span data-testid="candidate-row-score" className="w-16 text-right font-mono text-sm font-bold">
+          {formattedScore}
         </span>
+        <div className="flex items-center justify-end gap-2 shrink-0">
+          <span
+            className={cn(
+              'text-xs uppercase tracking-chip font-bold flex items-center gap-1',
+              isSelected ? 'text-current' : signal.color
+            )}
+            title={`System relevance: ${signal.label}`}
+          >
+            <span className={cn('inline-block w-2 h-2 rounded-full', isSelected ? 'bg-current' : signal.dot)} />
+            {signal.label}
+          </span>
+          {candidate.status && candidate.status !== 'under-review' && (
+            <span
+              className={cn(
+                'text-[10px] uppercase tracking-chip font-bold px-1.5 py-0.5 border rounded',
+                candidate.status === 'shortlisted' && (isSelected ? 'border-background text-background' : 'border-success text-success bg-success/15'),
+                candidate.status === 'rejected' && (isSelected ? 'border-background text-background' : 'border-error text-error bg-error/15'),
+                candidate.status === 'assessment-sent' && (isSelected ? 'border-background text-background' : 'border-info text-info bg-info/15'),
+              )}
+            >
+              {candidate.status === 'shortlisted' ? 'Shortlisted' :
+               candidate.status === 'rejected' ? 'Rejected' : 'Assessment'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Skills line */}

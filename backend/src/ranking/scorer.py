@@ -80,6 +80,7 @@ from src.registries.skill_registry import (
 
 
 from src.ranking.bm25_scorer import bm25_skill_score as _bm25_skill_score, precompute_bm25_idf as _precompute_bm25_idf
+from src.ranking.tfidf_scorer import tf as _tf, tokenize as _tokenize
 from src.ranking.similarity import (
     parse_date as _parse_date,
     compute_total_experience_years as _compute_total_experience_years,
@@ -91,6 +92,25 @@ from src.ranking.similarity import (
 # ── Phase 2: Inference Engine & Domain Classification ─────────────────────
 from src.ranking.skill_inference import SkillInferenceEngine, WEIGHT_INFERRED
 from src.ranking.domain_classifier import DomainClassifier
+
+
+@dataclass
+class JDContext:
+    all_jd_skills: List[str]
+    all_jd_skills_lower: List[str]
+    all_jd_set: set
+    jd_domain: str
+    jd_conf: float
+    jd_subdomain: str
+    jd_sub_penalties: Dict[str, Any]
+    jd_title_tokens: Dict[str, float]
+    keyword_patterns: Dict[str, List[Tuple[bool, Any]]]
+    skill_search_patterns: Dict[str, List[re.Pattern]]
+    cert_domain_kws: Set[str]
+    skill_w: float
+    exp_w: float
+    kw_w: float
+    edu_w: float
 
 import json as _json
 import os as _os
@@ -183,112 +203,18 @@ def _project_skill_bonus(candidate: Dict[str, Any],
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Prestigious Company Bonus
+# Prestigious Company Bonus (Disabled)
 # ─────────────────────────────────────────────────────────────────────────────
-
-# Top-tier companies across industries
-_PRESTIGIOUS_COMPANIES = {
-    # ── Tech / FAANG+ ──
-    'google', 'alphabet', 'meta', 'facebook', 'apple', 'amazon', 'microsoft',
-    'netflix', 'nvidia', 'tesla', 'openai', 'deepmind', 'anthropic',
-    'salesforce', 'adobe', 'oracle', 'ibm', 'intel', 'cisco', 'samsung',
-    'palantir', 'snowflake', 'databricks', 'stripe', 'uber', 'airbnb',
-    'linkedin', 'twitter', 'x corp', 'spotify', 'shopify', 'atlassian',
-    'vmware', 'sap', 'twilio', 'cloudflare', 'crowdstrike', 'datadog',
-    'square', 'block', 'coinbase', 'robinhood', 'instacart', 'doordash',
-    'lyft', 'pinterest', 'snap', 'tiktok', 'bytedance', 'zoom',
-    'infosys', 'tcs', 'wipro', 'cognizant', 'hcl', 'tech mahindra',
-    # ── Finance ──
-    'goldman sachs', 'jpmorgan', 'jp morgan', 'morgan stanley',
-    'blackrock', 'citadel', 'two sigma', 'jane street', 'bridgewater',
-    'barclays', 'deutsche bank', 'ubs', 'credit suisse', 'hsbc',
-    'visa', 'mastercard', 'paypal', 'american express', 'fidelity',
-    # ── Consulting ──
-    'mckinsey', 'bcg', 'bain', 'deloitte', 'pwc', 'kpmg', 'ey',
-    'ernst & young', 'accenture', 'capgemini',
-    # ── Pharma / Healthcare ──
-    'pfizer', 'johnson & johnson', 'roche', 'novartis', 'merck',
-    'abbvie', 'eli lilly', 'astrazeneca', 'moderna', 'gsk',
-    # ── Retail / Consumer ──
-    'walmart', 'target', 'costco', 'nike', 'adidas',
-    "macy's", 'macys', 'nordstrom', 'best buy', 'home depot',
-    'coca-cola', 'pepsico', 'procter & gamble', 'unilever', "l'oreal",
-    # ── Media / Entertainment ──
-    'disney', 'warner bros', 'paramount', 'sony', 'nbc', 'cnn', 'bbc',
-    # ── Automotive / Aerospace ──
-    'bmw', 'mercedes', 'toyota', 'ford', 'general motors', 'spacex',
-    'boeing', 'lockheed martin', 'raytheon',
-    # ── Energy ──
-    'shell', 'bp', 'chevron', 'exxonmobil',
-}
-
 
 def _prestige_bonus(candidate: Dict[str, Any]) -> Tuple[float, List[str]]:
-    """
-    Bonus for working at prestigious/top-tier companies.
-    Returns (bonus 0-4.0, list of matched prestigious companies).
-    """
-    experience = candidate.get('experience', [])
-    if not experience:
-        return 0.0, []
-
-    matched = []
-
-    for exp in experience:
-        company = (exp.get('company') or '').lower()
-        if not company:
-            continue
-        for prestige in _PRESTIGIOUS_COMPANIES:
-            # Only match against the structured company name (not raw text)
-            # to avoid false positives from URLs like "linkedin.com/in/..."
-            if prestige in company and len(prestige) >= 3:
-                display_name = prestige.title()
-                if display_name not in matched:
-                    matched.append(display_name)
-                break  # One match per experience entry
-
-    if not matched:
-        return 0.0, []
-
-    # Bonus: 2.0 per prestigious company, max 4.0
-    bonus = min(4.0, len(matched) * 2.0)
-    return round(bonus, 1), matched
+    # ponytail: Employer prestige bonus disabled per v2 fairness policy (SCORING-POLICY.md §Prohibited Inputs).
+    # Returns (0.0, []) stub to satisfy ScoredCandidate schema compatibility.
+    return 0.0, []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Certificate / Hackathon Bonus Scoring
+# Certificate Bonus Scoring
 # ─────────────────────────────────────────────────────────────────────────────
-
-# Prestigious certificate issuers (higher bonus weight)
-_PRESTIGIOUS_CERT_ISSUERS = {
-    # ── Tech Companies ──
-    'google', 'aws', 'amazon', 'microsoft', 'azure', 'meta', 'facebook',
-    'ibm', 'oracle', 'cisco', 'salesforce', 'adobe', 'nvidia',
-    'red hat', 'vmware', 'hashicorp', 'databricks', 'snowflake',
-    # ── Education / Certification Bodies ──
-    'coursera', 'udacity', 'edx', 'mit', 'stanford', 'harvard',
-    'iit', 'cambridge', 'oxford',
-    'comptia', 'pmi', 'isaca', 'isc2', '(isc)2',
-    # ── Domain-specific ──
-    'hubspot', 'hootsuite', 'semrush', 'moz',       # Marketing
-    'cfa', 'frm', 'chartered',                       # Finance
-    'nist', 'sans', 'ec-council',                    # Security
-    'six sigma', 'lean', 'prince2', 'itil',          # Management
-}
-
-# Keywords indicating hackathon / competition achievements
-_HACKATHON_KEYWORDS = [
-    'hackathon', 'hack-a-thon', 'coding competition', 'code competition',
-    'programming contest', 'coding challenge', 'competitive programming',
-    'kaggle', 'topcoder', 'codeforces', 'leetcode', 'hackerrank',
-    'datathon', 'ideathon', 'makeathon', 'buildathon',
-]
-
-_WIN_KEYWORDS = [
-    'winner', 'won', 'first place', '1st place', 'champion', 'gold',
-    'finalist', 'runner-up', 'runner up', 'second place', '2nd place',
-    'top 3', 'top 5', 'top 10', 'best project', 'grand prize',
-]
 
 # Domain-relevant cert keywords (for all domains, not just IT)
 _CERT_DOMAIN_KEYWORDS = {
@@ -322,34 +248,37 @@ _CERT_DOMAIN_KEYWORDS = {
 
 
 def _cert_bonus(candidate: Dict[str, Any],
-                jd: JobDescription) -> Tuple[float, List[str]]:
+                jd: JobDescription,
+                precomputed_cert_kws: Optional[Tuple[Set[str], List[str]]] = None) -> Tuple[float, List[str]]:
     """
-    Bonus for relevant certifications and hackathon achievements.
+    Bonus for relevant certifications.
     - Base certs: 0.15 per relevant cert (max 3.0)
     - Prestigious issuer certs: 0.25 per cert (max 3.0)
-    - Hackathon participation: +0.5
-    - Hackathon wins: +1.0
     Returns (bonus 0-5.0, list of relevant cert names).
     """
     certs = candidate.get('certifications', [])
-    raw_text = (candidate.get('raw_text_sections', {}).get('full_text', '') or '').lower()
+    if not certs:
+        return 0.0, []
 
-    # Build domain keywords from JD
-    jd_text = f"{jd.title} {jd.department} {jd.description}".lower()
-    all_jd_skills_lower = [s.lower() for s in jd.must_have_skills + jd.nice_to_have_skills]
-    jd_keywords_lower = [k.lower() for k in jd.keywords]
+    if precomputed_cert_kws is not None:
+        relevant_domain_kws, all_jd_skills_lower = precomputed_cert_kws
+    else:
+        # Build domain keywords from JD
+        jd_text = f"{jd.title} {jd.department} {jd.description}".lower()
+        all_jd_skills_lower = [s.lower() for s in jd.must_have_skills + jd.nice_to_have_skills]
+        jd_keywords_lower = [k.lower() for k in jd.keywords]
 
-    # Determine relevant domains
-    relevant_domain_kws = set()
-    for domain, kws in _CERT_DOMAIN_KEYWORDS.items():
-        for kw in kws:
-            if kw in jd_text or kw in ' '.join(all_jd_skills_lower):
-                relevant_domain_kws.update(kws)
-                break
+        # Determine relevant domains
+        relevant_domain_kws = set()
+        for domain, kws in _CERT_DOMAIN_KEYWORDS.items():
+            for kw in kws:
+                if kw in jd_text or kw in ' '.join(all_jd_skills_lower):
+                    relevant_domain_kws.update(kws)
+                    break
 
-    # If no domain matched, use all JD skills + keywords as relevance indicators
-    if not relevant_domain_kws:
-        relevant_domain_kws = set(all_jd_skills_lower + jd_keywords_lower)
+        # If no domain matched, use all JD skills + keywords as relevance indicators
+        if not relevant_domain_kws:
+            relevant_domain_kws = set(all_jd_skills_lower + jd_keywords_lower)
 
     bonus = 0.0
     relevant = []
@@ -373,34 +302,15 @@ def _cert_bonus(candidate: Dict[str, Any],
 
         relevant.append(cert.get('name') or cert_name.title())
 
-        # Check if from prestigious issuer
-        is_prestigious = any(iss in cert_full for iss in _PRESTIGIOUS_CERT_ISSUERS)
-        if is_prestigious:
-            bonus += 0.25  # Higher weight for prestigious certs
-        else:
-            bonus += 0.15  # Base weight for relevant certs
+        # v2 Fairness Policy: All relevant certs get equal weight.
+        # Prestigious issuer bonus REMOVED (university/employer prestige
+        # must not influence ranking per SCORING-POLICY.md).
+        bonus += 0.15  # Base weight for any relevant cert
 
-    # ── Hackathon detection ───────────────────────────────────────────────
-    hackathon_found = any(kw in raw_text for kw in _HACKATHON_KEYWORDS)
-    hackathon_win = hackathon_found and any(kw in raw_text for kw in _WIN_KEYWORDS)
-
-    # Also check cert names for hackathon mentions
-    for cert in certs:
-        cert_name = (cert.get('name') or '').lower()
-        if any(kw in cert_name for kw in _HACKATHON_KEYWORDS):
-            hackathon_found = True
-            if any(kw in cert_name for kw in _WIN_KEYWORDS):
-                hackathon_win = True
-
-    if hackathon_win:
-        bonus += 1.0
-        relevant.append("🏆 Hackathon Winner")
-    elif hackathon_found:
-        bonus += 0.5
-        relevant.append("🎯 Hackathon Participant")
-
+    # Hackathon bonus REMOVED (not job-relevant unless explicitly required by JD)
     bonus = min(5.0, bonus)  # Cap at 5.0
     return round(bonus, 1), relevant
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,20 +332,10 @@ def _detect_anomalies(candidate: Dict[str, Any],
     if jd.max_years < 99 and total_years > jd.max_years * 1.5:
         flags.append(f"OVERQUALIFIED: {total_years}yr exp vs {jd.max_years}yr max")
 
-    # Employment gap: check for gaps > 6 months between jobs
-    dates = []
-    for exp in experience:
-        start = _parse_date(exp.get('start'))
-        end = _parse_date(exp.get('end'))
-        if start and end:
-            dates.append((start, end))
-    if len(dates) >= 2:
-        dates.sort(key=lambda x: x[0])
-        for i in range(len(dates) - 1):
-            gap = (dates[i + 1][0] - dates[i][1]).days
-            if gap > 180:
-                flags.append(f"GAP: {gap // 30}mo gap between jobs")
-                break
+    # Employment gap detection: DISABLED (v2 Fairness Policy)
+    # Career gaps must not be flagged as they penalize caregivers,
+    # medical leave, parental leave, and other legitimate breaks.
+    # See SCORING-POLICY.md §Prohibited Inputs.
 
     # Low extraction quality
     quality = candidate.get('extraction_quality', 1.0)
@@ -461,88 +361,6 @@ class CandidateScorer:
     def __init__(self):
         self._inference_engine = SkillInferenceEngine()
         self._domain_classifier = DomainClassifier(self._inference_engine)
-
-    def rank(self, jd: JobDescription,
-             candidates: List[Dict[str, Any]]) -> List[ScoredCandidate]:
-        """
-        Run the full 3-phase scoring pipeline.
-
-        Args:
-            jd: Structured job description
-            candidates: List of extracted resume fields dicts
-
-        Returns:
-            List of ScoredCandidate sorted by final_score descending
-        """
-        # Pre-compute all candidate skills for BM25 IDF
-        all_skills = [c.get('skills', []) for c in candidates]
-
-        # Pre-compute IDF ONCE (was O(n²) when done per-candidate)
-        all_jd_skills = list(set(jd.must_have_skills + jd.nice_to_have_skills))
-        precomputed_idf = _precompute_bm25_idf(all_jd_skills, all_skills)
-
-        # ── Domain pre-filter: skip clearly unrelated candidates ──────────
-        # This prevents healthcare/legal/accounting candidates from polluting
-        # engineering rankings. Only filter when we have high JD confidence.
-        jd_domain, jd_conf = self._domain_classifier.classify_jd(
-            jd.title, all_jd_skills, jd.description, jd.department
-        )
-        prox = _load_domain_proximity()
-        penalties_matrix = prox.get('penalties', {})
-
-        # Construction is related to civil engineering — never filter
-        _RELATED_DOMAINS = {
-            ('engineering', 'construction'),
-            ('construction', 'engineering'),
-        }
-
-        filtered_candidates = []
-        for candidate in candidates:
-            cand_domain, cand_conf = self._domain_classifier.classify(candidate)
-
-            # Only filter if BOTH sides have reasonable confidence
-            if jd_conf >= 0.35 and cand_conf >= 0.35:
-                pair = (jd_domain, cand_domain)
-                if jd_domain != cand_domain and jd_domain != 'unknown' and cand_domain != 'unknown':
-                    if pair not in _RELATED_DOMAINS:
-                        jd_penalties = penalties_matrix.get(jd_domain, {})
-                        penalty = jd_penalties.get(cand_domain, -50.0)
-                        # Skip candidates with severe domain mismatch (penalty <= -60)
-                        if penalty <= -60:
-                            continue
-
-            filtered_candidates.append(candidate)
-
-        # Recompute all_skills for filtered set (for BM25 IDF)
-        filtered_all_skills = [c.get('skills', []) for c in filtered_candidates]
-        precomputed_idf = _precompute_bm25_idf(all_jd_skills, filtered_all_skills)
-
-        results = []
-        for candidate in filtered_candidates:
-            result = self._score_candidate(jd, candidate, filtered_all_skills, precomputed_idf=precomputed_idf)
-            results.append(result)
-
-        # ── Phase 3: Rank & Explain ───────────────────────────────────────
-        # Sort by final_score descending (knocked-out go to bottom)
-        results.sort(key=lambda r: (not r.knocked_out, r.final_score), reverse=True)
-
-        # Assign ranks
-        for i, r in enumerate(results):
-            r.rank = i + 1
-
-        # Compute percentiles (among non-knocked-out)
-        active = [r for r in results if not r.knocked_out]
-        if active:
-            max_score = active[0].final_score if active else 1.0
-            for r in results:
-                if r.knocked_out:
-                    r.percentile = 0.0
-                elif max_score > 0:
-                    r.percentile = round((r.final_score / max_score) * 100.0, 1)
-                else:
-                    r.percentile = 0.0
-
-        return results
 
     def _classify_jd_subdomain(self, jd: JobDescription) -> str:
         """Classify JD into engineering subdomain based on title/department."""
@@ -576,17 +394,212 @@ class CandidateScorer:
                 return subdomain
         return 'software'  # Default for unspecified engineering
 
+    def _precompute_jd_context(self, jd: JobDescription) -> JDContext:
+        """Precompute invariant JD signals, tokenizations, patterns, and weights."""
+        all_jd_skills = list(set(jd.must_have_skills + jd.nice_to_have_skills))
+        all_jd_skills_lower = [s.lower() for s in jd.must_have_skills + jd.nice_to_have_skills]
+        all_jd_set = set(s.lower() for s in all_jd_skills)
+
+        jd_domain, jd_conf = self._domain_classifier.classify_jd(
+            jd.title, all_jd_skills, jd.description, jd.department
+        )
+        jd_subdomain = self._classify_jd_subdomain(jd) if jd_domain == 'engineering' else ''
+        prox = _load_domain_proximity()
+        jd_sub_penalties = {}
+        if jd_domain == 'engineering' and jd_subdomain:
+            jd_sub_penalties = prox.get('sub_domain_penalties', {}).get(f'engineering.{jd_subdomain}', {})
+
+        jd_title_tokens = _tf(_tokenize(jd.title))
+
+        # Precompute keyword patterns
+        kw_patterns: Dict[str, List[Tuple[bool, Any]]] = {}
+        for kw in (jd.keywords or []):
+            var_list = []
+            for variant in _get_search_variants(kw):
+                if ' ' not in variant and '-' not in variant:
+                    var_list.append((True, re.compile(r'\b' + re.escape(variant) + r'\b', re.IGNORECASE)))
+                else:
+                    var_list.append((False, variant.lower()))
+            kw_patterns[kw] = var_list
+
+        # Precompute skill search patterns
+        skill_patterns: Dict[str, List[re.Pattern]] = {}
+        for sk in all_jd_skills:
+            pats = []
+            for variant in _get_search_variants(sk):
+                if len(variant) >= 3:
+                    pats.append(re.compile(r'\b' + re.escape(variant) + r'\b', re.IGNORECASE))
+            skill_patterns[sk] = pats
+
+        # Precompute cert domain keywords
+        jd_text = f"{jd.title} {jd.department} {jd.description}".lower()
+        jd_keywords_lower = [k.lower() for k in (jd.keywords or [])]
+        relevant_domain_kws = set()
+        for domain, kws in _CERT_DOMAIN_KEYWORDS.items():
+            for kw in kws:
+                if kw in jd_text or kw in ' '.join(all_jd_skills_lower):
+                    relevant_domain_kws.update(kws)
+                    break
+        if not relevant_domain_kws:
+            relevant_domain_kws = set(all_jd_skills_lower + jd_keywords_lower)
+
+        # Precompute normalized weights
+        raw_w = jd.weights or {}
+        total_w = sum(float(v) for v in raw_w.values()) if raw_w else 0.0
+        if total_w > 1.5:
+            w = {k: float(v) / total_w for k, v in raw_w.items()}
+        else:
+            w = {k: float(v) for k, v in raw_w.items()} if raw_w else {}
+
+        skill_w = w.get('skills', 0.4)
+        exp_w = w.get('experience', 0.25)
+        kw_w = w.get('keywords', 0.2)
+        edu_w = w.get('education', 0.15)
+
+        if not jd.keywords and kw_w > 0:
+            remaining = skill_w + exp_w + edu_w
+            if remaining > 0:
+                orig_s, orig_e, orig_d = w.get('skills', 0.4), w.get('experience', 0.25), w.get('education', 0.15)
+                total_non_kw = orig_s + orig_e + orig_d
+                skill_w = orig_s / total_non_kw
+                exp_w = orig_e / total_non_kw
+                edu_w = orig_d / total_non_kw
+            kw_w = 0.0
+
+        return JDContext(
+            all_jd_skills=all_jd_skills,
+            all_jd_skills_lower=all_jd_skills_lower,
+            all_jd_set=all_jd_set,
+            jd_domain=jd_domain,
+            jd_conf=jd_conf,
+            jd_subdomain=jd_subdomain,
+            jd_sub_penalties=jd_sub_penalties,
+            jd_title_tokens=jd_title_tokens,
+            keyword_patterns=kw_patterns,
+            skill_search_patterns=skill_patterns,
+            cert_domain_kws=relevant_domain_kws,
+            skill_w=skill_w,
+            exp_w=exp_w,
+            kw_w=kw_w,
+            edu_w=edu_w,
+        )
+
+    def rank(self, jd: JobDescription,
+             candidates: List[Dict[str, Any]]) -> List[ScoredCandidate]:
+        """
+        Run the full 3-phase scoring pipeline.
+
+        Args:
+            jd: Structured job description
+            candidates: List of extracted resume fields dicts
+
+        Returns:
+            List of ScoredCandidate sorted by final_score descending
+        """
+        jd_context = self._precompute_jd_context(jd)
+
+        # Pre-compute all candidate skills for BM25 IDF
+        all_skills = [c.get('skills', []) for c in candidates]
+        precomputed_idf = _precompute_bm25_idf(jd_context.all_jd_skills, all_skills)
+
+        # ── Domain check: flag severe domain mismatch for knockout ────────
+        prox = _load_domain_proximity()
+        penalties_matrix = prox.get('penalties', {})
+        _RELATED_DOMAINS = {
+            ('engineering', 'construction'),
+            ('construction', 'engineering'),
+        }
+
+        # Work on shallow copies to guarantee caller-owned candidate dicts are not mutated
+        working_candidates = [dict(c) for c in candidates]
+
+        for candidate in working_candidates:
+            cand_domain, cand_conf = self._domain_classifier.classify(candidate)
+            if jd_context.jd_conf >= 0.35 and cand_conf >= 0.35:
+                pair = (jd_context.jd_domain, cand_domain)
+                if jd_context.jd_domain != cand_domain and jd_context.jd_domain != 'unknown' and cand_domain != 'unknown':
+                    if pair not in _RELATED_DOMAINS:
+                        penalty = penalties_matrix.get(jd_context.jd_domain, {}).get(cand_domain, -50.0)
+                        if penalty <= -60:
+                            candidate['_severe_domain_mismatch'] = (
+                                f"Domain mismatch: candidate background is {cand_domain} "
+                                f"(confidence {cand_conf:.0%}), but job requires {jd_context.jd_domain}."
+                            )
+
+        results = [
+            self._score_candidate(
+                jd, candidate, all_skills,
+                precomputed_idf=precomputed_idf, jd_context=jd_context
+            )
+            for candidate in working_candidates
+        ]
+
+        # ── Phase 3: Rank & Explain ───────────────────────────────────────
+        # Sort by eligibility criteria first (eligible/review before knockout), then final_score descending
+        results.sort(
+            key=lambda r: (
+                r.eligibility_status != "DOES_NOT_MEET_CRITERIA",
+                r.final_score
+            ),
+            reverse=True
+        )
+
+        # Assign ranks
+        for i, r in enumerate(results):
+            r.rank = i + 1
+
+        # Compute percentiles (among active non-knocked-out candidates)
+        active = [r for r in results if r.eligibility_status != "DOES_NOT_MEET_CRITERIA"]
+        if active:
+            max_score = active[0].final_score if active else 1.0
+            for r in results:
+                if r.eligibility_status == "DOES_NOT_MEET_CRITERIA":
+                    r.percentile = 0.0
+                elif max_score > 0:
+                    r.percentile = round((r.final_score / max_score) * 100.0, 1)
+                else:
+                    r.percentile = 0.0
+
+        return results
+
     def _score_candidate(self, jd: JobDescription,
                          candidate: Dict[str, Any],
                          all_skills: List[List[str]],
-                         precomputed_idf=None) -> ScoredCandidate:
+                         precomputed_idf=None,
+                         jd_context: Optional[JDContext] = None) -> ScoredCandidate:
         """Score a single candidate through Phase 1 and Phase 2."""
-        pi = candidate.get('personal_info', {})
-        name = pi.get('name') or 'Unknown'
-        doc_id = candidate.get('_document_id', name)
+        if jd_context is None:
+            jd_context = self._precompute_jd_context(jd)
+
+        # V2 pipeline stores fields flat (name, email, phone at top level).
+        # V1 legacy format nested them inside personal_info. Support both.
+        pi = candidate.get('personal_info', {}) or {}
+        name = candidate.get('name') or pi.get('name')
+        if name is not None and not str(name).strip():
+            name = None
+        doc_id = (
+            candidate.get('document_id')
+            or candidate.get('file_id')
+            or candidate.get('candidate_id')
+            or candidate.get('_document_id')
+            or (name if name else 'Unknown')
+        )
         c_skills = candidate.get('skills', [])
         experience = candidate.get('experience', [])
         total_years = _compute_total_experience_years(experience)
+
+        # Enrich experience entries with duration_years if not present
+        enriched_exp = []
+        for exp_entry in experience:
+            e_copy = dict(exp_entry)
+            if "duration_years" not in e_copy:
+                s_dt = _parse_date(e_copy.get("start"))
+                e_dt = _parse_date(e_copy.get("end"))
+                if s_dt and e_dt and e_dt > s_dt:
+                    e_copy["duration_years"] = round((e_dt - s_dt).days / 365.25, 1)
+                else:
+                    e_copy["duration_years"] = 0.0
+            enriched_exp.append(e_copy)
 
         result = ScoredCandidate(
             name=name,
@@ -596,29 +609,27 @@ class CandidateScorer:
             rank=0,
             knocked_out=False,
             knockout_reasons=[],
-            email=pi.get('email') or '',
-            phone=pi.get('phone') or '',
-            location=pi.get('location') or pi.get('address') or '',
+            email=candidate.get('email') or pi.get('email') or '',
+            phone=candidate.get('phone') or pi.get('phone') or '',
+            location=candidate.get('location') or pi.get('location') or pi.get('address') or '',
             total_exp_years=total_years,
+            experience=enriched_exp,
+            education=candidate.get('education', []),
             extraction_quality=candidate.get('extraction_quality', 0.0),
+            low_confidence_extraction=bool(candidate.get('low_confidence_extraction', False)),
+            fallback_reason=candidate.get('fallback_reason'),
         )
 
         # ── Phase 2 Pre-compute: Inference Engine ─────────────────────────
         # Run inference matching BEFORE knockout so inferred skills can
         # satisfy must-have requirements.
-        all_jd_skills = jd.must_have_skills + jd.nice_to_have_skills
-
-        # Augment skills with JD skills found in targeted text sections only.
         skill_sections = self._get_skill_sections(candidate)
         augmented_skills = list(c_skills)
-        for jd_sk in all_jd_skills:
+        for jd_sk in jd_context.all_jd_skills:
             if not any(_skill_match(cs, jd_sk) for cs in augmented_skills):
-                variants = _get_search_variants(jd_sk)
                 found = False
-                for variant in variants:
-                    if len(variant) >= 3 and re.search(
-                        r'\b' + re.escape(variant) + r'\b', skill_sections
-                    ):
+                for pat in jd_context.skill_search_patterns.get(jd_sk, []):
+                    if pat.search(skill_sections):
                         found = True
                         break
                 if found:
@@ -626,7 +637,7 @@ class CandidateScorer:
 
         # Run inference engine for all JD skills
         inference_result = self._inference_engine.match_skills(
-            augmented_skills, all_jd_skills
+            augmented_skills, jd_context.all_jd_skills
         )
 
         # Store inference results on the result object
@@ -642,8 +653,12 @@ class CandidateScorer:
 
         # ── Phase 1: Hard Knockout (inference-aware) ──────────────────────
         ko_reasons = self._phase1_knockout(
-            jd, candidate, c_skills, total_years, inference_result
+            jd, candidate, c_skills, total_years, inference_result,
+            skill_sections=skill_sections, jd_context=jd_context
         )
+        if candidate.get('_severe_domain_mismatch'):
+            ko_reasons.append(candidate['_severe_domain_mismatch'])
+
         if ko_reasons:
             result.knocked_out = True
             result.knockout_reasons = ko_reasons
@@ -656,13 +671,12 @@ class CandidateScorer:
 
         # Skill scoring (BM25) — use inference weights for fractional scoring
         result.skill_score = _bm25_skill_score(
-            augmented_skills, all_jd_skills, all_skills,
+            augmented_skills, jd_context.all_jd_skills, all_skills,
             skill_weights=inference_result.skill_weights,
             precomputed_idf=precomputed_idf,
         )
 
         # Build matched/missing from inference results
-        # Must-have: matched if weight >= WEIGHT_INFERRED (0.75)
         matched_must = []
         missing_must = []
         for sk in jd.must_have_skills:
@@ -670,30 +684,49 @@ class CandidateScorer:
             if w >= WEIGHT_INFERRED:
                 matched_must.append(sk)
             else:
-                missing_must.append(sk)
+                found_in_text = False
+                if len(sk.strip()) >= 4:
+                    for pat in jd_context.skill_search_patterns.get(sk, []):
+                        if pat.search(skill_sections):
+                            found_in_text = True
+                            break
+                if found_in_text:
+                    matched_must.append(sk)
+                else:
+                    missing_must.append(sk)
         result.matched_must_have = matched_must
         result.missing_must_have = missing_must
 
-        # Nice-to-have: any match (even related at 0.50) counts
+        # Nice-to-have: any match counts, also check text
         matched_nice = []
         for sk in jd.nice_to_have_skills:
             w = inference_result.skill_weights.get(sk, 0.0)
             if w > 0:
                 matched_nice.append(sk)
-        result.matched_nice_to_have = matched_nice
+            else:
+                if len(sk.strip()) >= 4:
+                    for pat in jd_context.skill_search_patterns.get(sk, []):
+                        if pat.search(skill_sections):
+                            matched_nice.append(sk)
+                            break
+        
+        result.matched_nice_to_have = list(set(matched_nice))
 
         # Extra skills (candidate has but JD doesn't mention)
-        all_jd_set = set(s.lower() for s in all_jd_skills)
-        result.extra_skills = [s for s in c_skills
-                               if s.lower() not in all_jd_set
-                               and not any(_skill_match(s, j) for j in all_jd_skills)]
+        result.extra_skills = [
+            s for s in c_skills
+            if s.lower() not in jd_context.all_jd_set
+            and not any(_skill_match(s, j) for j in jd_context.all_jd_skills)
+        ]
 
         # Experience scoring
-        result.experience_score, result.best_title_match = _experience_score(candidate, jd)
+        result.experience_score, result.best_title_match = _experience_score(
+            candidate, jd, jd_title_tokens=jd_context.jd_title_tokens
+        )
 
         # Keyword scoring
         result.keyword_score, result.matched_keywords, result.missing_keywords = \
-            _keyword_score(candidate, jd)
+            _keyword_score(candidate, jd, precomputed_patterns=jd_context.keyword_patterns)
 
         # Education scoring
         result.education_score, result.degree_level, result.degree_field = \
@@ -701,7 +734,7 @@ class CandidateScorer:
 
         # ── Bonus: Project-skill match ────────────────────────────────────
         result.project_bonus, result.project_skill_matches = \
-            _project_skill_bonus(candidate, all_jd_skills)
+            _project_skill_bonus(candidate, jd_context.all_jd_skills)
 
         # ── Bonus: Prestigious companies ──────────────────────────────────
         result.prestige_bonus, result.prestigious_companies = \
@@ -709,25 +742,20 @@ class CandidateScorer:
 
         # ── Bonus: Certifications & hackathons ────────────────────────────
         result.cert_bonus, result.relevant_certs = \
-            _cert_bonus(candidate, jd)
+            _cert_bonus(
+                candidate, jd,
+                precomputed_cert_kws=(jd_context.cert_domain_kws, jd_context.all_jd_skills_lower)
+            )
 
         # ── Domain penalty (ONLY affects skill_score) ─────────────────────
-        jd_domain, jd_conf = self._domain_classifier.classify_jd(
-            jd.title, all_jd_skills, jd.description, jd.department
+        penalty = _get_domain_penalty(
+            jd_context.jd_domain, cand_domain, jd_context.jd_conf, cand_conf
         )
-        penalty = _get_domain_penalty(jd_domain, cand_domain, jd_conf, cand_conf)
 
         # ── Subdomain penalty for engineering JDs ─────────────────────────
-        # If both JD and candidate are "engineering", apply subdomain penalty
-        if jd_domain == 'engineering' and cand_domain == 'engineering' and penalty == 0.0:
-            jd_subdomain = self._classify_jd_subdomain(jd)
-            if jd_subdomain and cand_subdomain and jd_subdomain != cand_subdomain:
-                prox = _load_domain_proximity()
-                sub_penalties = prox.get('sub_domain_penalties', {})
-                jd_sub_key = f'engineering.{jd_subdomain}'
-                cand_sub_key = f'engineering.{cand_subdomain}'
-                jd_sub_penalties = sub_penalties.get(jd_sub_key, {})
-                subdomain_penalty = jd_sub_penalties.get(cand_sub_key, -30.0)
+        if jd_context.jd_domain == 'engineering' and cand_domain == 'engineering' and penalty == 0.0:
+            if jd_context.jd_subdomain and cand_subdomain and jd_context.jd_subdomain != cand_subdomain:
+                subdomain_penalty = jd_context.jd_sub_penalties.get(f'engineering.{cand_subdomain}', -30.0)
                 if subdomain_penalty < 0:
                     penalty = float(subdomain_penalty)
 
@@ -736,26 +764,10 @@ class CandidateScorer:
             result.skill_score = max(0.0, result.skill_score * (1.0 + penalty / 100.0))
 
         # ── Weighted final score ──────────────────────────────────────────
-        w = jd.weights
-        skill_w = w.get('skills', 0.4)
-        exp_w = w.get('experience', 0.25)
-        kw_w = w.get('keywords', 0.2)
-        edu_w = w.get('education', 0.15)
-
-        # If JD has no keywords, redistribute keyword weight proportionally
-        if not jd.keywords and kw_w > 0:
-            remaining = skill_w + exp_w + edu_w
-            if remaining > 0:
-                skill_w = skill_w / remaining * (skill_w + exp_w + edu_w + kw_w)
-                exp_w = exp_w / remaining * (w.get('skills', 0.4) + w.get('experience', 0.25) + w.get('education', 0.15) + kw_w)
-                edu_w = edu_w / remaining * (w.get('skills', 0.4) + w.get('experience', 0.25) + w.get('education', 0.15) + kw_w)
-                # Recalculate proportionally from originals
-                orig_s, orig_e, orig_d = w.get('skills', 0.4), w.get('experience', 0.25), w.get('education', 0.15)
-                total_non_kw = orig_s + orig_e + orig_d
-                skill_w = orig_s / total_non_kw
-                exp_w = orig_e / total_non_kw
-                edu_w = orig_d / total_non_kw
-            kw_w = 0.0
+        skill_w = jd_context.skill_w
+        exp_w = jd_context.exp_w
+        kw_w = jd_context.kw_w
+        edu_w = jd_context.edu_w
 
         result.skill_weighted = result.skill_score * skill_w
         result.experience_weighted = result.experience_score * exp_w
@@ -769,14 +781,132 @@ class CandidateScorer:
             result.education_weighted
         )
 
-        # Add bonuses on top (capped at 100)
-        total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus
+        # Missing must-have skills penalty
+        n_missing = len(result.missing_must_have)
+        must_have_penalty = 0.0
+        if n_missing == 1:
+            must_have_penalty = 0.12
+        elif n_missing == 2:
+            must_have_penalty = 0.235
+        elif n_missing == 3:
+            must_have_penalty = 0.47
+        elif n_missing > 3:
+            must_have_penalty = 1.0  # 100% reduction
 
-        # If knocked out, zero the final score but keep sub-scores for reporting
+        # Nice-to-have matched bonus: Bounded marginal bonus (+1.0 per match, capped at +5.0)
+        # Replacing v1 unbounded +10.0 bonus which distorted rankings
+        nice_to_have_bonus = min(5.0, len(result.matched_nice_to_have) * 1.0)
+
+        # Add bonuses on top (prestige_bonus is 0.0 per v2 fairness policy)
+        total_bonus = result.project_bonus + result.prestige_bonus + result.cert_bonus + nice_to_have_bonus
+
+        # Apply multiplier
+        raw_final = base_score + total_bonus
+        penalized_final = raw_final * (1.0 - must_have_penalty)
+
+        # Relevance score (0.0 - 100.0)
+        relevance = round(min(100.0, max(0.0, penalized_final)), 1)
+        result.relevance_score = relevance
+        # v2.2: Do NOT zero final_score on knockout. Retain the calculated relevance
+        # score so reviewers can inspect sub-scores and criteria evidence.
+        result.final_score = relevance
+
+        # Identity resolution metadata
+        identity_info = candidate.get('identity') or candidate.get('identity_provenance') or {}
+        identity_status = candidate.get('identity_status') or identity_info.get('status')
+        if not identity_status:
+            identity_status = "VERIFIED" if (name and name != "Unknown") else "UNRESOLVED"
+        identity_conf = float(candidate.get('identity_confidence') or identity_info.get('confidence') or (1.0 if (name and name != "Unknown") else 0.0))
+
+        # Decision separation & Eligibility Status (v2.2)
         if result.knocked_out:
-            result.final_score = 0.0
+            result.eligibility_status = "DOES_NOT_MEET_CRITERIA"
+        elif (
+            result.extraction_quality < 0.5
+            or identity_status == "UNRESOLVED"
+            or result.name is None
+        ):
+            result.eligibility_status = "REVIEW_REQUIRED"
         else:
-            result.final_score = round(min(100.0, base_score + total_bonus), 1)
+            result.eligibility_status = "ELIGIBLE"
+
+        result.human_decision = candidate.get('human_decision') or "NEW"
+        result.identity_status = identity_status
+        result.identity_confidence = identity_conf
+        result.identity_provenance = identity_info
+
+        # Lineage and policy metadata
+        result.score_version = "2.2.0"
+        result.policy_version = "2026.1"
+        result.job_version = getattr(jd, "job_version", 1)
+        result.normalized_weights = {
+            "skills": round(skill_w, 4),
+            "experience": round(exp_w, 4),
+            "keywords": round(kw_w, 4),
+            "education": round(edu_w, 4),
+        }
+
+        # Factor Ledger (auditable contribution breakdown)
+        conf = result.extraction_quality if result.extraction_quality > 0 else 1.0
+        result.factor_ledger = [
+            {
+                "factor": "skills",
+                "contribution": round(result.skill_weighted, 2),
+                "source": "skills, experience, projects",
+                "confidence": conf,
+                "rule": "bm25_with_domain_penalty",
+            },
+            {
+                "factor": "experience",
+                "contribution": round(result.experience_weighted, 2),
+                "source": "experience",
+                "confidence": conf,
+                "rule": "title_years_recency_blend",
+            },
+            {
+                "factor": "keywords",
+                "contribution": round(result.keyword_weighted, 2),
+                "source": "full_text",
+                "confidence": 1.0,
+                "rule": "keyword_presence_ratio",
+            },
+            {
+                "factor": "education",
+                "contribution": round(result.education_weighted, 2),
+                "source": "education",
+                "confidence": conf,
+                "rule": "degree_and_field_cosine",
+            },
+            {
+                "factor": "project_bonus",
+                "contribution": round(result.project_bonus, 2),
+                "source": "projects",
+                "confidence": 1.0,
+                "rule": "jd_skills_in_projects_max_5",
+            },
+            {
+                "factor": "cert_bonus",
+                "contribution": round(result.cert_bonus, 2),
+                "source": "certifications",
+                "confidence": 1.0,
+                "rule": "relevant_certifications_equal_weight_max_5",
+            },
+            {
+                "factor": "nice_to_have_bonus",
+                "contribution": round(nice_to_have_bonus, 2),
+                "source": "skills",
+                "confidence": 1.0,
+                "rule": "bounded_marginal_bonus_max_5",
+            },
+        ]
+        if must_have_penalty > 0:
+            result.factor_ledger.append({
+                "factor": "must_have_penalty",
+                "contribution": -round(raw_final * must_have_penalty, 2),
+                "source": "must_have_skills",
+                "confidence": 1.0,
+                "rule": f"missing_{n_missing}_skills_reduction_{int(must_have_penalty * 100)}pct",
+            })
 
         # Anomaly detection
         result.anomalies = _detect_anomalies(candidate, total_years, jd)
@@ -833,7 +963,9 @@ class CandidateScorer:
                          candidate: Dict[str, Any],
                          c_skills: List[str],
                          total_years: float,
-                         inference_result=None) -> List[str]:
+                         inference_result=None,
+                         skill_sections: Optional[str] = None,
+                         jd_context: Optional[JDContext] = None) -> List[str]:
         """
         Phase 1: Hard knockout checks (inference-aware).
 
@@ -846,50 +978,29 @@ class CandidateScorer:
 
         # ── Must-have skills check (inference-aware) ───────────────────────
         if jd.must_have_skills:
-            _, missing = _find_matching_skills(c_skills, jd.must_have_skills)
-            if missing:
-                # Second chance: check SKILL-BEARING SECTIONS ONLY for missing
-                # skills. We deliberately avoid full raw text here because URLs,
-                # footers, email addresses, and boilerplate often contain tech
-                # words (e.g. "node" in "linkedin.com/in/...", "react" in a
-                # disclaimer) that produce false-positive skill matches.
-                skill_sections_text = self._get_skill_sections(candidate)
-                still_missing = []
-                for sk in missing:
-                    sk_lower = sk.lower().strip()
-
-                    # Check inference engine: weight >= 0.75 satisfies must-have
-                    if inference_result:
-                        inferred_weight = inference_result.skill_weights.get(sk, 0.0)
-                        if inferred_weight >= WEIGHT_INFERRED:
-                            continue  # Satisfied via inference
-
-                    # Only allow second-chance text matches for skills >= 4 chars
-                    if len(sk_lower) >= 4:
-                        variants = _get_search_variants(sk)
-                        found_in_text = False
-                        for variant in variants:
-                            if len(variant) >= 3 and re.search(
-                                r'\b' + re.escape(variant) + r'\b',
-                                skill_sections_text
-                            ):
-                                found_in_text = True
+            skill_sections_text = skill_sections if skill_sections is not None else self._get_skill_sections(candidate)
+            missing = []
+            for sk in jd.must_have_skills:
+                w = inference_result.skill_weights.get(sk, 0.0) if inference_result else 0.0
+                if w >= WEIGHT_INFERRED:
+                    continue
+                sk_lower = sk.lower().strip()
+                found = False
+                if len(sk_lower) >= 3:
+                    if jd_context and sk in jd_context.skill_search_patterns:
+                        for pat in jd_context.skill_search_patterns[sk]:
+                            if pat.search(skill_sections_text):
+                                found = True
                                 break
-                        if found_in_text:
-                            continue  # Found in skill-bearing section — valid match
-                    still_missing.append(sk)
-
-                if still_missing:
-                    reasons.append(
-                        f"Missing must-have skills: {', '.join(still_missing)}"
-                    )
-
-                logger.debug(
-                    "[KO-SKILLS] %s | missing_from_structured=%s | still_missing=%s",
-                    candidate.get('personal_info', {}).get('name', 'Unknown'),
-                    missing,
-                    still_missing if missing else [],
-                )
+                    else:
+                        for variant in _get_search_variants(sk):
+                            if len(variant) >= 3 and re.search(r'\b' + re.escape(variant) + r'\b', skill_sections_text, re.IGNORECASE):
+                                found = True
+                                break
+                if not found:
+                    missing.append(sk)
+            if missing:
+                reasons.append(f"Missing required must-have skills: {', '.join(missing)}")
 
         # ── Minimum years check ───────────────────────────────────────────
         if jd.min_years > 0 and total_years < jd.min_years:
@@ -961,15 +1072,16 @@ def print_rankings(results: List[ScoredCandidate], jd: JobDescription):
     print(f"{'='*72}")
 
     for r in results:
+        disp_name = r.name or "Unresolved Name"
         if r.knocked_out:
-            print(f"\n  ❌ #{r.rank:2d}  {r.name:25s}  KNOCKED OUT")
+            print(f"\n  ❌ #{r.rank:2d}  {disp_name:25s}  KNOCKED OUT")
             for reason in r.knockout_reasons:
                 print(f"       → {reason}")
         else:
             bar_len = int(r.final_score / 5)
             bar = '█' * bar_len + '░' * (20 - bar_len)
             medal = '🏆' if r.rank == 1 else ('🥈' if r.rank == 2 else ('🥉' if r.rank == 3 else '  '))
-            print(f"\n  {medal} #{r.rank:2d}  {r.name:25s}  {r.final_score:5.1f}%  {bar}")
+            print(f"\n  {medal} #{r.rank:2d}  {disp_name:25s}  {r.final_score:5.1f}%  {bar}")
             print(f"       Skills: {r.skill_score:.0f}×{jd.weights.get('skills',0.4):.0%}="
                   f"{r.skill_weighted:.1f}  |  Exp: {r.experience_score:.0f}×{jd.weights.get('experience',0.25):.0%}="
                   f"{r.experience_weighted:.1f}  |  KW: {r.keyword_score:.0f}×{jd.weights.get('keywords',0.2):.0%}="
@@ -1012,6 +1124,7 @@ def print_rankings(results: List[ScoredCandidate], jd: JobDescription):
     ko = [r for r in results if r.knocked_out]
     print(f"  ACTIVE: {len(active)} | KNOCKED OUT: {len(ko)}")
     if active:
-        print(f"  TOP: {active[0].name} ({active[0].final_score:.1f}%)")
+        top_name = active[0].name or "Unresolved Name"
+        print(f"  TOP: {top_name} ({active[0].final_score:.1f}%)")
         print(f"  AVG: {sum(r.final_score for r in active)/len(active):.1f}%")
     print(f"{'='*72}\n")

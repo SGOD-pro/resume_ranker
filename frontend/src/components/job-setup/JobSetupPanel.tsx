@@ -23,7 +23,14 @@ export function JobSetupPanel() {
   } = useJobStore();
 
   const appPhase = useAppStore((s) => s.appPhase);
-  const isLocked = appPhase === 'extracting' || appPhase === 'scoring';
+  const isLocked =
+    appPhase === 'analysis_queued' ||
+    appPhase === 'fallback_processing' ||
+    appPhase === 'final_ranking' ||
+    appPhase === 'extracting' ||
+    appPhase === 'scoring';
+
+
 
   return (
     <ScrollArea className="h-full scrollbar-brutal">

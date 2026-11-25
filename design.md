@@ -1,0 +1,224 @@
+# design.md — Resume Ranker V2
+> Low-level design, design patterns, and API contracts. Rev 4.
+
+## 1. DynamoDB Access Patterns & Schema (No Table Scans)
+
+To support V2 filtering requirements (score range, skill presence, status) without expensive `scan()` operations, DynamoDB uses specific Global Secondary Indexes (GSIs). 
+
+**Architectural Rule:** Multi-attribute filtering MUST use GSIs. `scan()` with `FilterExpression` on the base table is strictly prohibited for candidate queries.
+
+### Table: `Candidates`
+*   **Base Table PK:** `JOB#{job_id}`
+*   **Base Table SK:** `CANDIDATE#{candidate_id}`
+*   **Attributes:** `name`, `email`, `status`, `composite_score`, `skill_list`, `created_at`
+
+### GSI 1: Score-Range Queries (FR-29/30)
+DynamoDB GSIs are equality-then-range. To query a score range (e.g., 70-80), we bucket the score.
+*   **GSI1 PK:** `JOB#{job_id}#SCORE_BUCKET#{floor(composite_score / 10)}`
+*   **GSI1 SK:** `composite_score`
+*   *Query Pattern:* DynamoDB cannot query across multiple partition keys in a single request. To get scores 70-80, you MUST execute 2 separate queries: one on PK `JOB#123#SCORE_BUCKET#7` (SK BETWEEN 70 and 79.99) and one on PK `JOB#123#SCORE_BUCKET#8` (SK BETWEEN 80 and 80). The application layer MUST merge these results client-side.
+
+### GSI 2: Skill-Presence Filter (FR-29)
+Sparse index: one item per (candidate, skill). Only populated for candidates that possess the skill.
+*   **GSI2 PK:** `JOB#{job_id}#SKILL#{skill_id}`
+*   **GSI2 SK:** `composite_score`
+*   *Query Pattern:* To get top candidates with Python, query PK `JOB#123#SKILL#python` and limit to 50.
+
+### GSI 3: Status Filter (Shortlist/Reject)
+*   **GSI3 PK:** `JOB#{job_id}#STATUS#{status}`
+*   **GSI3 SK:** `created_at`
+*   *Query Pattern:* To get all shortlisted candidates, query PK `JOB#123#STATUS#shortlisted`.
+
+---## 2. Pre-Extraction Structural Quality Gate
+
+V1's PyMuPDF extraction failed on multi-column layouts because it scrambled reading order. We cannot use the post-extraction composite presence score to route fallbacks, because a garbled layout might still produce a non-empty (but wrong) `experience` field.
+
+The routing decision MUST be a pre-extraction structural heuristic, computed from raw layout geometry *before* field parsing happens.
+
+```python
+EXPECTED_CHARS_PER_PAGE = 1500   # raised from 3000 (Aug 2026): 1000-3000 chars typical
+QUALITY_THRESHOLD = 0.70          # lowered from 0.90 (Aug 2026): avoids over-triggering ODL
+
+def cluster_word_x_positions(page) -> list:
+    """Gap threshold = 50 px to catch true structural columns.
+    Standard sidebars (date columns, bullet indents) sit < 50 px from the main text block.
+    A two-pane newspaper-style layout has a large gutter (> 50 px) that this detects."""
+    ...
+
+def pymupdf_layout_quality(page) -> float:
+    """
+    Computed BEFORE field parsing. Answers: 'is this text extractable
+    in reading order at all', not 'did we successfully parse a name'.
+
+    Weights (v2, Aug 2026 — revised after 200-resume benchmark):
+      col_penalty     0.35  → most discriminating; 2-column layouts get 0.0
+      reading_order   0.30  → monotonic Y-flow; flat ~0.95 for all valid text PDFs
+      char_density    0.20  → catches scanned/image-only pages
+      not_table_heavy 0.15  → tables scramble reading order
+    """
+    signals = {}
+
+    # 1. Column penalty — strict binary: score 1.0 if ≤1 structural column, else 0.0.
+    #    Uses 50 px gap threshold to distinguish true two-pane layouts from date sidebars.
+    x_clusters = cluster_word_x_positions(page)
+    signals["col_penalty"] = 1.0 if len(x_clusters) <= 1 else 0.0
+
+    # 2. Reading-order sanity — fraction of consecutive word pairs where Y is non-decreasing.
+    #    NOTE: This signal is fundamentally flat (~0.95) for all valid text PDFs because
+    #    PyMuPDF reads columns top-to-bottom regardless of column order. A two-column resume
+    #    read left-to-right appears nearly monotonic. Do NOT rely on this as the primary
+    #    discriminator for column layout detection.
+    signals["reading_order"] = reading_order_monotonicity(page)
+
+    # 3. Char density vs page area — catches scanned/image PDFs
+    signals["char_density"] = min(1.0, len(page.get_text()) / EXPECTED_CHARS_PER_PAGE)
+
+    # 4. Table detection — if the page looks tabular, PyMuPDF will misread it.
+    signals["not_table_heavy"] = 0.0 if looks_tabular(page) else 1.0
+
+    return (
+        signals["col_penalty"]     * 0.35 +
+        signals["reading_order"]   * 0.30 +
+        signals["char_density"]    * 0.20 +
+        signals["not_table_heavy"] * 0.15
+    )
+```
+
+**Aug 2026 Empirical Note:** The `reading_order_monotonicity` cannot distinguish garbled 2-column text
+from clean text because PyMuPDF's Y-coordinate always increases within a column. Observed scores:
+- 1-column, clean: `RO ~1.00`, `CD ~0.8–1.0`, `CP = 1.0` → composite **~0.90**
+- 2-column layout: `RO ~0.95`, `CD ~0.5–1.0`, `CP = 0.0` → composite **~0.57** (fails gate)
+- Scanned image: `RO ~1.0`, `CD ~0.0–0.1`, `CP = 0.0–1.0` → composite **~0.3–0.45** (fails gate)
+
+**Known calibration risk:** The 50 px x-clustering gap may flag normal 1-column resumes where the
+pdf renderer places date text > 50 px from the leftmost text column (e.g., right-aligned dates,
+page headers). In that case `col_penalty = 0.0` and the composite drops to ~0.58, triggering ODL
+unnecessarily. Monitoring `StageTiming.triggered_fallback` rate is the authoritative check.
+
+**Routing Logic (Lambda A / BackgroundTask):**
+1. Run PyMuPDF. Calculate `pymupdf_layout_quality` per page.
+2. If the MINIMUM page quality `>= 0.70` → proceed directly to Evaluation with PyMuPDF output. (Changed to minimum because averaging masks single garbled multi-column pages).
+3. If the MINIMUM page quality `< 0.70` → enqueue doc to `OdlBatchQueue`. **Do NOT call `parse()` directly.**
+   - In production: `sqs.send_message(OdlBatchQueue, {"document_id": ..., "s3_bucket": ..., "s3_key": ...})`.
+   - In local dev / benchmark: accumulate docs, call `parse_batch()` once per batch window flush:
+   ```python
+   batch_result = odl_client.parse_batch([
+       DocDescriptor(document_id="...", s3_bucket="...", s3_key="..."),
+       DocDescriptor(document_id="...", s3_bucket="...", s3_key="..."),
+       # ... up to BatchSize=10
+   ])
+   # batch_result.results: dict[doc_id, ODLParseResult]  — successful docs
+   # batch_result.failed:  dict[doc_id, ODLParseError]   — per-doc failures
+   ```
+4. For each doc in `batch_result.results` → use `.markdown` and `.elements`.
+5. For each doc in `batch_result.failed` → degrade to PyMuPDF text, set `error_reason`, mark `PARSE_FAILED`.
+6. Proceed to Evaluation.
+
+**Exception: `/api/v2/ats-check`** — single-file, synchronous, user-facing. Uses `odl_client.parse()` directly. Batching would add up to `MaximumBatchingWindowInSeconds` latency to a live interactive check.
+
+---
+
+## 2b. BatchParseResult Schema
+
+```python
+@dataclass
+class DocDescriptor:
+    document_id: str
+    s3_bucket: str
+    s3_key: str
+    save_images: bool = False   # upload extracted images to S3 and rewrite MD refs
+
+@dataclass
+class BatchParseResult:
+    results: dict[str, ODLParseResult]   # document_id -> success
+    failed:  dict[str, ODLParseError]    # document_id -> per-doc error
+```
+
+**Partial-failure contract (ADR-09 / ADR-10):**
+- If `convert()` exits with code 1 (confirmed by test: corrupt PDF in batch), it still writes output for valid files. `odl/main.py` relies on *file existence* to determine success, not exit code.
+- Every failed `doc_id` is surfaced in `BatchParseResult.failed` as a typed `ODLParseError`.
+- If the entire boto3 invoke fails (throttle, cold-start timeout, network), every document in the batch is attributed to `BatchParseResult.failed`.
+- **No document silently disappears** from the pipeline. A failed doc must land in `PARSE_FAILED` DynamoDB status.
+
+## 3. Instrumentation & Telemetry (StageTiming)
+
+To validate the PyMuPDF→ODL→Nova routing decision empirically, every extraction stage MUST emit a `StageTiming` record. This prevents silent mis-tuning of the quality gate.
+
+```python
+@dataclass
+class StageTiming:
+    document_id: str
+    stage: str              # "pymupdf_parse" | "quality_check" | "odl_parse" |
+                            # "deterministic_extract" | "nova_fallback" | "scoring" | "ats"
+    method_used: str        # "pymupdf" | "opendataloader" | "nova-micro" | "nova-lite"
+    duration_ms: float
+    triggered_fallback: bool # did THIS stage's output cause the next stage to fire?
+    quality_score: float | None # only populated for "quality_check" stage
+```
+This list of records is persisted alongside the `ExtractionResult` in S3 and aggregated in the benchmark report to track ODL fallback rates and p50/p95 latencies per stage.
+
+---
+
+## 4. LLM Fallback Pipeline (Lambda B)
+
+If the deterministic regex engine yields `UnresolvedChunk`s (e.g., weird date format), the LLM fallback is invoked:
+1. Batch up to 10 unresolved chunks.
+2. Call Amazon Bedrock (`amazon.nova-micro-v1:0`) via `boto3`.
+3. Use `toolConfig` to enforce strict JSON schema (no free-text JSON parsing).
+4. `temperature: 0.0`.
+5. Merge response into `ExtractionResult` (tag provenance as `nova_fallback`). LLM NEVER overwrites a deterministic-resolved field.
+
+---
+
+## 5. API & Network Contract (Strict)
+
+The frontend and backend MUST adhere to this exact contract. Note: There is no authentication layer; endpoints are open.
+
+| Endpoint | Method | Request | Response | Notes |
+|---|---|---|---|---|
+| `/api/v2/jobs` | POST | `{title, description}` | `201 {job_id}` | Open |
+| `/api/v2/jobs/{id}/resumes` | POST | `multipart/form-data` | `202 {queued: [doc_ids]}` | Open |
+| `/api/v2/jobs/{id}/extract` | GET | `-` | `text/event-stream` (SSE) | Open |
+| `/api/v2/jobs/{id}/score` | POST | `-` (uses cached weights) | `200 {candidates[]}` | Open |
+| `/api/v2/jobs/{id}/weights` | PATCH | `{weights}` | `200 {status: "updated"}` | Open |
+| `/api/v2/ats-check` | POST | `multipart/form-data` | `200 {ats_score, bounding_boxes[]}` | Open (IP-rate-limited) |
+
+---
+
+## 6. SSE Event Contract
+
+The SSE stream (`GET /extract`) emits the following events. The frontend `app-store` transitions its `appPhase` based on these events.
+
+- `event: status\ndata: {"stage": "parsing", "doc_id": "123"}`
+- `event: status\ndata: {"stage": "scoring", "doc_id": "123"}`
+- `event: complete\ndata: {"total": 10, "success": 9, "failed": 1}`
+
+**Frontend Transition:** Upon receiving `complete`, the frontend closes the `EventSource`, calls `POST /score`, and transitions `appPhase` to `scored`.
+
+---
+
+## 7. Consolidated Lambda Dispatcher & Transactional Outbox Schema
+
+In AWS serverless deployments (`resume-ranker-preprod` and `resume-ranking-api`), incoming events are routed by `src.lambda_handler.handler`:
+
+1. **HTTP Events:** Detected via `rawPath` or `requestContext.http`. Handled by FastAPI ASGI adapter (`src.handlers.api`).
+2. **SQS Events:** Detected via top-level `Records` list. Routed to specific pipeline workers based on queue ARN inspection:
+   - `resume-ranker-stage1-*`: Dispatched to `process_stage1_message` (batch size 10, concurrency 3).
+   - `resume-ranker-stage2-*`: Dispatched to `process_stage2_batch` (batch size 5, concurrency 2).
+   - `resume-ranker-scoring-*`: Dispatched to `process_scoring_message` (batch size 1, concurrency 2).
+   - `*dlq*`: Dispatched to `process_dlq_message` (barrier self-healing).
+3. **Scheduled Events:** Detected via `detail-type: "Scheduled Event"` or `action: "reconcile_outbox"`. Executes `src.handlers.recovery.handler`.
+
+### DynamoDB Outbox Schema
+- **PK:** `JOB#{job_id}`
+- **SK:** `OUTBOX#{stage}#{file_id}` (e.g. `OUTBOX#STAGE2#c4b8...` or `OUTBOX#SCORING`)
+- **Attributes:** `event_type`, `payload`, `created_at`, `status: "PENDING"`
+- **Concurrency Guard:** All terminal mutations use `TransactWriteItems`. On DynamoDB `TransactionConflict`, workers retry up to 6 times with exponential backoff and jitter before failing the batch record.
+
+---
+
+## 8. Candidate Identity & Confidence Policy (Sophia Bennett Case)
+
+- **Backend Extraction:** When structural layout parsing is ambiguous (e.g. two-pane header, right-aligned dates, or non-canonical name placement), the extractor populates `name` via Nova fallback while setting `identity_status: "UNRESOLVED"`.
+- **UI Policy Gating:** The frontend review workspace (`mapScoredCandidate.ts`) explicitly checks `candidate.identity_status`. If `identity_status === 'UNRESOLVED'`, the UI suppresses the raw string and displays `"Name needs review"`.
+- **Integrity Rule:** Identity verification policy MUST NOT be bypassed to force a name visible. The authoritative match score, document ID, and component breakdown remain 100% accurate and auditable.

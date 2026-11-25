@@ -35,8 +35,13 @@ def load_all_candidates(verbose: bool = True):
     multiple PDFs share a name or contain people with similar profiles.
     """
     pipe = PDFPipelineV3()
+    numbered_pdfs = sorted(
+        glob.glob(str(RESUME_DIR / '[0-9]*.pdf')),
+        key=lambda p: int(Path(p).stem)
+    )
+    named_pdfs = [str(RESUME_DIR / f) for f in ("souvik.pdf", "backend.pdf") if (RESUME_DIR / f).exists()]
+    pdfs = numbered_pdfs + named_pdfs
     candidates = []
-    pdfs = sorted(glob.glob(str(RESUME_DIR / '*.pdf')))
     for pdf in pdfs:
         filename = os.path.basename(pdf)
         if verbose:

@@ -1,15 +1,58 @@
-
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.agents
+# IDE & Editor
 .vscode
+.idea
+*.swp
+*.swo
 mcp_config.json
+.playwright-mcp
+# Dependencies & Environments
+node_modules/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
 
-node_modules
-uploads
-frontend/test/resumes
-
-resumes
+# Local data & uploads
+uploads/
+frontend/test/resumes/
+resumes/
 
 # SAM / AWS build artifacts
 backend/.aws-sam/
+.aws-sam/
+odl/*.json
+/odl_*
+!backend/src/pipeline/odl_batch_worker.py
 
-# Vercel
+# Vercel & Build outputs
 .vercel/
+dist/
+build/
+
+scratch_resumes/
+*_extracted_cache.json
+_1k_extracted_cache.json
+*.cache.json
+
+# Test & profile run artifacts
+backend/import_times.log
+backend/stats
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+*.log
+*.report.json
+concurrency_matrix_report.json
+audit_*.json
+benchmark_*_report.json

@@ -49,6 +49,7 @@ def _clean_degree_text(text: str) -> str:
 DEGREE_RE = re.compile(
     r'\b('
     r'Bachelors?\s+of\s+\w+|Masters?\s+of\s+\w+|Doctor\s+of\s+\w+'
+    r'|Associates?\s+of\s+\w+|Associates?\s+in\s+\w+'
     r'|Bachelors?\s+Degree|Masters?\s+Degree|Associates?\s+Degree'
     r'|Ph\.?D\.?|MBA'
     r'|B\.?Tech\.?|M\.?Tech\.?|B\.?E\.?|M\.?E\.?'
@@ -57,7 +58,7 @@ DEGREE_RE = re.compile(
     r'|B\.?SC\.?|M\.?SC\.?'         # BSC, MSC uppercase
     r'|B\.?A\.?|M\.?A\.?'
     r'|B\.?Com\.?|M\.?Com\.?'
-    r'|Bachelor|Master|Associate|Diploma|Certificate'
+    r'|Bachelor|Master|Diploma|Certificate'
     r'|Higher\s+Secondary'
     r'|(?:Class|Grade)\s+1[0-2]'
     r'|1[0-2]th'
@@ -94,6 +95,44 @@ MAJOR_MINOR_RE = re.compile(r'^\s*(?:Majors?|Minors?|Concentration|Specializatio
 DATE_ONLY_RE = re.compile(
     r'^\s*(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4}|\d{4})\s*$', re.I)
 
+# ── Section scoping patterns ─────────────────────────────────────────────
+_EDU_HEADER_RE = re.compile(
+    r'(?:^|\n)(?:#{0,3}\s*)'
+    r'(?:Education|Educational\s+Background|Academic(?:\s+Background|\s+History|\s+Qualifications)?|'
+    r'Academics|Qualifications|Educational\s+Qualifications|Studies)'
+    r'\s*:?\s*\n',
+    re.I
+)
+
+_COURSE_HEADER_RE = re.compile(
+    r'(?:^|\n)(?:#{0,3}\s*)'
+    r'(?:Courses|Coursework|Certifications?|Certificates?|Training)'
+    r'\s*:?\s*\n',
+    re.I
+)
+
+_OTHER_MAJOR_SECTIONS_RE = re.compile(
+    r'(?:^|\n)(?:#{0,3}\s*)'
+    r'(?:Employment(?:\s+History)?|Work\s+History|Professional\s+Experience|Experience|'
+    r'Profile|Summary|Skills|Technical\s+Skills|Projects?|Hobbies|Languages)'
+    r'\s*:?\s*\n',
+    re.I
+)
+
+_SECTION_KEYWORDS_RE = re.compile(
+    r'\n\s*(?:Education|Educational\s+Background|Academic(?:\s+Background|\s+History)?|Academics|'
+    r'Courses|Coursework|Certifications?|Certificates?|'
+    r'Skills|Technical\s+Skills|Core\s+Competencies|'
+    r'Projects?|Personal\s+Projects?|Key\s+Projects?|'
+    r'Languages?|Hobbies|Interests|Details|Personal\s+Info|Links|'
+    r'Achievements|Awards|References|Publications|Summary|Profile|'
+    r'Employment(?:\s+History)?|Work\s+History|Professional\s+Experience|Experience)'
+    r'\s*:?\s*\n',
+    re.I
+)
+_ALL_CAPS_HEADING_RE = re.compile(r'\n[A-Z][A-Z\s&/]{2,35}:?\s*\n')
+_MD_HEADING_PAT = re.compile(r'\n#{1,3}\s*\S')
+
 
 class EducationParser:
     """Parse education entries from plain section text."""
@@ -105,21 +144,70 @@ class EducationParser:
         # Strip ||LOC: tags from input (defense-in-depth)
         text = _strip_loc_tags(text)
 
+        # ── Section Boundary Scoping ───────────────────────────────────────
+        # Per specification:
+        # - Education header can be written as Education, Educational Background, etc.
+        # - Can also be written as Courses / Coursework / Certifications.
+        # - If both Education and Courses are present: ONLY filter from Education section.
+        # - If only Courses is present: extract from Courses.
+        # - If only Education is present: extract from Education.
+        # - If neither is present, and other major sections exist: return [] (no education).
+        edu_match = _EDU_HEADER_RE.search(text)
+        course_match = _COURSE_HEADER_RE.search(text)
+
+        target_text = text
+        if edu_match:
+            # If Education section is present, prioritize it (even if Courses also present)
+            start_idx = edu_match.end()
+            candidate = text[start_idx:]
+            indices = []
+            m1 = _SECTION_KEYWORDS_RE.search(candidate)
+            if m1: indices.append(m1.start())
+            m2 = _ALL_CAPS_HEADING_RE.search(candidate)
+            if m2: indices.append(m2.start())
+            m3 = _MD_HEADING_PAT.search(candidate)
+            if m3: indices.append(m3.start())
+            if indices:
+                target_text = candidate[:min(indices)].strip()
+            else:
+                target_text = candidate.strip()
+        elif course_match:
+            # If only Courses is present, extract from Courses section
+            start_idx = course_match.end()
+            candidate = text[start_idx:]
+            indices = []
+            m1 = _SECTION_KEYWORDS_RE.search(candidate)
+            if m1: indices.append(m1.start())
+            m2 = _ALL_CAPS_HEADING_RE.search(candidate)
+            if m2: indices.append(m2.start())
+            m3 = _MD_HEADING_PAT.search(candidate)
+            if m3: indices.append(m3.start())
+            if indices:
+                target_text = candidate[:min(indices)].strip()
+            else:
+                target_text = candidate.strip()
+        elif _OTHER_MAJOR_SECTIONS_RE.search(text):
+            # Document has other resume sections but NO education/courses section
+            return []
+
+        if not target_text:
+            return []
+
         # First pass: line-based structured parsing
-        entries = self._parse_by_lines(text)
+        entries = self._parse_by_lines(target_text)
         if entries:
             return self._dedup(entries)
 
         # Fallback: anchor-based parsing using degree keyword matches
-        matches = list(DEGREE_RE.finditer(text))
+        matches = list(DEGREE_RE.finditer(target_text))
         if not matches:
             return []
 
         entries = []
         for i, dm in enumerate(matches):
             ctx_start = max(0, dm.start() - 50)
-            ctx_end = matches[i + 1].start() if i + 1 < len(matches) else min(len(text), dm.end() + 400)
-            context = text[ctx_start:ctx_end]
+            ctx_end = matches[i + 1].start() if i + 1 < len(matches) else min(len(target_text), dm.end() + 400)
+            context = target_text[ctx_start:ctx_end]
             lines = [l.strip() for l in context.split('\n') if l.strip()]
 
             degree = self._extract_degree(context)

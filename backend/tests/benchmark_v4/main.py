@@ -40,7 +40,7 @@ from src.schemas.scoring import JobDescription
 # ─────────────────────────────────────────────────────────────────
 BATCH_SIZE = 200
 V4_DIR = Path(__file__).parent
-RESUME_DIR = V4_DIR / "resumes"
+RESUME_DIR = Path(PROJECT_ROOT) / "data" / "resumes"
 REPORT_PATH = V4_DIR / "report.md"
 JSON_PATH = V4_DIR / "report.json"
 
@@ -999,7 +999,7 @@ def phase7_performance(pipe, scorer, pdfs, phase1_time, phase1_count):
 def phase8_frontend():
     try:
         from fastapi.testclient import TestClient
-        from src.api.app import app
+        from src.main import app
         client = TestClient(app)
     except ImportError:
         return {"accuracy": 0, "error": "TestClient not available", "checks": []}
@@ -1452,7 +1452,7 @@ def main():
     print(f"  Timestamp: {datetime.now().isoformat()}")
     print(f"  Resume Dir: {RESUME_DIR}")
 
-    pdfs = sorted(RESUME_DIR.glob("*.pdf"))
+    pdfs = sorted(RESUME_DIR.glob("*.pdf"))[:200]
     print(f"  Total PDFs: {len(pdfs)}")
     if not pdfs:
         print("  ERROR: No PDFs found!")

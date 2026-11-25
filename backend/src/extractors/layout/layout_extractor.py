@@ -82,6 +82,9 @@ class ClassifiedLine:
     x0: float           # leftmost x
     font_size: float    # average font size
     inline_location: Optional[str] = None  # extracted trailing location/city
+    page: int = 1       # 1-based page number
+    x1: float = 0.0     # rightmost x coordinate
+    bottom: float = 0.0 # bottom y coordinate
 
 
 # Roles - what a line IS in the document structure
@@ -406,7 +409,7 @@ class LayoutAwarePDFExtractor:
                     and not self._is_sidebar_header(left_words)
                 )
                 if left_is_name:
-                    cl = self._make_line(left_words, ROLE_DOC_NAME, "full")
+                    cl = self._make_line(left_words, ROLE_DOC_NAME, "full", page_num=page_num)
                     if cl: result.append(cl)
                 else:
                     # Sub-case: left = sidebar section header, right = main section header
@@ -414,23 +417,23 @@ class LayoutAwarePDFExtractor:
                     right_is_hdr = self._is_main_header(right_words)
 
                     if left_is_hdr:
-                        cl = self._make_line(left_words, ROLE_SIDEBAR_HDR, "left")
+                        cl = self._make_line(left_words, ROLE_SIDEBAR_HDR, "left", page_num=page_num)
                         if cl: result.append(cl)
                     elif left_words:
                         # Sidebar content (contact values etc)
-                        cl = self._make_line(left_words, ROLE_SIDEBAR_VALUE, "left")
+                        cl = self._make_line(left_words, ROLE_SIDEBAR_VALUE, "left", page_num=page_num)
                         if cl: result.append(cl)
 
                 if not left_is_name:
                     if self._is_main_header(right_words):
-                        cl = self._make_line(right_words, ROLE_SECTION_HDR, "right")
+                        cl = self._make_line(right_words, ROLE_SECTION_HDR, "right", page_num=page_num)
                         if cl: result.append(cl)
                     elif right_words:
-                        cl = self._classify_right_line(right_words, top, header_band_bottom)
+                        cl = self._classify_right_line(right_words, top, header_band_bottom, page_num=page_num)
                         if cl: result.append(cl)
                 else:
                     # Right column alongside name → classify normally
-                    cl = self._classify_right_line(right_words, top, header_band_bottom)
+                    cl = self._classify_right_line(right_words, top, header_band_bottom, page_num=page_num)
                     if cl: result.append(cl)
 
             # ── CASE 2: Only left column words ──────────────────────────────
@@ -441,10 +444,10 @@ class LayoutAwarePDFExtractor:
                         and 1 <= len(left_words) <= 6
                         and not self._is_sidebar_header(left_words)):
                     role = ROLE_DOC_NAME
-                    cl = self._make_line(left_words, role, "full")
+                    cl = self._make_line(left_words, role, "full", page_num=page_num)
                 else:
                     role = ROLE_SIDEBAR_HDR if self._is_sidebar_header(left_words) else ROLE_SIDEBAR_VALUE
-                    cl = self._make_line(left_words, role, "left")
+                    cl = self._make_line(left_words, role, "left", page_num=page_num)
                 if cl: result.append(cl)
 
             # ── CASE 3: Only right column (or no split = single column) ─────
@@ -455,19 +458,19 @@ class LayoutAwarePDFExtractor:
                     avg_size = self._avg_size(right_words)
 
                     if avg_size > 14 and all_bold:
-                        cl = self._make_line(right_words, ROLE_DOC_NAME, "full")
+                        cl = self._make_line(right_words, ROLE_DOC_NAME, "full", page_num=page_num)
                     elif avg_size >= 9:
-                        cl = self._make_line(right_words, ROLE_DOC_TITLE, "full")
+                        cl = self._make_line(right_words, ROLE_DOC_TITLE, "full", page_num=page_num)
                     else:
-                        cl = self._classify_right_line(right_words, top, header_band_bottom)
+                        cl = self._classify_right_line(right_words, top, header_band_bottom, page_num=page_num)
                     if cl: result.append(cl)
                 else:
-                    cl = self._classify_right_line(right_words, top, header_band_bottom)
+                    cl = self._classify_right_line(right_words, top, header_band_bottom, page_num=page_num)
                     if cl: result.append(cl)
 
         return result
 
-    def _classify_right_line(self, words: List[Word], top: float, hdr_bottom: float) -> Optional['ClassifiedLine']:
+    def _classify_right_line(self, words: List[Word], top: float, hdr_bottom: float, page_num: int = 0) -> Optional['ClassifiedLine']:
         """Classify a line that's in the main (right) column."""
         if not words:
             return None
@@ -484,7 +487,7 @@ class LayoutAwarePDFExtractor:
                 and 1 <= len(text_stripped.split()) <= 4
                 and not text_stripped.replace(" ", "").isdigit()
                 and len(text_stripped) >= 3):
-            return self._make_line(words, ROLE_SECTION_HDR, "right")
+            return self._make_line(words, ROLE_SECTION_HDR, "right", page_num=page_num)
 
         # Section header fallback: non-bold but large font (≥12pt), short line
         # that resolves to a known section name in the registry
@@ -494,16 +497,16 @@ class LayoutAwarePDFExtractor:
                 and not text_stripped.replace(" ", "").isdigit()):
             from src.registries.section_registry import resolve
             if resolve(text_stripped):
-                return self._make_line(words, ROLE_SECTION_HDR, "right")
+                return self._make_line(words, ROLE_SECTION_HDR, "right", page_num=page_num)
 
         # Date range line
         if DATE_RE.search(text_full):
-            return self._make_line(words, ROLE_DATE_RANGE, "right")
+            return self._make_line(words, ROLE_DATE_RANGE, "right", page_num=page_num)
 
         # Bullet line: first word is a bullet char
         if words[0].text.strip() in BULLET_CHARS:
             # Join bullet + content, skipping the bullet char itself
-            return self._make_line(words, ROLE_BULLET, "right")
+            return self._make_line(words, ROLE_BULLET, "right", page_num=page_num)
 
         # Job title line: bold ~9-10pt, not ALL_CAPS
         # May have MIXED fonts: bold for title + regular small for location
@@ -517,17 +520,17 @@ class LayoutAwarePDFExtractor:
                 if DEGREE_RE.search(text_full):
                     # Extract inline location (regular small words at far right)
                     inline_loc = self._extract_inline_location(words)
-                    cl = self._make_line(words, ROLE_EDU_LINE, "right")
+                    cl = self._make_line(words, ROLE_EDU_LINE, "right", page_num=page_num)
                     if cl: cl.inline_location = inline_loc
                     return cl
                 # Job title line
                 inline_loc = self._extract_inline_location(words)
-                cl = self._make_line(words, ROLE_JOB_TITLE, "right")
+                cl = self._make_line(words, ROLE_JOB_TITLE, "right", page_num=page_num)
                 if cl: cl.inline_location = inline_loc
                 return cl
 
         # Default: body text (italic profile, regular description)
-        return self._make_line(words, ROLE_BODY, "right")
+        return self._make_line(words, ROLE_BODY, "right", page_num=page_num)
 
     # ─────────────────────────────────────────────────────────
     # Step 6: Helpers
@@ -589,7 +592,7 @@ class LayoutAwarePDFExtractor:
             return " ".join(w.text for w in loc_words).strip()
         return None
 
-    def _make_line(self, words: List[Word], role: str, column: str) -> Optional['ClassifiedLine']:
+    def _make_line(self, words: List[Word], role: str, column: str, page_num: int = 0) -> Optional['ClassifiedLine']:
         if not words:
             return None
         text = self._join_words(words)
@@ -602,6 +605,9 @@ class LayoutAwarePDFExtractor:
             top=words[0].top,
             x0=words[0].x0,
             font_size=round(self._avg_size(words), 1),
+            page=page_num + 1,
+            x1=max(w.x1 for w in words),
+            bottom=max(w.bottom for w in words),
         )
 
     def _join_words(self, words: List[Word]) -> str:

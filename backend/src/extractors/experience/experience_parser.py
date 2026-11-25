@@ -15,45 +15,60 @@ v2 fixes:
 import re
 from typing import List, Dict, Any, Optional, Tuple
 
+
 # ── Date component patterns ──────────────────────────────────────────────
 # Month names: full or abbreviated, with optional period
 _MONTH = r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
 
+# Loosen to allow single characters spaced out for kerning: J A N U A R Y
+_MONTH_KERNING = r'(?:J\s*A\s*N(?:[\sA-Z]*)?|F\s*E\s*B(?:[\sA-Z]*)?|M\s*A\s*R(?:[\sA-Z]*)?|A\s*P\s*R(?:[\sA-Z]*)?|M\s*A\s*Y|J\s*U\s*N(?:[\sA-Z]*)?|J\s*U\s*L(?:[\sA-Z]*)?|A\s*U\s*G(?:[\sA-Z]*)?|S\s*E\s*P(?:[\sA-Z]*)?|O\s*C\s*T(?:[\sA-Z]*)?|N\s*O\s*V(?:[\sA-Z]*)?|D\s*E\s*C(?:[\sA-Z]*)?)'
+
+_MONTH_GROUP = r'(?:' + _MONTH + r'|' + _MONTH_KERNING + r')'
+
 # Start date patterns (order matters — most specific first)
 _START_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}',           # January 2020, Jan. 2020, Jan 2020
-    _MONTH + r'\.\d{4}',               # Jan.2020 (no space)
-    _MONTH + r"'\d{2}",                 # Jan'20
-    _MONTH + r'-\d{2,4}',              # Jan-20, Jan-2020
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',  # 1 June 2020, 15 January 2019
-    r'\d{1,2}/\d{1,2}/\d{4}',          # DD/MM/YYYY or MM/DD/YYYY
-    r'\d{1,2}-\d{1,2}-\d{4}',          # DD-MM-YYYY or MM-DD-YYYY
-    r'\d{1,2}/\d{4}',                  # MM/YYYY
-    r'\d{1,2}-\d{4}',                  # MM-YYYY
-    r'\d{1,2}\.\d{4}',                 # MM.YYYY
-    r'\d{4}/\d{1,2}',                  # YYYY/MM
-    r'\d{4}',                          # YYYY
-])
-
-# End date patterns (same as start + Present/Current/Now/Till Date)
-_END_PATTERNS = '|'.join([
-    _MONTH + r'\.?\s+\d{4}',
-    _MONTH + r'\.\d{4}',
-    _MONTH + r"'\d{2}",
-    _MONTH + r'-\d{2,4}',
-    r'\d{1,2}\s+' + _MONTH + r'\s+\d{4}',
+    _MONTH_GROUP + r'[,.]?\s*\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',  # January 2020, Jan, 2020, J A N  2 0 2 0, JULY2011
+    _MONTH_GROUP + r'\.\d{4}',
+    _MONTH_GROUP + r"['’‘`]\d{2}",  # July'15, July’15
+    _MONTH_GROUP + r'-\d{2,4}',
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s*\d{4}',
+    r'\d{4}\s*' + _MONTH_GROUP,           # YYYY Mon (year-first) e.g. "2014 Aug" — Cat A/B gap
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s*\d{4}',  # ordinal: "16th April 2005"
     r'\d{1,2}/\d{1,2}/\d{4}',
     r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
     r'\d{1,2}/\d{4}',
     r'\d{1,2}-\d{4}',
-    r'\d{1,2}\.\d{4}',
+    r'\d{1,2}\.\d{4}',                    # MM.YYYY e.g. 08.2020
     r'\d{4}/\d{1,2}',
-    r'Present|Current|Now|Till\s+Date|Till\s+Now|To\s+Date|Ongoing',
-    r'\d{4}',
+    r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',  # 2 0 2 0 or 2020
+])
+
+_END_PATTERNS = '|'.join([
+    _MONTH_GROUP + r'[,.]?\s*\d{1}\s*\d{1}\s*\d{1}\s*\d{1}',
+    _MONTH_GROUP + r'\.\d{4}',
+    _MONTH_GROUP + r"['’‘`]\d{2}",
+    _MONTH_GROUP + r'-\d{2,4}',
+    r'\d{1,2}\s+' + _MONTH_GROUP + r'\s*\d{4}',
+    r'\d{4}\s*' + _MONTH_GROUP,           # YYYY Mon (year-first)
+    r'\d{1,2}(?:st|nd|rd|th)\s+' + _MONTH_GROUP + r'\s*\d{4}',  # ordinal: "27th September 2007"
+    r'\d{1,2}/\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{1,2}-\d{4}',
+    r'\d{4}\.\d{1,2}',                    # YYYY.MM e.g. 2020.08
+    r'\d{1,2}/\d{4}',
+    r'\d{1,2}-\d{4}',
+    r'\d{1,2}\.\d{4}',                    # MM.YYYY e.g. 08.2020
+    r'\d{4}/\d{1,2}',
+    # Plain-text open-ended markers (case-insensitive via re.I on DATE_RANGE_RE)
+    r'Present|Current|Now|Ongoing',
+    r'Till\s+[Dd]ate|till\s+date|TILL\s+DATE',
+    # Kerned/spaced variants (OCR artefacts)
+    r'P\s*R\s*E\s*S\s*E\s*N\s*T|C\s*U\s*R\s*R\s*E\s*N\s*T|N\s*O\s*W|T\s*i\s*l\s*l\s+D\s*a\s*t\s*e|O\s*n\s*g\s*o\s*i\s*n\s*g',
+    r'(?<!\d)(?:1\s*9|2\s*0)\s*\d{1}\s*\d{1}(?!\d)',
 ])
 
 # Separator between start–end: dashes, em-dashes, "to", "till"
-_DATE_SEP = r'\s*(?:[–—\-–]+|to|till)\s*'
+_DATE_SEP = r'\s*(?:[–—\-–]+|t\s*o|t\s*i\s*l\s*l|u\s*n\s*t\s*i\s*l\s*l?)\s*'
 
 DATE_RANGE_RE = re.compile(
     r'(?P<start>' + _START_PATTERNS + r')'
@@ -61,13 +76,26 @@ DATE_RANGE_RE = re.compile(
     r'(?P<end>' + _END_PATTERNS + r')',
     re.I)
 
-# "Since YYYY" / "From YYYY" → treated as YYYY – Present
+# "Since YYYY" / "From YYYY" / "From <ordinal date>" → treated as start – Present
 SINCE_RE = re.compile(
     r'(?:Since|From)\s+(?P<start>\d{4})',
     re.I)
 
+# "From <ordinal-date> to <ordinal-date>" split across label lines
+# e.g. "Duration : From 16th April 2005 to 27th September 2007"
+_FROM_ORDINAL_RE = re.compile(
+    r'(?:From|from)\s+(?P<start>\d{1,2}(?:st|nd|rd|th)?\s+' + _MONTH_GROUP + r'(?:,?\s*\d{4})?)'
+    r'\s*(?:to|till|until)\s+'
+    r'(?P<end>\d{1,2}(?:st|nd|rd|th)?\s+' + _MONTH_GROUP + r'(?:,?\s*\d{4})?|present|current|till\s+date)',
+    re.I)
+
 BULLET_RE = re.compile(r'^[•·▪▸►✓✔\*\-]\s+(.+)')
 SEP_RE = re.compile(r'\s*[|/]\s*')
+
+# Strip PUA icon-font bullets (e.g. \uf076 from ODL markdown) and markdown heading markers
+_PUA_BULLET_RE = re.compile(r'^[\ue000-\uf8ff]+\s*')   # ODL icon font chars at line start
+_MD_HEADING_RE = re.compile(r'^#{1,3}\s+')              # ### / ## / # heading markers
+_MD_BULLET_RE = re.compile(r'^[-*•]\s+')
 
 # ── Role / Company disambiguation patterns ────────────────────────────────
 
@@ -116,6 +144,9 @@ def _is_bullet_or_description(text: str) -> bool:
     if not text:
         return False
     t = text.strip()
+    # Starts with bullet character
+    if t[0] in '•·▪▸►✓✔*-':
+        return True
     # Starts with lowercase letter (roles/companies are title-case)
     if t[0].islower():
         return True
@@ -123,14 +154,20 @@ def _is_bullet_or_description(text: str) -> bool:
     if re.search(r'\d+\s*%', t):
         return True
     # Too long for a role or company name
-    if len(t) > 100:
+    if len(t) > 85:
         return True
-    # Starts with bullet character
-    if t[0] in '•·▪▸►✓✔*-' and len(t) > 2:
+    # Starts with action verbs common in resume descriptions
+    if re.match(r'^(?:Tracking|Preparing|Assisting|Leading|Developing|Designing|Demonstrating|Providing|Advising|Managing|Managed|Created|Built|Developed|Maintained|Performed|Worked|Collaborated|Coordinated|Supervised|Spearheaded|Implemented|Organized|Trained|Oversaw|Handled|Saved|Cut|Achieved|Assisted|Led|Introduced|Ensuring|Participating|Picked|Filled)\b', t, re.I):
         return True
-    # Looks like a full sentence (contains multiple verbs/objects)
+    # Ends with period (descriptions end with periods, roles/companies don't)
+    if t.endswith('.'):
+        return True
+    # Contains phrases typical of descriptions
+    if re.search(r'\b(?:activities include|responsible for|tasked with|duties include|proven track record|experience in)\b', t, re.I):
+        return True
+    # Looks like a full sentence (contains multiple words)
     word_count = len(t.split())
-    if word_count > 12:
+    if word_count > 10:
         return True
     return False
 
@@ -187,17 +224,148 @@ def _company_score(text: str) -> float:
 class ExperienceParser:
     """Parse work experience entries. Output: [{ role, company, start, end, description }]"""
 
-    def parse(self, text: str) -> List[Dict[str, Any]]:
+    # Section heading keywords for the ODL element router
+    _EXP_SECTION_KEYWORDS = {
+        'experience', 'work experience', 'employment', 'employment history',
+        'professional experience', 'career history', 'work history',
+        'experience & projects',  # combined headings
+    }
+
+    def parse(self, text: str, elements: list = None) -> List[Dict[str, Any]]:
+        # Section Boundary Scoping using ODL elements
+        exp_text = ""
+        in_experience = False
+        if elements:
+            kids = elements.get('kids', []) if isinstance(elements, dict) else elements
+            
+            def _flatten(node_list):
+                flat = []
+                for node in node_list:
+                    if not isinstance(node, dict): continue
+                    flat.append(node)
+                    for k, v in node.items():
+                        if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict):
+                            flat.extend(_flatten(v))
+                return flat
+
+            flat_kids = _flatten(kids)
+            heading_index = -1
+            
+            for i, el in enumerate(flat_kids):
+                if not isinstance(el, dict):
+                    continue
+                
+                raw_content = str(el.get('content', el.get('text', ''))).strip()
+                if not raw_content:
+                    continue
+
+                if el.get('type') == 'heading' or str(el.get('pdfua_tag')).startswith('H'):
+                    c = re.sub(r'[^a-zA-Z\s]', '', raw_content.lower()).strip()
+                    if c in self._EXP_SECTION_KEYWORDS:
+                        in_experience = True
+                        heading_index = i
+                        continue
+                    elif in_experience and c:
+                        # Reached the next section heading, stop capturing
+                        break
+
+                if in_experience:
+                    exp_text += raw_content + "\n\n"
+
+            if exp_text.strip():
+                # If we captured very little text (e.g., just one line) or we started capturing very late,
+                # it might be an out-of-order header extraction.
+                if heading_index >= 0 and heading_index < len(flat_kids) * 0.8:
+                    text = exp_text
+
+        # ── Markdown / flat-text section scoping (PyMuPDF path) ──────────────
+        # When there are no ODL elements, try to find the experience section in
+        # the flat Markdown/plain text.  Matches:
+        #   - "## Work Experience" / "# Experience" (Markdown headings)
+        #   - "PROFESSIONAL EXPERIENCE" / "Professional Experience :" (plain text)
+        #   - "Career History" / "Employment" / "EXPERINCE" (typo)
+        # This is the dominant failure mode for PyMuPDF-parsed resumes.
+        if not elements or not exp_text.strip():
+            _EXP_FLAT_RE = re.compile(
+                r'(?:^|\n)'
+                r'(?:#{0,3}\s*)'  # optional Markdown heading prefix
+                r'(?:work\s+)?(?:professional\s+)?'
+                r'(?:experience|experince|employment(?:\s+history)?|'
+                r'career\s+(?:history|summary)|work\s+(?:experience|history)|'
+                r'positions?\s+held|relevant\s+experience)'
+                r'\s*:?\s*\n',
+                re.I,
+            )
+            _SECTION_KEYWORDS_RE = re.compile(
+                r'\n\s*(?:Education|Educational\s+Background|Academic(?:\s+Background|\s+History)?|Academics|'
+                r'Courses|Coursework|Certifications?|Certificates?|'
+                r'Skills|Technical\s+Skills|Core\s+Competencies|'
+                r'Projects?|Personal\s+Projects?|Key\s+Projects?|'
+                r'Languages?|Hobbies|Interests|Details|Personal\s+Info|Links|'
+                r'Achievements|Awards|References|Publications|Summary|Profile)'
+                r'\s*:?\s*\n',
+                re.I
+            )
+            _ALL_CAPS_HEADING_RE = re.compile(r'\n[A-Z][A-Z\s&/]{2,35}:?\s*\n')
+            _MD_HEADING_PAT = re.compile(r'\n#{1,3}\s*\S')
+
+            m = _EXP_FLAT_RE.search(text)
+            if m:
+                # If PyMuPDF scrambled the order, the text might be before the heading.
+                # Try the text after the heading first.
+                candidate = text[m.end():]
+                indices = []
+                m1 = _SECTION_KEYWORDS_RE.search(candidate)
+                if m1:
+                    indices.append(m1.start())
+                m2 = _ALL_CAPS_HEADING_RE.search(candidate)
+                if m2:
+                    indices.append(m2.start())
+                m3 = _MD_HEADING_PAT.search(candidate)
+                if m3:
+                    indices.append(m3.start())
+                if indices:
+                    end_idx = min(indices)
+                    if end_idx > 50:
+                        candidate = candidate[:end_idx]
+                
+                # If the candidate actually contains date ranges, try parsing it first
+                if candidate.strip() and DATE_RANGE_RE.search(candidate):
+                    date_matches_cand = list(DATE_RANGE_RE.finditer(candidate))
+                    if date_matches_cand:
+                        cand_res = self._parse_strict(candidate, date_matches_cand)
+                        if not cand_res:
+                            cand_res = self._parse_year_only(candidate)
+                        if cand_res:
+                            return cand_res
+                    # If candidate failed, fall through to scanning the entire document
+
         if not text or not text.strip():
             return []
         date_matches = list(DATE_RANGE_RE.finditer(text))
         if not date_matches:
+            # Try "From <ordinal> to <ordinal>" label-split pattern (Cat A/B gap)
+            ordinal_entries = self._parse_from_ordinal(text)
+            if ordinal_entries:
+                return ordinal_entries
             # Try "Since YYYY" / "From YYYY" patterns
             since_entries = self._parse_since(text)
             if since_entries:
                 return since_entries
-            return self._parse_year_only(text)
+            
+            dur_m = re.search(r'\b(?:1|2|3|4|5|6|7|8|9|10|one|two|three|four|five|six|seven|eight|nine|ten|[1-9]\d{0,1})\s*(?:\+?\s*)?(?:years?|yrs?|months?|mos?)\s*(?:of\s*)?(?:working\s*)?experience\b', text, re.I)
+            if dur_m:
+                return [{"role": dur_m.group(0).strip(), "company": "", "start": "", "end": "", "description": "", "achievements": []}]
+                
+            yr_entries = self._parse_year_only(text)
+            if yr_entries:
+                return yr_entries
+                
+            return self._parse_single_date(text)
 
+        return self._parse_strict(text, date_matches)
+
+    def _parse_strict(self, text: str, date_matches: list) -> List[Dict[str, Any]]:
         entries = []
         for i, dm in enumerate(date_matches):
             ctx_start = max(0, dm.start() - 250)
@@ -232,10 +400,14 @@ class ExperienceParser:
         - Rejects lines that look like bullet points or descriptions
         - Handles both Role/Company and Company/Role orderings
         """
-        lines = [l.strip() for l in before.split('\n') if l.strip()]
-        
-        # Filter out lines that are clearly descriptions/bullets
-        clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+        raw_lines = [l.strip() for l in before.split('\n') if l.strip()]
+        clean_lines = []
+        for l in raw_lines:
+            if _is_bullet_or_description(l):
+                continue
+            cleaned = _MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip()
+            if cleaned and not _is_bullet_or_description(cleaned):
+                clean_lines.append(cleaned)
         
         if not clean_lines:
             # Try from after-text
@@ -312,7 +484,7 @@ class ExperienceParser:
 
     def _parse_year_only(self, text: str) -> List[Dict[str, Any]]:
         yr = re.compile(
-            r'(?P<start>20\d{2}|19\d{2})\s*[-–—]+\s*(?P<end>20\d{2}|19\d{2}|Present|Current)',
+            r'(?P<start>20\d{2}|19\d{2})\s*[-–—]+\s*(?P<end>20\d{2}|19\d{2}|Present|Current|Now|Ongoing|Till\s+[Dd]ate)',
             re.I
         )
         entries = []
@@ -343,10 +515,14 @@ class ExperienceParser:
                 })
         return entries
 
-    def _parse_since(self, text: str) -> List[Dict[str, Any]]:
-        """Parse 'Since YYYY' / 'From YYYY' patterns as YYYY – Present."""
+    def _parse_single_date(self, text: str) -> List[Dict[str, Any]]:
+        """Parse standalone month-year dates (e.g. 'May 2020') without a range."""
+        single_date_re = re.compile(
+            r'(?<![-–—\w])(?P<start>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4})(?![-–—\w])',
+            re.I
+        )
         entries = []
-        for dm in SINCE_RE.finditer(text):
+        for dm in single_date_re.finditer(text):
             before = text[max(0, dm.start()-200):dm.start()].strip()
             lines = [l.strip() for l in before.split('\n') if l.strip()]
             clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
@@ -366,7 +542,77 @@ class ExperienceParser:
             if role or company:
                 entries.append({
                     "role": role, "company": company,
+                    "start": dm.group('start'), "end": "",
+                    "description": None, "achievements": [],
+                })
+        return entries
+
+    def _parse_since(self, text: str) -> List[Dict[str, Any]]:
+        """Parse 'Since YYYY' / 'From YYYY' patterns as YYYY – Present."""
+        entries = []
+        for dm in SINCE_RE.finditer(text):
+            before = text[max(0, dm.start()-200):dm.start()].strip()
+            lines = [l.strip() for l in before.split('\n') if l.strip()]
+            lines = [_MD_BULLET_RE.sub('', l).strip() for l in lines if l.strip()]
+            clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+
+            if len(clean_lines) >= 2:
+                role, company = self._disambiguate_role_company(
+                    clean_lines[-1], clean_lines[-2]
+                )
+            elif clean_lines:
+                role, company = self._split_role_company(clean_lines[-1])
+            else:
+                continue
+
+            role = _clean_loc_tags(role)
+            company = _clean_loc_tags(company)
+
+            if role or company:
+                entries.append({
+                    "role": role, "company": company,
                     "start": dm.group('start'), "end": "Present",
+                    "description": None, "achievements": [],
+                })
+        return entries
+
+    def _parse_from_ordinal(self, text: str) -> List[Dict[str, Any]]:
+        """Parse 'From <ordinal-date> to <ordinal-date>' patterns.
+
+        Handles the Cat A/B gap where experience entries use label-prefixed
+        date blocks split across lines, e.g.:
+          Duration : From 16th April 2005 to 27th September 2007
+        The DATE_RANGE_RE misses these because 'From' prefixes the start date
+        and the colon label sits on the same or prior line.
+        """
+        entries = []
+        for dm in _FROM_ORDINAL_RE.finditer(text):
+            before = text[max(0, dm.start() - 300):dm.start()].strip()
+            lines = [l.strip() for l in before.split('\n') if l.strip()]
+            # Strip PUA bullets, markdown bullets and markdown headings
+            lines = [_MD_HEADING_RE.sub('', _MD_BULLET_RE.sub('', _PUA_BULLET_RE.sub('', l))).strip() for l in lines if l.strip()]
+            lines = [l for l in lines if l]
+            # Drop label lines like "Duration :" "Company Name :" before using for role/company
+            lines = [l for l in lines if not re.match(r'^(?:Duration|Period|Company\s*Name|Designation|Country)\s*:', l, re.I)]
+            clean_lines = [l for l in lines if not _is_bullet_or_description(l)]
+
+            if len(clean_lines) >= 2:
+                role, company = self._disambiguate_role_company(
+                    clean_lines[-1], clean_lines[-2]
+                )
+            elif clean_lines:
+                role, company = self._split_role_company(clean_lines[-1])
+            else:
+                continue
+
+            role = _clean_loc_tags(role)
+            company = _clean_loc_tags(company)
+
+            if role or company:
+                entries.append({
+                    "role": role, "company": company,
+                    "start": dm.group('start').strip(),
+                    "end": dm.group('end').strip(),
                     "description": None, "achievements": [],
                 })
         return entries

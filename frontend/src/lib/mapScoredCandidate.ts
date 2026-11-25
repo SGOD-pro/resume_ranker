@@ -7,8 +7,10 @@
  * knockout checks.
  */
 
+import { useAppStore } from '@/store/app-store';
 import type {
   Candidate,
+  CandidateStatus,
   Signal,
   ScoreBreakdown,
   SkillMatch,
@@ -29,11 +31,16 @@ function deriveSignal(finalScore: number, knockedOut: boolean): Signal {
 }
 
 /** Map a single backend ScoredCandidate dict to the frontend Candidate shape */
-export function mapScoredCandidate(raw: any, index: number): Candidate {
-  const id = raw.document_id || `candidate-${index}`;
-  const name = raw.name || 'Unknown';
-  const finalScore = typeof raw.final_score === 'number' ? raw.final_score : 0;
-  const knockedOut = Boolean(raw.knocked_out);
+export function mapScoredCandidate(raw: any, index: number, defaultJobId?: string): Candidate {
+  const canonicalDocId = raw.document_id || raw._document_id || raw.file_id || raw.candidate_id || `candidate-${index}`;
+  const id = canonicalDocId;
+  const rawName = raw.name;
+  const identityStatus = raw.identity_status || (rawName && rawName !== 'Unknown' ? 'VERIFIED' : 'UNRESOLVED');
+  const isUnresolvedName = !rawName || rawName === 'Unknown' || identityStatus === 'UNRESOLVED';
+  const name = isUnresolvedName ? 'Name needs review' : rawName;
+  const finalScore = typeof raw.final_score === 'number' ? raw.final_score : (typeof raw.relevance_score === 'number' ? raw.relevance_score : 0);
+  const relevanceScore = typeof raw.relevance_score === 'number' ? raw.relevance_score : finalScore;
+  const knockedOut = Boolean(raw.knocked_out) || raw.eligibility_status === 'DOES_NOT_MEET_CRITERIA';
 
   // Score breakdown
   const scoreBreakdown: ScoreBreakdown = {
@@ -98,12 +105,24 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
       : 'Not specified',
   });
 
-  // Experience entries — we don't have full structured experience from scorer,
-  // but we can provide what's available
+  // Experience entries
   const experience: ExperienceEntry[] = [];
-  // The scorer's ScoredCandidate has best_title_match but not full experience list.
-  // We'll show what's available from the best match.
-  if (raw.best_title_match) {
+  if (Array.isArray(raw.experience) && raw.experience.length > 0) {
+    raw.experience.forEach((e: any, idx: number) => {
+      let dur = 0;
+      if (typeof e.duration_years === 'number') {
+        dur = e.duration_years;
+      }
+      experience.push({
+        id: `exp-${index}-${idx}`,
+        role: e.role || raw.best_title_match || 'Role',
+        company: e.company || '',
+        startDate: e.start || '',
+        endDate: e.end || '',
+        durationYears: dur,
+      });
+    });
+  } else if (raw.best_title_match) {
     experience.push({
       id: `exp-${index}-0`,
       role: raw.best_title_match,
@@ -116,7 +135,20 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
 
   // Education entries
   const education: EducationEntry[] = [];
-  if (raw.degree_level) {
+  if (Array.isArray(raw.education) && raw.education.length > 0) {
+    raw.education.forEach((edu: any, idx: number) => {
+      const yr = edu.end
+        ? (edu.start ? `${edu.start} — ${edu.end}` : edu.end)
+        : (edu.start || edu.year || '');
+      education.push({
+        id: `edu-${index}-${idx}`,
+        degree: edu.degree || raw.degree_level || 'Degree',
+        field: edu.field || raw.degree_field || '',
+        institution: edu.institution || '',
+        yearRange: yr,
+      });
+    });
+  } else if (raw.degree_level) {
     education.push({
       id: `edu-${index}-0`,
       degree: raw.degree_level,
@@ -135,13 +167,32 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
   // Title — use best_title_match or fallback
   const title = raw.best_title_match || '';
 
-  // ── Contact info from backend extraction ──────────────────────────────
-  const pdfUrlPath = raw.pdf_url || '';
+  // ── Contact info & PDF URL from backend extraction ──────────────────────────────
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-  const pdfUrl = pdfUrlPath ? `${apiBase}${pdfUrlPath}` : '';
+  const effectiveJobId = raw.job_id || defaultJobId || useAppStore.getState().jobId || '';
+  
+  let docId = raw.document_id || '';
+  const jobFiles = useAppStore.getState().jobFiles || [];
+  const matchedFile = jobFiles.find(
+    (f) =>
+      f.file_id === docId ||
+      (f.candidate_name && f.candidate_name.toLowerCase() === name.toLowerCase()) ||
+      f.filename === name
+  );
+  if (matchedFile) {
+    docId = matchedFile.file_id;
+  }
+
+  let pdfUrl = '';
+  if (effectiveJobId && docId && docId !== 'Unknown') {
+    pdfUrl = `${apiBase}/api/v2/jobs/${effectiveJobId}/resumes/${docId}/download`;
+  } else if (raw.pdf_url) {
+    pdfUrl = raw.pdf_url.startsWith('http') ? raw.pdf_url : `${apiBase}${raw.pdf_url}`;
+  }
 
   const mapped: Candidate = {
     id,
+    documentId: canonicalDocId,
     rank: typeof raw.rank === 'number' ? raw.rank : index + 1,
     name,
     title,
@@ -150,6 +201,18 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
     phone: raw.phone || '',
     pdfUrl,
     overallScore: finalScore,
+    relevanceScore,
+    eligibilityStatus: raw.eligibility_status || (knockedOut ? 'DOES_NOT_MEET_CRITERIA' : (isUnresolvedName ? 'REVIEW_REQUIRED' : 'ELIGIBLE')),
+    humanDecision: raw.human_decision || (raw.decision ? raw.decision.toUpperCase() : 'NEW'),
+    identityStatus,
+    identityConfidence: typeof raw.identity_confidence === 'number' ? raw.identity_confidence : (isUnresolvedName ? 0.0 : 1.0),
+    identityProvenance: raw.identity_provenance || raw.identity || {},
+    factorLedger: raw.factor_ledger || [],
+    scoreVersion: raw.score_version || '2.2.0',
+    policyVersion: raw.policy_version || '2026.1',
+    jobVersion: raw.job_version || 1,
+    atsScore: typeof raw.ats_score === 'number' ? raw.ats_score : undefined,
+    atsWarnings: raw.ats_warnings || [],
     signal: deriveSignal(finalScore, knockedOut),
     scoreBreakdown,
     skillMatch,
@@ -159,30 +222,28 @@ export function mapScoredCandidate(raw: any, index: number): Candidate {
     flags,
     topSkills,
     totalYears,
-    status: 'under-review',
-    note: '',
+    status: (raw.status as CandidateStatus) ||
+      (raw.decision === 'shortlisted' ? 'shortlisted' :
+       raw.decision === 'rejected' ? 'rejected' :
+       (raw.decision === 'interview' || raw.decision === 'assessment-sent') ? 'assessment-sent' :
+       'under-review'),
+    note: raw.note || raw.decision_reason || '',
   };
-
-  // ── DEBUG: Step 6 — Raw backend → mapped frontend trace ──────────────────
-  // Compare every knockout field: backend raw value vs. what enters the store.
-  // Remove or guard with an env flag before shipping to production.
-  console.group(`[KNOCKOUT DEBUG] ${name}`);
-  console.log('Backend raw fields:');
-  console.table({
-    knocked_out:        { backend: raw.knocked_out,        frontend: knockedOut },
-    matched_must_have:  { backend: JSON.stringify(raw.matched_must_have  ?? []), frontend: JSON.stringify(skillMatch.matched.slice(0, (raw.matched_must_have || []).length)) },
-    missing_must_have:  { backend: JSON.stringify(raw.missing_must_have  ?? []), frontend: JSON.stringify(skillMatch.missing) },
-    final_score:        { backend: raw.final_score,        frontend: finalScore },
-    knockout_reasons:   { backend: JSON.stringify(raw.knockout_reasons ?? []), frontend: JSON.stringify(knockoutChecks.filter(k => !k.passed).map(k => k.label)) },
-  });
-  console.log('Knockout checks (computed in mapper):');
-  knockoutChecks.forEach(k => console.log(`  ${k.passed ? '✅' : '❌'} ${k.label}: ${k.detail}`));
-  console.groupEnd();
 
   return mapped;
 }
 
-/** Map an array of backend ScoredCandidate dicts to frontend Candidate[] */
-export function mapScoredCandidates(rawCandidates: any[]): Candidate[] {
-  return rawCandidates.map((raw, i) => mapScoredCandidate(raw, i));
+/** Map an array of backend ScoredCandidate dicts to frontend Candidate[] with deduplicated IDs */
+export function mapScoredCandidates(rawCandidates: any[], defaultJobId?: string): Candidate[] {
+  const seenIds = new Set<string>();
+  return rawCandidates.map((raw, i) => {
+    const candidate = mapScoredCandidate(raw, i, defaultJobId);
+    const canonical = candidate.documentId || candidate.id;
+    candidate.documentId = canonical;
+    if (seenIds.has(candidate.id)) {
+      candidate.id = `${canonical}__row_${i}`;
+    }
+    seenIds.add(candidate.id);
+    return candidate;
+  });
 }

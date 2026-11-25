@@ -14,24 +14,23 @@ import { Button } from '@/components/ui/button';
 import { useCandidateStore } from '@/store/candidate-store';
 import { useAppStore } from '@/store/app-store';
 import { useJobStore } from '@/store/job-store';
-import { uploadResumes, createJob } from '@/lib/api';
-import type { UploadResult } from '@/lib/api';
+import { createJob, finalizeUploadSession, uploadResumesToBackend, uploadResumesViaSession, type UploadResult } from '@/lib/api';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 export function ResumeUploadZone() {
   const upload = useCandidateStore((s) => s.upload);
   const setUpload = useCandidateStore((s) => s.setUpload);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const appPhase = useAppStore((s) => s.appPhase);
   const setAppPhase = useAppStore((s) => s.setAppPhase);
   const setUploadProgress = useAppStore((s) => s.setUploadProgress);
   const resetUploadProgress = useAppStore((s) => s.resetUploadProgress);
   const jobId = useAppStore((s) => s.jobId);
   const setJobId = useAppStore((s) => s.setJobId);
+  const setFileIdMap = useAppStore((s) => s.setFileIdMap);
   const job = useJobStore((s) => s.job);
-
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /** Client-side validation — returns only valid PDF files */
   const validateFiles = useCallback((fileList: FileList | File[]): File[] => {
@@ -62,7 +61,7 @@ export function ResumeUploadZone() {
     return valid;
   }, []);
 
-  /** Upload valid files to the backend */
+  /** Upload valid files via Frontend -> Backend -> S3 */
   const handleUpload = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
@@ -76,26 +75,65 @@ export function ResumeUploadZone() {
       });
 
       try {
-        // Ensure we have a job ID
+        // 1. Create or retrieve job
         let currentJobId = jobId;
         if (!currentJobId) {
           const jobRes = await createJob({
             title: job.title || 'Untitled Job',
+            department: job.department,
+            description: job.description,
+            must_have_skills: job.mustHaveSkills,
+            nice_to_have_skills: job.niceToHaveSkills,
+            min_years: job.minYears,
+            max_years: job.maxYears,
+            education_level: job.educationLevel,
+            education_field: job.educationField,
+            keywords: job.keywords,
+            weights: job.weights,
           });
-          currentJobId = jobRes.id;
+          currentJobId = jobRes.job_id || jobRes.id;
           setJobId(currentJobId);
-          toast.success('Job created');
         }
 
-        // Upload with progress tracking
-        const result: UploadResult = await uploadResumes(
-          currentJobId,
-          files,
-          (loaded, total) => {
-            const percent = Math.round((loaded / total) * 100);
-            setUploadProgress({ loaded, total, percent });
-          },
-        );
+        // 2. Upload files directly to S3 via presigned upload session (with fallback to legacy proxy)
+        let result: UploadResult;
+        try {
+          result = await uploadResumesViaSession(
+            currentJobId,
+            files,
+            (uploaded: number, total: number, filename: string, percent?: number) => {
+              const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
+              setUploadProgress({
+                filesUploaded: uploaded,
+                filesTotal: total,
+                percent: pct,
+                currentFile: filename,
+              });
+            },
+            4, // bounded parallelism 4
+          );
+          if (result.accepted.length === 0 && files.length > 0) {
+            throw new Error(result.rejected[0]?.reason || 'Direct S3 upload rejected files');
+          }
+        } catch (sessionErr) {
+          console.warn('Upload session failed; falling back to legacy proxy:', sessionErr);
+          result = await uploadResumesToBackend(
+            currentJobId,
+            files,
+            (uploaded: number, total: number, filename: string, percent?: number) => {
+              const pct = percent !== undefined ? percent : Math.round((uploaded / total) * 100);
+              setUploadProgress({
+                filesUploaded: uploaded,
+                filesTotal: total,
+                percent: pct,
+                currentFile: filename,
+              });
+            },
+          );
+        }
+
+        // Save fileId mapping in store for explicit analyze barrier submission
+        setFileIdMap(result.fileIdMap);
 
         // Toast server-side rejections individually
         for (const rejected of result.rejected) {
@@ -108,26 +146,64 @@ export function ResumeUploadZone() {
         setUpload({
           totalFiles: result.total_accepted,
           analyzedFiles: 0,
-          processingFiles: result.accepted.length,
+          processingFiles: result.total_accepted,
           isUploading: false,
         });
 
+        // Expose finalization failures with a retry action
+        if (result.finalizationError) {
+          toast.error('Upload session finalization failed', {
+            description: result.finalizationError,
+            action: {
+              label: 'Retry Finalize',
+              onClick: async () => {
+                try {
+                  if (result.sessionId) {
+                    await finalizeUploadSession(currentJobId, result.sessionId);
+                    toast.success('Upload session finalized successfully');
+                    setAppPhase('ready_to_analyze');
+                  }
+                } catch (retryErr) {
+                  toast.error('Finalization retry failed', {
+                    description: retryErr instanceof Error ? retryErr.message : 'Unknown error',
+                  });
+                }
+              },
+            },
+          });
+        }
+
         if (result.accepted.length > 0) {
-          toast.success(
-            `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded`,
-          );
+          setUploadProgress({
+            filesUploaded: result.total_accepted,
+            filesTotal: result.total_accepted,
+            percent: 100,
+            currentFile: result.finalizationError
+              ? `${result.total_accepted} resumes uploaded, but session finalization failed.`
+              : `${result.total_accepted} resumes uploaded. Ready to analyze!`,
+          });
+          if (!result.finalizationError) {
+            setAppPhase('ready_to_analyze');
+            toast.success(
+              `${result.accepted.length} resume${result.accepted.length > 1 ? 's' : ''} uploaded. Ready to analyze!`,
+            );
+          }
+        } else {
+          resetUploadProgress();
+          setAppPhase('idle');
         }
       } catch (err) {
+        console.error('[HANDLE_UPLOAD_ERROR]', err);
+        resetUploadProgress();
         toast.error('Upload failed', {
           description: err instanceof Error ? err.message : 'An unexpected error occurred',
         });
-      } finally {
-        setAppPhase('idle');
-        resetUploadProgress();
+        setAppPhase('error');
       }
     },
-    [jobId, setJobId, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job.title],
+    [jobId, setJobId, setFileIdMap, setAppPhase, setUploadProgress, resetUploadProgress, setUpload, job],
   );
+
 
   // ── Drag-drop handlers ──────────────────────────────────────────────────
 
@@ -171,7 +247,12 @@ export function ResumeUploadZone() {
     [validateFiles, handleUpload],
   );
 
-  const isDisabled = appPhase === 'uploading' || appPhase === 'extracting' || appPhase === 'scoring';
+  const isDisabled =
+    appPhase === 'uploading' ||
+    appPhase === 'analysis_queued' ||
+    appPhase === 'fallback_processing' ||
+    appPhase === 'final_ranking';
+
 
   return (
     <div>
@@ -183,6 +264,7 @@ export function ResumeUploadZone() {
       <input
         ref={fileInputRef}
         type="file"
+        data-testid="resume-file-input"
         accept=".pdf"
         multiple
         className="hidden"
@@ -192,6 +274,7 @@ export function ResumeUploadZone() {
 
       {/* Drop zone */}
       <div
+        onClick={handleBrowseClick}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -207,8 +290,12 @@ export function ResumeUploadZone() {
           {isDragging ? 'Drop PDFs here' : 'Drop PDFs here or click browse'}
         </p>
         <Button
+          type="button"
           variant="outline"
-          onClick={handleBrowseClick}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleBrowseClick();
+          }}
           disabled={isDisabled}
           className="border-thick border-border bg-secondary text-foreground uppercase tracking-brutal text-tiny font-bold px-sp-3 py-sp-1 h-8 hover:bg-foreground hover:text-background transition-colors"
         >

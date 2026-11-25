@@ -7,7 +7,7 @@ s3_prefix = "resume-ranker"
 region = "ap-south-1"
 confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "S3BucketName=\"resume-ranker-prod-storage\" DynamoDBTableName=\"ResumePlatform\""
+parameter_overrides = "S3BucketName=\"resume-ranker-prod-storage\" DynamoDBTableName=\"ResumePlatform\" Environment=\"prod\" EnableSchedule=\"false\""
 image_repositories = []
 
 [default.global.parameters]

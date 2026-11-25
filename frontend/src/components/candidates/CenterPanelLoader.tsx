@@ -19,9 +19,17 @@ const phaseConfig: Record<string, { title: string; subtitle: string }> = {
     title: 'Extracting Resume Data',
     subtitle: 'Parsing PDFs and extracting structured information…',
   },
+  processing: {
+    title: 'Processing Resumes',
+    subtitle: 'Running multi-stage parsing and extraction in the background…',
+  },
+  fallback_processing: {
+    title: 'Deep Extraction in Progress',
+    subtitle: 'Resolving complex layouts and missing candidate data…',
+  },
   scoring: {
     title: 'Scoring & Ranking Candidates',
-    subtitle: 'Applying weights and computing match scores…',
+    subtitle: 'Applying weights and computing deterministic match scores…',
   },
 };
 

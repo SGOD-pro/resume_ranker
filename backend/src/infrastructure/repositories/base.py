@@ -11,7 +11,7 @@ from typing import Any
 
 import boto3
 
-from src.config.aws import get_boto3_kwargs, get_settings
+from src.config.aws import get_resource, get_settings
 
 
 @lru_cache(maxsize=1)
@@ -21,7 +21,7 @@ def _get_dynamodb_resource():
     For Lambda: cached across warm invocations (lru_cache lives in module scope).
     For FastAPI: cached for the lifetime of the process.
     """
-    return boto3.resource("dynamodb", **get_boto3_kwargs())
+    return get_resource("dynamodb")
 
 
 def _get_table():

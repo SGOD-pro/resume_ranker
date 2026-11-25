@@ -25,17 +25,20 @@ _TAG_RE = re.compile(r'\[/?[A-Z_]+\]')
 
 def _clean_for_header_match(line: str) -> str:
     """Clean a line for section header matching.
-    
+
     Strips Unicode PUA icons, decorative prefixes, bracket tags,
-    numbered prefixes (e.g., '02 EDUCATION'), and normalizes whitespace.
+    numbered prefixes (e.g., '02 EDUCATION'), markdown heading markers
+    (#, ##, ###), and normalizes whitespace.
     """
     s = _PUA_RE.sub('', line)           # Strip icon font chars
     s = _TAG_RE.sub('', s)              # Strip [TAG] wrappers
     s = _ICON_PREFIX_RE.sub('', s)      # Strip decorative prefixes
+    # Strip markdown heading markers (### / ## / #) — present in ODL markdown output
+    s = re.sub(r'^#{1,3}\s+', '', s.lstrip())
     s = s.strip()
     # Strip leading numbered prefixes like "02 " or "06" (attached to word)
     # Handles: "02 EMPLOYMENT HISTORY" → "EMPLOYMENT HISTORY"
-    # Handles: "06LANGUAGES" → "LANGUAGES"  
+    # Handles: "06LANGUAGES" → "LANGUAGES"
     s = re.sub(r'^\d{1,2}\s*', '', s).strip()
     # Remove trailing colon (common in "Skills:" style headers)
     s = s.rstrip(':').strip()

@@ -127,6 +127,20 @@ class JobsRepository:
         logger.info("Incremented doc count for job: %s", job_id)
         return JobItem.from_dynamodb_item(response["Attributes"])
 
+    def increment_files_count(self, job_id: str, count: int) -> None:
+        """Increment remaining, total_files, and document_count by count."""
+        if count <= 0:
+            return
+        self._table.update_item(
+            Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+            UpdateExpression="SET remaining = remaining + :count, total_files = total_files + :count, document_count = document_count + :count, updated_at = :now",
+            ExpressionAttributeValues={
+                ":count": count,
+                ":now": _utcnow_iso(),
+            },
+        )
+        logger.info("Incremented files count by %d for job: %s", count, job_id)
+
     def delete(self, job_id: str) -> None:
         """Delete a Job and ALL its related items (documents, scoring results).
 
@@ -148,3 +162,165 @@ class JobsRepository:
                 batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
 
         logger.info("Deleted job %s and %d related items", job_id, len(items))
+
+    def get_job_with_files(self, job_id: str) -> tuple[Optional[JobItem], List[Any]]:
+        """Fetch Job METADATA and all FILE# items in a single DynamoDB query."""
+        from src.infrastructure.models.file import FileItem
+        resp = self._table.query(
+            KeyConditionExpression=Key("PK").eq(f"JOB#{job_id}")
+        )
+        items = resp.get("Items", [])
+        job: Optional[JobItem] = None
+        files: List[FileItem] = []
+
+        for item in items:
+            sk = item.get("SK", "")
+            if sk == "METADATA":
+                job = JobItem.from_dynamodb_item(item)
+            elif sk.startswith("FILE#"):
+                files.append(FileItem.from_dynamodb_item(item))
+
+        return job, files
+
+    def request_analysis(self, job_id: str, file_ids: List[str]) -> JobItem:
+        """Process recruiter's Analyze request (Amendment 2).
+        
+        - Marks unselected files REMOVED (conditionally decrements remaining)
+        - Enqueues S1_DONE files that need fallback to Stage 2
+        - Sets analyze_requested = True
+        - Triggers scoring if remaining == 0
+        """
+        from src.infrastructure.models.file import FileStatus
+        from src.infrastructure.repositories.files_repository import FilesRepository
+        from src.infrastructure.queue.queue_manager import (
+            ODL_BATCH_QUEUE,
+            FINAL_RANK_QUEUE,
+            get_queue_adapter,
+        )
+        from src.infrastructure.queue.message import QueueMessage
+
+        files_repo = FilesRepository()
+        all_files = files_repo.list_files_for_job(job_id)
+        selected_set = set(file_ids)
+        now = _utcnow_iso()
+
+        # 1. Update job metadata first so any racing Stage 1 workers see analyze_requested = True immediately
+        job_resp = self._table.update_item(
+            Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+            UpdateExpression="SET #ar = :true, #afids = :afids, #upd = :now",
+            ExpressionAttributeNames={
+                "#ar": "analyze_requested",
+                "#afids": "analyze_file_ids",
+                "#upd": "updated_at",
+            },
+            ExpressionAttributeValues={
+                ":true": True,
+                ":afids": file_ids,
+                ":now": now,
+            },
+            ReturnValues="ALL_NEW",
+        )
+        updated_job = JobItem.from_dynamodb_item(job_resp["Attributes"])
+
+        # 2. Mark unselected files as REMOVED (conditionally decrements remaining)
+        for f in all_files:
+            if f.file_id not in selected_set and not f.is_terminal:
+                files_repo.transition_file_terminal(
+                    job_id=job_id,
+                    file_id=f.file_id,
+                    terminal_status=FileStatus.REMOVED.value,
+                    error_message="Excluded from analysis",
+                )
+
+        # 3. For selected files currently waiting in S1_DONE, record durable Stage 2 outbox dispatch
+        for f in all_files:
+            if f.file_id in selected_set and f.status == FileStatus.S1_DONE:
+                files_repo.record_outbox_event(
+                    job_id=job_id,
+                    outbox_sk=f"OUTBOX#STAGE2#{f.file_id}",
+                    event_type="STAGE2_DISPATCH",
+                    payload={
+                        "job_id": job_id,
+                        "file_id": f.file_id,
+                        "s3_key": f.s3_raw_key,
+                    },
+                )
+
+        # 4. Reconcile outbox to flush pending messages to SQS
+        files_repo.reconcile_outbox(job_id)
+
+        # 5. Fetch fresh job state to evaluate terminal barrier
+        fresh_job = self.get(job_id) or updated_job
+
+        effective_total = fresh_job.total_files or len(all_files)
+        effective_remaining = (
+            sum(1 for f in all_files if not f.is_terminal)
+            if all_files
+            else fresh_job.remaining
+        )
+        effective_usable = (
+            sum(1 for f in all_files if f.status == FileStatus.S2_DONE)
+            if all_files
+            else fresh_job.usable_files
+        )
+        if effective_usable == 0:
+            from src.infrastructure.repositories.documents_repository import DocumentsRepository
+            from src.infrastructure.models.document import DocumentStatus
+            effective_usable = sum(
+                1 for d in DocumentsRepository().list_for_job(job_id)
+                if d.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.PARSED, DocumentStatus.SCORED)
+            )
+
+        if effective_total > 0 and effective_remaining == 0:
+            if effective_usable == 0:
+                logger.warning("Job %s analyze requested but 0 usable files -> DONE_WITH_ERRORS", job_id)
+                self._table.update_item(
+                    Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+                    UpdateExpression="SET #st = :done_err, #upd = :now",
+                    ExpressionAttributeNames={"#st": "status", "#upd": "updated_at"},
+                    ExpressionAttributeValues={
+                        ":done_err": JobStatus.DONE_WITH_ERRORS.value,
+                        ":now": now,
+                    },
+                )
+                fresh_job.status = JobStatus.DONE_WITH_ERRORS
+            else:
+                logger.info("Job %s analyze requested and remaining == 0 -> SCORING", job_id)
+                self._table.update_item(
+                    Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+                    UpdateExpression="SET #st = :scoring, #upd = :now",
+                    ExpressionAttributeNames={"#st": "status", "#upd": "updated_at"},
+                    ExpressionAttributeValues={
+                        ":scoring": JobStatus.SCORING.value,
+                        ":now": now,
+                    },
+                )
+                fresh_job.status = JobStatus.SCORING
+                # Record durable scoring outbox event and reconcile
+                files_repo.record_outbox_event(
+                    job_id=job_id,
+                    outbox_sk="OUTBOX#SCORING",
+                    event_type="SCORING_DISPATCH",
+                    payload={
+                        "job_id": job_id,
+                        "session_id": job_id,
+                        "org_id": getattr(fresh_job, "org_id", "org_default"),
+                        "job_version": getattr(fresh_job, "job_version", 1),
+                        "stage": "FINAL_RANK",
+                    },
+                )
+                files_repo.reconcile_outbox(job_id)
+        else:
+            if fresh_job.status not in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS, JobStatus.FAILED):
+                self._table.update_item(
+                    Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
+                    UpdateExpression="SET #st = :proc, #upd = :now",
+                    ExpressionAttributeNames={"#st": "status", "#upd": "updated_at"},
+                    ExpressionAttributeValues={
+                        ":proc": JobStatus.PROCESSING.value,
+                        ":now": now,
+                    },
+                )
+                fresh_job.status = JobStatus.PROCESSING
+
+        return fresh_job

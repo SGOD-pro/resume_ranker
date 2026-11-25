@@ -10,7 +10,7 @@ import re, json, os
 from difflib import SequenceMatcher
 from typing import List, Set, Optional, Dict
 
-
+from src.extractors.contact.contact_parser import _OCR_NOISE_RE
 from src.config.settings import SKILLS_DICTIONARY
 
 _DICT_PATH = str(SKILLS_DICTIONARY)
@@ -26,11 +26,28 @@ def _load_skills_dict() -> List[str]:
             ]
     except Exception:
         return []
-
 _SKILLS_LIST: List[str]   = _load_skills_dict()
+
+_SKILL_ALIASES = {
+    "JS": "JavaScript",
+    "TS": "TypeScript",
+    "Node": "Node.js",
+    "ReactJS": "React",
+    "VueJS": "Vue.js",
+    "AWS": "Amazon Web Services",
+    "GCP": "Google Cloud Platform",
+}
+
+# Add aliases into the scanner list
+_SKILLS_LIST.extend(_SKILL_ALIASES.keys())
+
 _SKILLS_SORTED            = sorted(_SKILLS_LIST, key=len, reverse=True)
 _SKILLS_LOWER: Set[str]   = {s.lower() for s in _SKILLS_LIST}
 _SKILLS_CANONICAL: dict   = {s.lower(): s for s in _SKILLS_LIST}
+
+# Map aliases in the canonical dictionary
+for alias, full in _SKILL_ALIASES.items():
+    _SKILLS_CANONICAL[alias.lower()] = full
 
 # ── Fuzzy matching index: group skills by word count for faster matching ──────
 _SKILLS_BY_WORDCOUNT: Dict[int, List[str]] = {}
@@ -67,7 +84,8 @@ def _build_pattern(skill: str) -> re.Pattern:
         re.IGNORECASE
     )
 
-_SKILL_PATTERNS = [(skill, _build_pattern(skill)) for skill in _SKILLS_SORTED]
+_SKILL_PATTERNS_FAST = [(skill, skill.lower(), _build_pattern(skill)) for skill in _SKILLS_SORTED]
+_SKILL_PATTERNS = [(skill, pattern) for skill, _, pattern in _SKILL_PATTERNS_FAST]
 
 
 class SkillsParser:
@@ -193,6 +211,13 @@ class SkillsParser:
         if not text or len(text) < 3:
             return None
 
+        # Guard: Only attempt fuzzy matching if there's actual evidence of garbling.
+        # If the word is clean and doesn't match any garbling signals, it's just a normal
+        # word not in the dictionary (e.g. "Choreography", "Biography").
+        has_garble_evidence = (not self._looks_like_skill(text)) or bool(_OCR_NOISE_RE.search(text))
+        if not has_garble_evidence:
+            return None
+
         text_lower = text.lower()
 
         # Quick check: skip if it's a location or noise
@@ -233,9 +258,11 @@ class SkillsParser:
 
     def _dict_scan(self, text: str) -> Set[str]:
         found: Set[str] = set()
-        for skill, pattern in _SKILL_PATTERNS:
-            if pattern.search(text):
-                found.add(_SKILLS_CANONICAL.get(skill.lower(), skill))
+        text_lower = text.lower()
+        for skill, skill_lower, pattern in _SKILL_PATTERNS_FAST:
+            if skill_lower in text_lower:
+                if pattern.search(text):
+                    found.add(_SKILLS_CANONICAL.get(skill_lower, skill))
         return found
 
     def _deduplicate(self, skills: Set[str]) -> List[str]:

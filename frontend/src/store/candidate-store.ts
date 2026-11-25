@@ -1,3 +1,17 @@
+/**
+ * candidate-store.ts — Zustand store for candidate state
+ * ========================================================
+ * IMPORTANT: Do NOT add computed selectors that return new objects (like
+ * getSelectedCandidate / getFilteredCandidates used to do). Zustand uses
+ * Object.is() to compare snapshots — returning a new { ...spread } object
+ * on every call breaks getSnapshot caching and causes an infinite render loop.
+ *
+ * Pattern to follow:
+ *   ✅ useCandidateStore((s) => s.selectedId)          — primitive, stable
+ *   ✅ const result = useMemo(() => compute(raw), [...]) — derived in component
+ *   ❌ useCandidateStore((s) => s.getSelectedCandidate()) — new object every call
+ */
+
 import { create } from 'zustand';
 import type { Candidate, Signal, CandidateStatus, UploadState } from './types';
 
@@ -6,35 +20,47 @@ type SortField = 'score' | 'name';
 interface CandidateStore {
   candidates: Candidate[];
   selectedId: string | null;
+  selectedJobId: string | null;
   filterSignal: Signal | 'all';
   sortField: SortField;
   searchQuery: string;
   showKnockouts: boolean;
   upload: UploadState;
 
-  // Selectors
-  getFilteredCandidates: () => Candidate[];
-  getSelectedCandidate: () => Candidate | null;
-
-  // Actions
-  selectCandidate: (id: string) => void;
+  // Actions (only primitive state mutations — no computed selectors)
+  selectCandidate: (id: string | null, jobId?: string | null) => void;
   setFilterSignal: (signal: Signal | 'all') => void;
   setSortField: (field: SortField) => void;
   setSearchQuery: (query: string) => void;
   toggleShowKnockouts: () => void;
-  setCandidates: (candidates: Candidate[]) => void;
+  setCandidates: (candidates: Candidate[], jobId?: string | null) => void;
   setStatus: (id: string, status: CandidateStatus) => void;
   setNote: (id: string, note: string) => void;
   setUpload: (upload: Partial<UploadState>) => void;
 }
 
-export const useCandidateStore = create<CandidateStore>((set, get) => ({
+function getInitialSelectedId(jobId?: string | null): string | null {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const activeJobId = jobId || sessionStorage.getItem('active_job_id');
+      if (activeJobId) {
+        return sessionStorage.getItem(`selected_candidate_${activeJobId}`);
+      }
+    }
+  } catch (err) {
+    void err;
+  }
+  return null;
+}
+
+export const useCandidateStore = create<CandidateStore>((set) => ({
   candidates: [],
-  selectedId: null,
+  selectedId: getInitialSelectedId(),
+  selectedJobId: null,
   filterSignal: 'all',
   sortField: 'score',
   searchQuery: '',
-  showKnockouts: false,
+  showKnockouts: true,
   upload: {
     totalFiles: 0,
     analyzedFiles: 0,
@@ -42,50 +68,60 @@ export const useCandidateStore = create<CandidateStore>((set, get) => ({
     isUploading: false,
   },
 
-  getFilteredCandidates: () => {
-    const { candidates, filterSignal, sortField, searchQuery, showKnockouts } = get();
-    let filtered = [...candidates];
+  setCandidates: (candidates, jobId) =>
+    set((state) => {
+      const activeJobId =
+        jobId ||
+        state.selectedJobId ||
+        (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('active_job_id') : null);
+      let targetId = state.selectedId;
+      if (activeJobId && typeof sessionStorage !== 'undefined') {
+        const storedForJob = sessionStorage.getItem(`selected_candidate_${activeJobId}`);
+        if (storedForJob) {
+          targetId = storedForJob;
+        } else if (state.selectedJobId && state.selectedJobId !== activeJobId) {
+          targetId = null;
+        }
+      }
+      const validSelectedId =
+        targetId && candidates.some((c) => c.id === targetId)
+          ? targetId
+          : null;
+      try {
+        if (activeJobId && typeof sessionStorage !== 'undefined') {
+          if (validSelectedId) {
+            sessionStorage.setItem(`selected_candidate_${activeJobId}`, validSelectedId);
+          } else {
+            sessionStorage.removeItem(`selected_candidate_${activeJobId}`);
+          }
+        }
+      } catch (err) {
+        void err;
+      }
+      return {
+        candidates,
+        selectedId: validSelectedId,
+        selectedJobId: activeJobId,
+      };
+    }),
 
-    // Filter by signal
-    if (filterSignal !== 'all') {
-      filtered = filtered.filter((c) => c.signal === filterSignal);
+  selectCandidate: (id, jobId) => {
+    try {
+      const activeJobId =
+        jobId ||
+        (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('active_job_id') : null);
+      if (activeJobId && typeof sessionStorage !== 'undefined') {
+        if (id) {
+          sessionStorage.setItem(`selected_candidate_${activeJobId}`, id);
+        } else {
+          sessionStorage.removeItem(`selected_candidate_${activeJobId}`);
+        }
+      }
+    } catch (err) {
+      void err;
     }
-
-    // Filter out knockouts unless toggled
-    if (!showKnockouts) {
-      filtered = filtered.filter((c) => c.signal !== 'knockout');
-    }
-
-    // Search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.topSkills.some((s) => s.toLowerCase().includes(q)) ||
-          c.skillMatch.matched.some((s) => s.toLowerCase().includes(q))
-      );
-    }
-
-    // Sort
-    if (sortField === 'score') {
-      filtered.sort((a, b) => b.overallScore - a.overallScore);
-    } else {
-      filtered.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return filtered;
+    set({ selectedId: id });
   },
-
-  getSelectedCandidate: () => {
-    const { candidates, selectedId } = get();
-    if (!selectedId) return null;
-    return candidates.find((c) => c.id === selectedId) ?? null;
-  },
-
-  setCandidates: (candidates) => set({ candidates, selectedId: null }),
-
-  selectCandidate: (id) => set({ selectedId: id }),
 
   setFilterSignal: (signal) => set({ filterSignal: signal }),
 

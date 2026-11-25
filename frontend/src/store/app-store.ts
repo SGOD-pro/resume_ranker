@@ -6,9 +6,24 @@
  */
 
 import { create } from 'zustand';
+import type { JobFileStatus } from './types';
+import { useCandidateStore } from './candidate-store';
 
 export type BackendStatus = 'checking' | 'waking-up' | 'ready' | 'unreachable';
-export type AppPhase = 'idle' | 'uploading' | 'extracting' | 'scoring' | 'complete';
+export type AppPhase =
+  | 'idle'
+  | 'uploading'
+  | 'ready_to_analyze'
+  | 'analysis_queued'
+  | 'fast_preprocessing'
+  | 'processing'
+  | 'fallback_processing'
+  | 'final_ranking'
+  | 'extracting'
+  | 'scoring'
+  | 'complete'
+  | 'error';
+
 
 export interface UploadProgress {
   loaded: number;
@@ -32,6 +47,11 @@ interface AppStore {
   sseRetryCount: number;
   blockingError: BlockingError | null;
   jobId: string | null;
+  sessionId: string | null;
+  jobFiles: JobFileStatus[];
+  fileIdMap: Record<string, string>;
+  isStalled: boolean;
+  etag: string | null;
 
   setBackendStatus: (status: BackendStatus) => void;
   setAppPhase: (phase: AppPhase) => void;
@@ -40,6 +60,11 @@ interface AppStore {
   setSseRetryCount: (count: number) => void;
   setBlockingError: (error: BlockingError | null) => void;
   setJobId: (id: string | null) => void;
+  setSessionId: (id: string | null) => void;
+  setJobFiles: (files: JobFileStatus[]) => void;
+  setFileIdMap: (map: Record<string, string>) => void;
+  setIsStalled: (stalled: boolean) => void;
+  setEtag: (etag: string | null) => void;
 }
 
 const defaultUploadProgress: UploadProgress = {
@@ -58,6 +83,11 @@ export const useAppStore = create<AppStore>((set) => ({
   sseRetryCount: 0,
   blockingError: null,
   jobId: null,
+  sessionId: null,
+  jobFiles: [],
+  fileIdMap: {},
+  isStalled: false,
+  etag: null,
 
   setBackendStatus: (status) => set({ backendStatus: status }),
   setAppPhase: (phase) => set({ appPhase: phase }),
@@ -69,5 +99,25 @@ export const useAppStore = create<AppStore>((set) => ({
     set({ uploadProgress: { ...defaultUploadProgress } }),
   setSseRetryCount: (count) => set({ sseRetryCount: count }),
   setBlockingError: (error) => set({ blockingError: error }),
-  setJobId: (id) => set({ jobId: id }),
+  setJobId: (id) => {
+    try {
+      if (id && typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('active_job_id', id);
+        const storedSelected = sessionStorage.getItem(`selected_candidate_${id}`);
+        useCandidateStore.setState({ selectedId: storedSelected || null, selectedJobId: id });
+      } else if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('active_job_id');
+        useCandidateStore.setState({ selectedId: null, selectedJobId: null });
+      }
+    } catch {
+      // ignore storage access errors
+    }
+    set({ jobId: id });
+  },
+  setSessionId: (id) => set({ sessionId: id }),
+  setJobFiles: (files) => set({ jobFiles: files }),
+  setFileIdMap: (map) => set({ fileIdMap: map }),
+  setIsStalled: (stalled) => set({ isStalled: stalled }),
+  setEtag: (etag) => set({ etag }),
 }));
+

@@ -1,0 +1,338 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Resume Intelligence Platform (Consolidated Single-Lambda Production Stack)
+  One unified Python 3.13 Lambda (API Gateway HTTP API v2 + SQS Stage1/Stage2/Scoring/DLQ + Outbox Recovery),
+  integrated with production S3, DynamoDB, SQS queues, IAM policies, and CORS.
+  Enforces ADR-07 / HC-01 (Standalone Engine behind Edge Reverse Proxy).
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, production, preprod, test]
+    Description: Deployment target environment name
+
+  S3BucketName:
+    Type: String
+    Default: resume-ranker-prod-storage
+    Description: Production S3 bucket for resume file storage
+
+  DynamoDBTableName:
+    Type: String
+    Default: ResumePlatform
+    Description: Production DynamoDB single-table name for jobs, candidates, and outbox
+
+  ODLStagingBucket:
+    Type: String
+    Default: pdf-test-bucket-09
+    Description: Existing ODL-authorized staging bucket (preserves odl-parser-lambda-prod unchanged)
+
+  FrontendOrigins:
+    Type: CommaDelimitedList
+    Default: "https://resume-ranker.vercel.app,http://localhost:5173,http://127.0.0.1:5173"
+    Description: Explicitly allowed browser origins for production CORS and CSRF verification
+
+  EnableSchedule:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable periodic EventBridge schedule for unattended transactional outbox recovery (requires events:PutRule IAM permission)
+
+Conditions:
+  ShouldEnableSchedule: !Equals [!Ref EnableSchedule, "true"]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 180
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+
+Resources:
+
+  # ── SQS Dead-Letter Queues (VisibilityTimeout >= Lambda Timeout) ───────────
+  Stage1DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage1-dlq-${Environment}"
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600
+
+  Stage2DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage2-dlq-${Environment}"
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600
+
+  ScoringDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-scoring-dlq-${Environment}"
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600
+
+  # ── SQS Stage Queues (VisibilityTimeout >= 2x Lambda Timeout) ──────────────
+  Stage1Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage1-${Environment}"
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt Stage1DLQ.Arn
+        maxReceiveCount: 3
+
+  Stage1QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref Stage1Queue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt Stage1Queue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Sub "arn:aws:s3:::${S3BucketName}"
+
+  Stage2Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-stage2-${Environment}"
+      VisibilityTimeout: 600
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt Stage2DLQ.Arn
+        maxReceiveCount: 5
+
+  ScoringQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "resume-ranker-scoring-${Environment}"
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 86400
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ScoringDLQ.Arn
+        maxReceiveCount: 3
+
+  # ── API Gateway HTTP API v2 (Throttled, Strict Origin + Credential CORS) ──
+  ResumeRankingHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 20
+      CorsConfiguration:
+        AllowCredentials: true
+        AllowOrigins: !Ref FrontendOrigins
+        AllowMethods:
+          - GET
+          - POST
+          - DELETE
+          - PATCH
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+          - If-None-Match
+          - X-Session-ID
+        ExposeHeaders:
+          - ETag
+
+  # ── Single Unified Production Lambda Function ──────────────────────────────
+  ResumeRankingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: resume-ranking-api
+      Description: Consolidated Resume Ranker production API, SQS pipeline worker, DLQ, and outbox recovery Lambda
+      CodeUri: ../backend
+      Handler: src.lambda_handler.handler
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: INFO
+          USE_REAL_SQS: "true"
+          DISABLE_STAGE2_FALLBACK: "false"
+          S3_BUCKET_NAME: !Ref S3BucketName
+          DYNAMODB_TABLE_NAME: !Ref DynamoDBTableName
+          FRONTEND_URL: !Join [",", !Ref FrontendOrigins]
+          ODL_STAGING_BUCKET: !Ref ODLStagingBucket
+          ODL_STAGING_PREFIX: "prod-staging"
+          SQS_STAGE1_QUEUE_URL: !Ref Stage1Queue
+          SQS_STAGE1_DLQ_URL: !Ref Stage1DLQ
+          SQS_STAGE2_QUEUE_URL: !Ref Stage2Queue
+          SQS_STAGE2_DLQ_URL: !Ref Stage2DLQ
+          SQS_SCORING_QUEUE_URL: !Ref ScoringQueue
+          SQS_SCORING_DLQ_URL: !Ref ScoringDLQ
+          SQS_STAGE1_QUEUE_ARN: !GetAtt Stage1Queue.Arn
+          SQS_STAGE2_QUEUE_ARN: !GetAtt Stage2Queue.Arn
+          SQS_SCORING_QUEUE_ARN: !GetAtt ScoringQueue.Arn
+          SQS_STAGE1_DLQ_ARN: !GetAtt Stage1DLQ.Arn
+          SQS_STAGE2_DLQ_ARN: !GetAtt Stage2DLQ.Arn
+          SQS_SCORING_DLQ_ARN: !GetAtt ScoringDLQ.Arn
+          SQS_FAST_PARSE_QUEUE_URL: !Ref Stage1Queue
+          SQS_FAST_PARSE_DLQ_URL: !Ref Stage1DLQ
+          SQS_ODL_BATCH_QUEUE_URL: !Ref Stage2Queue
+          SQS_ODL_BATCH_DLQ_URL: !Ref Stage2DLQ
+          SQS_NOVA_QUEUE_URL: !Ref Stage2Queue
+          SQS_NOVA_DLQ_URL: !Ref Stage2DLQ
+          SQS_FINAL_RANK_QUEUE_URL: !Ref ScoringQueue
+          SQS_FINAL_RANK_DLQ_URL: !Ref ScoringDLQ
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource: !Sub "arn:aws:s3:::${ODLStagingBucket}/prod-staging/*"
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTableName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt Stage1Queue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt Stage2Queue.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ScoringQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:Converse
+              Resource:
+                - "arn:aws:bedrock:*::foundation-model/amazon.nova-*"
+                - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*nova*"
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:odl-parser-lambda-prod*"
+      Events:
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref ResumeRankingHttpApi
+        Stage1QueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage1Queue.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 3
+        Stage2QueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage2Queue.Arn
+            BatchSize: 5
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 2
+        ScoringQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScoringQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 2
+        Stage1DlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage1DLQ.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 2
+        Stage2DlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Stage2DLQ.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 2
+        ScoringDlqEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScoringDLQ.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            ScalingConfig:
+              MaximumConcurrency: 2
+
+  # ── Periodic EventBridge Schedule for Autonomous Outbox Recovery ────────────
+  OutboxRecoverySchedule:
+    Type: AWS::Events::Rule
+    Condition: ShouldEnableSchedule
+    Properties:
+      Name: !Sub "resume-ranker-recovery-${Environment}"
+      ScheduleExpression: "rate(5 minutes)"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ResumeRankingFunction.Arn
+          Id: ProdRecoveryTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","action":"reconcile_outbox"}'
+
+  OutboxRecoverySchedulePermission:
+    Type: AWS::Lambda::Permission
+    Condition: ShouldEnableSchedule
+    Properties:
+      FunctionName: !Ref ResumeRankingFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt OutboxRecoverySchedule.Arn
+
+Outputs:
+  ApiUrl:
+    Description: "Production HTTP API URL (ADR-07 requires edge reverse proxy before public ingress)"
+    Value: !Sub "https://${ResumeRankingHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  FunctionName:
+    Description: "Consolidated Production Lambda function name"
+    Value: !Ref ResumeRankingFunction
+
+  FunctionArn:
+    Description: "Consolidated Production Lambda ARN"
+    Value: !GetAtt ResumeRankingFunction.Arn
+
+  S3Bucket:
+    Description: "Production S3 bucket for resume storage"
+    Value: !Ref S3BucketName
+
+  DynamoDBTable:
+    Description: "Production DynamoDB single-table"
+    Value: !Ref DynamoDBTableName
+
+  Stage1QueueUrl:
+    Value: !Ref Stage1Queue
+
+  Stage2QueueUrl:
+    Value: !Ref Stage2Queue
+
+  ScoringQueueUrl:
+    Value: !Ref ScoringQueue

@@ -139,6 +139,36 @@
     * {
         box-shadow: none !important;
     }
+
+    /* Brutalist Global Scrollbars */
+    * {
+        scrollbar-width: auto;
+        scrollbar-color: var(--foreground) var(--background);
+    }
+
+    ::-webkit-scrollbar {
+        width: 16px;
+        height: 16px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: var(--background);
+        border-left: 3px solid var(--border);
+        border-top: 3px solid var(--border);
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background-color: var(--foreground);
+        border: 3px solid var(--background);
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: var(--primary);
+    }
+    
+    ::-webkit-scrollbar-corner {
+        background: var(--background);
+    }
 }
 
 /* ═══════════════════════════════════════════════

@@ -1,0 +1,147 @@
+"""
+app.py — FastAPI application factory
+=======================================
+Creates and configures the FastAPI application with CORS, route registration,
+and AWS connectivity checks on startup.
+"""
+
+import logging
+import os
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.api.routes.health import router as health_router
+from src.api.routes.jobs_v2 import router as jobs_v2_router
+from src.api.middleware.security import SecurityHeadersMiddleware
+from src.api.middleware.rate_limit import RateLimitMiddleware
+from src.infrastructure.health import check_all
+from src.config.aws import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle.
+
+    On startup: verify DynamoDB and S3 are reachable.
+    Health checks run in a background thread — they do NOT block startup,
+    so the server is immediately ready to serve requests and the /health
+    endpoint is available for debugging while checks are still in progress.
+    """
+    # ── Startup ───────────────────────────────────────────────────────────
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s │ %(levelname)-7s │ %(name)s │ %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger.info("━" * 60)
+    logger.info("Resume Intelligence Platform — Starting up (v2.0.0)")
+    logger.info("━" * 60)
+
+    import asyncio
+    from src.config.aws import get_settings
+
+    settings = get_settings()
+    if settings.is_local():
+        logger.info("Local environment detected — LocalStack mode")
+
+    # Run health checks in background — don't block startup
+    async def _check_health_async():
+        loop = asyncio.get_event_loop()
+        health = await loop.run_in_executor(None, check_all)
+        if all(health.values()):
+            logger.info("All AWS services connected ✅")
+        else:
+            failed = [k for k, v in health.items() if not v]
+            logger.warning("Some AWS services unavailable: %s", ", ".join(failed))
+
+    asyncio.create_task(_check_health_async())
+
+    # Start queue background worker daemon in local mode or when RUN_LOCAL_WORKERS=true
+    daemon = None
+    run_local = settings.is_local() or settings.RUN_LOCAL_WORKERS or os.environ.get("RUN_LOCAL_WORKERS", "false").lower() in ("true", "1", "yes")
+    if run_local:
+        try:
+            from src.pipeline.worker_runner import get_worker_daemon
+            daemon = get_worker_daemon()
+            daemon.start()
+            logger.info("BackgroundWorkerDaemon started (local worker mode active) ✅")
+        except Exception as e:
+            logger.warning("Failed to start BackgroundWorkerDaemon: %s", e)
+    else:
+        logger.info("BackgroundWorkerDaemon disabled (managed worker / production mode)")
+
+
+
+    logger.info("Server ready — health checks running in background")
+
+    yield
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
+    logger.info("Shutting down...")
+    if daemon:
+        try:
+            daemon.stop()
+            logger.info("BackgroundWorkerDaemon stopped ✅")
+        except Exception as e:
+            logger.warning("Error stopping BackgroundWorkerDaemon: %s", e)
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application."""
+    app = FastAPI(
+        title="SWYRA Sortlist API",
+        version="2.0.0",
+        description="Explainable candidate review workspace API.",
+        lifespan=lifespan,
+    )
+
+    settings = get_settings()
+    origins = []
+
+    # Only allow localhost origins in non-production environments to avoid security 
+    # vulnerabilities in production deployments.
+    if settings.environment != "prod":
+        origins.extend([
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ])
+
+    if settings.frontend_url:
+        # Support comma-separated strings of origins
+        frontend_origins = [org.strip() for org in settings.frontend_url.split(",") if org.strip()]
+        for org in frontend_origins:
+            if org not in origins:
+                origins.append(org)
+
+    if settings.environment == "prod" and not origins:
+        logger.warning(
+            "CORS: Running in production environment but no frontend_url is configured. "
+            "CORS requests will be rejected."
+        )
+
+    # Middleware order: Security Headers -> Rate Limit -> CORS
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
+    # Register route modules
+    app.include_router(health_router)
+    app.include_router(jobs_v2_router, prefix="/api/v2/jobs", tags=["jobs_v2"])
+    app.include_router(jobs_v2_router, prefix="/jobs", tags=["jobs_legacy_alias"])
+
+    return app
+
+
+app = create_app()
+

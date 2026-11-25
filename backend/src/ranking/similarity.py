@@ -143,7 +143,15 @@ def compute_total_experience_years(experience: List[Dict[str, Any]]) -> float:
             ranges.append((start, end))
 
     if not ranges:
+        explicit_years = sum(
+            float(exp.get("years", 0) or 0)
+            for exp in experience
+            if isinstance(exp.get("years"), (int, float)) and (exp.get("years", 0) or 0) > 0
+        )
+        if explicit_years > 0:
+            return round(explicit_years, 1)
         return 0.0
+
 
     # Sort and merge overlapping ranges
     ranges.sort(key=lambda x: x[0])
@@ -174,7 +182,8 @@ def most_recent_end_date(experience: List[Dict[str, Any]]) -> Optional[datetime]
 # ─────────────────────────────────────────────────────────────────────────────
 
 def experience_score(candidate: Dict[str, Any],
-                     jd) -> Tuple[float, str]:
+                     jd,
+                     jd_title_tokens: Optional[Dict[str, float]] = None) -> Tuple[float, str]:
     """
     Score experience based on:
       - Title similarity to JD title (40%)
@@ -186,7 +195,8 @@ def experience_score(candidate: Dict[str, Any],
     total_years = compute_total_experience_years(experience)
 
     # ── Title similarity ──────────────────────────────────────────────────
-    jd_title_tokens = tf(tokenize(jd.title))
+    if jd_title_tokens is None:
+        jd_title_tokens = tf(tokenize(jd.title))
     best_sim = 0.0
     best_title = ""
     for exp in experience:
@@ -238,7 +248,8 @@ def experience_score(candidate: Dict[str, Any],
 # ─────────────────────────────────────────────────────────────────────────────
 
 def keyword_score(candidate: Dict[str, Any],
-                  jd) -> Tuple[float, List[str], List[str]]:
+                  jd,
+                  precomputed_patterns: Optional[Dict[str, List[Any]]] = None) -> Tuple[float, List[str], List[str]]:
     """
     Score keyword overlap between JD keywords and candidate's full text.
     Uses alias expansion so 'backend'/'back-end'/'server-side' all match,
@@ -263,21 +274,29 @@ def keyword_score(candidate: Dict[str, Any],
     missing = []
     for kw in jd.keywords:
         found = False
-        kw_lower = kw.lower().strip()
 
-        # Strategy 1: Check all surface-form variants in raw text
-        variants = get_search_variants(kw)
-        for variant in variants:
-            # Word-boundary check for single-word variants
-            if ' ' not in variant and '-' not in variant:
-                if re.search(r'\b' + re.escape(variant) + r'\b', all_text):
-                    found = True
-                    break
-            else:
-                # Multi-word/hyphenated: plain substring
-                if variant in all_text:
-                    found = True
-                    break
+        if precomputed_patterns and kw in precomputed_patterns:
+            for is_regex, pat in precomputed_patterns[kw]:
+                if is_regex:
+                    if pat.search(all_text):
+                        found = True
+                        break
+                else:
+                    if pat in all_text:
+                        found = True
+                        break
+        else:
+            # Fallback on-the-fly compilation
+            variants = get_search_variants(kw)
+            for variant in variants:
+                if ' ' not in variant and '-' not in variant:
+                    if re.search(r'\b' + re.escape(variant) + r'\b', all_text):
+                        found = True
+                        break
+                else:
+                    if variant in all_text:
+                        found = True
+                        break
 
         # Strategy 2: Check if any extracted skill matches via alias resolution
         if not found:
