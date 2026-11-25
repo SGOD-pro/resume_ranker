@@ -7,6 +7,7 @@ Ensures terminal state accounting for poisoned or exhausted messages.
 import logging
 from typing import Any, Dict, List
 
+from src.config.aws import get_settings
 from src.pipeline.dlq_consumers import (
     process_scoring_dlq_message,
     process_stage1_dlq_message,
@@ -16,21 +17,38 @@ from src.pipeline.dlq_consumers import (
 logger = logging.getLogger(__name__)
 
 
+def _arn_matches_urls(arn: str, urls: List[str]) -> bool:
+    arn_name = (arn or "").rsplit(":", 1)[-1]
+    if not arn_name:
+        return False
+    for u in urls:
+        u_clean = (u or "").strip()
+        if u_clean and u_clean.rstrip("/").rsplit("/", 1)[-1] == arn_name:
+            return True
+    return False
+
+
 def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
     """Lambda handler invoked by SQS DLQs to ensure terminal state accounting."""
     records: List[Dict[str, Any]] = event.get("Records", [])
     logger.info("DLQ Consumer Lambda received %d poisoned messages", len(records))
     batch_item_failures: List[Dict[str, str]] = []
+    settings = get_settings()
+
+    s1_dlqs = [settings.SQS_STAGE1_DLQ_URL, settings.SQS_FAST_PARSE_DLQ_URL]
+    s2_dlqs = [settings.SQS_STAGE2_DLQ_URL, settings.SQS_ODL_BATCH_DLQ_URL, settings.SQS_NOVA_DLQ_URL]
+    sc_dlqs = [settings.SQS_SCORING_DLQ_URL, settings.SQS_FINAL_RANK_DLQ_URL]
 
     for record in records:
         msg_id = record.get("messageId", "")
         try:
             event_source_arn = record.get("eventSourceARN", "")
-            if "stage1" in event_source_arn.lower() or "fast-parse" in event_source_arn.lower():
+            arn_lower = event_source_arn.lower()
+            if _arn_matches_urls(event_source_arn, s1_dlqs) or "stage1" in arn_lower or "fast-parse" in arn_lower:
                 process_stage1_dlq_message(record)
-            elif "stage2" in event_source_arn.lower() or "odl" in event_source_arn.lower() or "nova" in event_source_arn.lower():
+            elif _arn_matches_urls(event_source_arn, s2_dlqs) or "stage2" in arn_lower or "odl" in arn_lower or "nova" in arn_lower:
                 process_stage2_dlq_message(record)
-            elif "scoring" in event_source_arn.lower() or "final-rank" in event_source_arn.lower():
+            elif _arn_matches_urls(event_source_arn, sc_dlqs) or "scoring" in arn_lower or "final-rank" in arn_lower:
                 process_scoring_dlq_message(record)
             else:
                 body_str = record.get("body", "")

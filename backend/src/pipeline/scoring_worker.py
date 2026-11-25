@@ -10,9 +10,12 @@ Triggered when all files reach terminal states and Analyze was requested (remain
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import asdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from botocore.exceptions import ClientError
 
 from src.infrastructure.models.file import FileStatus
 from src.infrastructure.models.job import JobStatus
@@ -27,6 +30,50 @@ from src.schemas.scoring import JobDescription
 logger = logging.getLogger(__name__)
 
 
+def _is_cond_failed(exc: Exception) -> bool:
+    if isinstance(exc, ClientError):
+        return exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException"
+    return "ConditionalCheckFailedException" in type(exc).__name__ or "ConditionalCheckFailed" in str(exc)
+
+
+def _update_job_scoring_result(
+    jobs_repo: JobsRepository,
+    job_id: str,
+    updates: Dict[str, Any],
+    initial_job: Any,
+    msg_job_version: Optional[int],
+) -> str:
+    """Update job status with optimistic lock retries; returns 'updated' or 'skipped'."""
+    candidate_job = initial_job
+    for attempt in range(4):
+        try:
+            jobs_repo.update(job_id, updates, expected_version=candidate_job.version)
+            return "updated"
+        except Exception as exc:
+            if not _is_cond_failed(exc):
+                raise
+            fresh_job = jobs_repo.get(job_id)
+            if not fresh_job:
+                logger.warning("ScoringWorker: Job %s deleted concurrently; skipping update", job_id)
+                return "skipped"
+            fresh_jv = int(getattr(fresh_job, "job_version", 1))
+            if msg_job_version is not None and msg_job_version < fresh_jv:
+                logger.info(
+                    "ScoringWorker: Stale scoring event for job %s (msg_jv=%s < current=%s); skipping",
+                    job_id, msg_job_version, fresh_jv,
+                )
+                return "skipped"
+            if fresh_job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS):
+                logger.info("ScoringWorker: Job %s already %s (v%s); skipping duplicate update",
+                            job_id, fresh_job.status.value, fresh_job.version)
+                return "skipped"
+            candidate_job = fresh_job
+            time.sleep(0.05 * (attempt + 1))
+
+    jobs_repo.update(job_id, updates, expected_version=candidate_job.version)
+    return "updated"
+
+
 def process_scoring_message(message: Any) -> bool:
     """Execute candidate scoring and ranking for a job."""
     jobs_repo = JobsRepository()
@@ -35,17 +82,26 @@ def process_scoring_message(message: Any) -> bool:
     storage = StorageService()
 
     job_id = getattr(message, "job_id", None)
-    if not job_id:
-        body = message.body if hasattr(message, "body") else message
-        if isinstance(body, dict) and "body" in body:
-            body = body["body"]
-        if isinstance(body, str):
-            try:
-                body = json.loads(body)
-            except Exception:
-                pass
-        if isinstance(body, dict):
+    msg_job_version = getattr(message, "job_version", None)
+    body = message.body if hasattr(message, "body") else message
+    if isinstance(body, dict) and "body" in body:
+        body = body["body"]
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except Exception:
+            pass
+    if isinstance(body, dict):
+        if not job_id:
             job_id = body.get("job_id")
+        if msg_job_version is None:
+            msg_job_version = body.get("job_version")
+
+    if msg_job_version is not None:
+        try:
+            msg_job_version = int(msg_job_version)
+        except (TypeError, ValueError):
+            msg_job_version = None
 
     if not job_id:
         logger.error("ScoringWorker: message missing job_id")
@@ -53,8 +109,21 @@ def process_scoring_message(message: Any) -> bool:
 
     job = jobs_repo.get(job_id)
     if not job:
-        logger.error("ScoringWorker: Job %s not found in DynamoDB", job_id)
-        return False
+        logger.warning("ScoringWorker: Job %s not found in DynamoDB (deleted); acking", job_id)
+        return True
+
+    current_jv = int(getattr(job, "job_version", 1))
+    if msg_job_version is not None and msg_job_version < current_jv:
+        logger.info("ScoringWorker: Discarding stale scoring message for job %s (msg_jv=%d < current=%d)",
+                    job_id, msg_job_version, current_jv)
+        return True
+
+    if job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS) and (
+        msg_job_version is None or msg_job_version == current_jv
+    ):
+        logger.info("ScoringWorker: Job %s already in terminal state %s (jv=%d); skipping duplicate",
+                    job_id, job.status.value, current_jv)
+        return True
 
     # Fetch all files for this job
     all_files = files_repo.list_files_for_job(job_id)
@@ -122,7 +191,7 @@ def process_scoring_message(message: Any) -> bool:
             return True
 
         logger.warning("ScoringWorker: Job %s has 0 usable files -> DONE_WITH_ERRORS", job_id)
-        jobs_repo.update(job_id, {"status": JobStatus.DONE_WITH_ERRORS.value}, expected_version=job.version)
+        _update_job_scoring_result(jobs_repo, job_id, {"status": JobStatus.DONE_WITH_ERRORS.value}, job, msg_job_version)
         return True
 
     # Load extracted data for each usable file
@@ -148,7 +217,7 @@ def process_scoring_message(message: Any) -> bool:
 
     if not candidates:
         logger.warning("ScoringWorker: Job %s has no readable candidate payloads -> DONE_WITH_ERRORS", job_id)
-        jobs_repo.update(job_id, {"status": JobStatus.DONE_WITH_ERRORS.value}, expected_version=job.version)
+        _update_job_scoring_result(jobs_repo, job_id, {"status": JobStatus.DONE_WITH_ERRORS.value}, job, msg_job_version)
         return True
 
     try:
@@ -205,9 +274,9 @@ def process_scoring_message(message: Any) -> bool:
             scoring_id=scoring_id,
             job_id=job_id,
             status=ScoringStatus.COMPLETED,
-            weights=job.weights,
+            weights_used=job.weights,
             candidate_count=len(scored_dicts),
-            s3_results_key=f"jobs/{job_id}/results.json",
+            s3_result_key=f"jobs/{job_id}/results.json",
         )
         try:
             scoring_repo.create(scoring_item)
@@ -216,15 +285,44 @@ def process_scoring_message(message: Any) -> bool:
 
         # Update Job status to DONE
         final_status = JobStatus.DONE if not failed_files else JobStatus.DONE_WITH_ERRORS
-        jobs_repo.update(
+        outcome = _update_job_scoring_result(
+            jobs_repo,
             job_id,
             {"status": final_status.value, "usable_files": len(scored_dicts)},
-            expected_version=job.version,
+            job,
+            msg_job_version,
         )
+        if outcome == "skipped":
+            return True
+        # Keep UploadSessionItem synchronized when sessions exist
+        try:
+            from src.infrastructure.models.upload_session import UploadSessionStatus
+            from src.infrastructure.repositories.upload_sessions_repository import UploadSessionsRepository
+            s_repo = UploadSessionsRepository()
+            sess_target = UploadSessionStatus.READY_WITH_WARNINGS if failed_files else UploadSessionStatus.READY
+            for sess in s_repo.list_for_job(job_id):
+                if sess.status not in (UploadSessionStatus.READY, UploadSessionStatus.READY_WITH_WARNINGS):
+                    s_repo.update_status(job_id, sess.session_id, sess_target, expected_version=sess.version)
+        except Exception as sess_sync_err:
+            logger.debug("ScoringWorker: UploadSession sync skipped: %s", sess_sync_err)
         logger.info("ScoringWorker: Job %s ranked %d candidates -> %s", job_id, len(scored_dicts), final_status.value)
         return True
 
     except Exception as exc:
         logger.error("ScoringWorker: scoring failed for job %s: %s", job_id, exc, exc_info=True)
-        jobs_repo.update(job_id, {"status": JobStatus.FAILED.value, "error_message": str(exc)}, expected_version=job.version)
+        try:
+            fresh_job = jobs_repo.get(job_id)
+            if not fresh_job:
+                return True
+            if msg_job_version is not None and msg_job_version < int(getattr(fresh_job, "job_version", 1)):
+                return True
+            if fresh_job.status in (JobStatus.DONE, JobStatus.DONE_WITH_ERRORS):
+                return True
+            jobs_repo.update(
+                job_id,
+                {"status": JobStatus.FAILED.value, "error_message": str(exc)},
+                expected_version=fresh_job.version,
+            )
+        except Exception as mark_err:
+            logger.warning("ScoringWorker: could not mark job %s FAILED safely: %s", job_id, mark_err)
         return False

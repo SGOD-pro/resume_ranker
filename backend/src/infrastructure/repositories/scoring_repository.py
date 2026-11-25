@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from boto3.dynamodb.conditions import Key
 
 from src.infrastructure.models.scoring import ScoringItem, ScoringStatus
-from src.infrastructure.repositories.base import _get_table
+from src.infrastructure.repositories.base import _get_table, to_decimal
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +189,9 @@ class ScoringRepository:
 
         for i, (k, v) in enumerate(decision_data.items()):
             field_alias = f"#field_{i}"
-            val_alias = f":{k}"
+            val_alias = f":val_{i}"
             expr_names[field_alias] = k
-            expr_vals[val_alias] = v
+            expr_vals[val_alias] = to_decimal(v)
             set_clauses.append(f"{field_alias} = {val_alias}")
 
         update_expr = f"SET {', '.join(set_clauses)}"

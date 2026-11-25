@@ -70,57 +70,58 @@ def _parse_pdf_in_process(pdf_bytes: bytes) -> Dict[str, Any]:
     Executing parsing in isolated worker processes ensures memory safety and avoids crashes.
     """
     import fitz
-    from src.extraction.structural_parsing_service import pymupdf_layout_quality_signals
+    from src.extraction.structural_parsing_service import pymupdf_layout_quality_signals, _fitz_lock
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    page_texts = []
-    page_signals = []
-    hyperlinks = []
-    first_page_visual_header = []
+    with _fitz_lock:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page_texts = []
+        page_signals = []
+        hyperlinks = []
+        first_page_visual_header = []
 
-    try:
-        for idx, page in enumerate(doc):
-            page_text = page.get_text()
-            page_texts.append(page_text)
+        try:
+            for idx, page in enumerate(doc):
+                page_text = page.get_text()
+                page_texts.append(page_text)
 
-            # Collect link URIs
-            for link in page.get_links():
-                if "uri" in link:
-                    hyperlinks.append({"uri": link["uri"]})
+                # Collect link URIs
+                for link in page.get_links():
+                    if "uri" in link:
+                        hyperlinks.append({"uri": link["uri"]})
 
-            # Extract bounded first-page header geometry / font evidence for identity resolution
-            if idx == 0:
+                # Extract bounded first-page header geometry / font evidence for identity resolution
+                if idx == 0:
+                    try:
+                        blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_SEARCH).get("blocks", [])
+                        for b in blocks[:8]:
+                            if b.get("type") == 0:
+                                for line in b.get("lines", [])[:4]:
+                                    for span in line.get("spans", [])[:3]:
+                                        span_text = span.get("text", "").strip()
+                                        if span_text and len(span_text) < 80:
+                                            first_page_visual_header.append({
+                                                "text": span_text,
+                                                "page": 1,
+                                                "font_size": span.get("size", 12.0),
+                                                "is_bold": bool(span.get("flags", 0) & 2 or "bold" in span.get("font", "").lower()),
+                                            })
+                    except Exception:
+                        pass
+
                 try:
-                    blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_SEARCH).get("blocks", [])
-                    for b in blocks[:8]:
-                        if b.get("type") == 0:
-                            for line in b.get("lines", [])[:4]:
-                                for span in line.get("spans", [])[:3]:
-                                    span_text = span.get("text", "").strip()
-                                    if span_text and len(span_text) < 80:
-                                        first_page_visual_header.append({
-                                            "text": span_text,
-                                            "page": 1,
-                                            "font_size": span.get("size", 12.0),
-                                            "is_bold": bool(span.get("flags", 0) & 2 or "bold" in span.get("font", "").lower()),
-                                        })
+                    words = page.get_text("words")
+                    drawings_count = len(page.get_drawings())
+                    sig = pymupdf_layout_quality_signals(
+                        page,
+                        text=page_text,
+                        words=words,
+                        drawings_count=drawings_count,
+                    )
+                    page_signals.append(sig)
                 except Exception:
                     pass
-
-            try:
-                words = page.get_text("words")
-                drawings_count = len(page.get_drawings())
-                sig = pymupdf_layout_quality_signals(
-                    page,
-                    text=page_text,
-                    words=words,
-                    drawings_count=drawings_count,
-                )
-                page_signals.append(sig)
-            except Exception:
-                pass
-    finally:
-        doc.close()
+        finally:
+            doc.close()
 
     return {
         "raw_text": "\n\n".join(page_texts),
@@ -280,6 +281,9 @@ def process_stage1_message(message: Any) -> bool:
             files_repo.create_files(job_id, [file_item])
             logger.info("Stage1Worker: Materialized FileItem from DocumentItem for %s/%s", job_id, file_id)
         else:
+            if not jobs_repo.get(job_id):
+                logger.warning("Stage1Worker: Job %s no longer exists (deleted); acking %s/%s", job_id, job_id, file_id)
+                return True
             logger.error("Stage1Worker: Neither FileItem nor DocumentItem found for %s/%s in DynamoDB", job_id, file_id)
             return False
 
@@ -306,7 +310,8 @@ def process_stage1_message(message: Any) -> bool:
         logger.warning("Stage1Worker: could not claim file %s/%s (active lease exists or item unclaimable), returning False for retry", job_id, file_id)
         return False
 
-    s3_raw_key = s3_key or f"jobs/{job_id}/raw/{file_id}.pdf"
+        # Read raw PDF via authoritative FileItem key first
+    s3_raw_key = s3_key or (file_item.s3_raw_key if file_item and file_item.s3_raw_key else None) or f"jobs/{job_id}/raw/{file_id}.pdf"
 
     try:
         t0 = time.monotonic()
@@ -405,15 +410,47 @@ def process_stage1_message(message: Any) -> bool:
             fields["document_id"] = file_id
             fields["file_id"] = file_id
             fields["job_id"] = job_id
-            # Upload final structured JSON to stage2 key
+            fields.setdefault("extraction_providers", ["pymupdf"])
+            fields.setdefault("extraction_source", "pymupdf")
+            fields["extraction_quality"] = min_quality
+            fields.setdefault(
+                "field_sources",
+                {
+                    k: "pymupdf"
+                    for k in ("name", "skills", "experience", "education", "email", "phone", "linkedin", "github")
+                    if fields.get(k)
+                },
+            )
+            # Upload final structured JSON to stage2 key (and extracted key for metrics parity)
             s3_stage2_key = storage.upload_stage2_json(job_id, file_id, fields)
+            try:
+                storage.upload_extracted_json(job_id, file_id, fields)
+            except Exception:
+                pass
             # Idempotently transition to S2_DONE (terminal, decrements job.remaining)
-            files_repo.transition_file_terminal(
+            transitioned = files_repo.transition_file_terminal(
                 job_id=job_id,
                 file_id=file_id,
                 terminal_status=FileStatus.S2_DONE.value,
                 candidate_name=candidate_name,
                 s3_extracted_key=s3_stage2_key,
+            )
+            if not transitioned:
+                latest = files_repo.get_file(job_id, file_id)
+                if not (latest and latest.is_terminal):
+                    logger.warning("Stage1Worker: terminal transition did not stick for %s/%s; retrying", job_id, file_id)
+                    return False
+                logger.info("Stage1Worker: file %s/%s already terminal (%s)", job_id, file_id, latest.status)
+                return True
+            _sync_document_item(
+                job_id=job_id,
+                doc_id=file_id,
+                new_status_name="STRUCTURED_PARSED",
+                extra_updates={
+                    "candidate_name": candidate_name,
+                    "extraction_quality": min_quality,
+                    "s3_extracted_key": s3_stage2_key,
+                },
             )
             logger.info("|PYMUPDF| [Job: %s, File: %s] Clean fast-path -> S2_DONE (quality %.2f, resolved_name=%s)",
                         job_id, file_id, min_quality, bool(candidate_name))
@@ -427,6 +464,16 @@ def process_stage1_message(message: Any) -> bool:
                 needs_fallback=True,
                 candidate_name=candidate_name,
                 file_size=len(pdf_bytes),
+            )
+            _sync_document_item(
+                job_id=job_id,
+                doc_id=file_id,
+                new_status_name="NEEDS_ODL" if needs_odl_fallback else "NEEDS_NOVA",
+                extra_updates={
+                    "candidate_name": candidate_name,
+                    "extraction_quality": min_quality,
+                    "fallback_reason": ", ".join(fallback_reasons) if fallback_reasons else None,
+                },
             )
             logger.info("|PYMUPDF| [Job: %s, File: %s] Fallback required -> S1_DONE (quality %.2f, unresolved: %d, resolved_name=%s)",
                         job_id, file_id, min_quality, len(unresolved), bool(candidate_name))
@@ -463,10 +510,46 @@ def process_stage1_message(message: Any) -> bool:
     except Exception as exc:
         logger.error("Stage1Worker: extraction failed for %s/%s: %s", job_id, file_id, exc, exc_info=True)
         # Idempotently transition to S1_FAILED (terminal, decrements job.remaining)
-        files_repo.transition_file_terminal(
+        try:
+            transitioned = files_repo.transition_file_terminal(
+                job_id=job_id,
+                file_id=file_id,
+                terminal_status=FileStatus.S1_FAILED.value,
+                error_message=str(exc),
+            )
+        except ValueError:
+            if not jobs_repo.get(job_id):
+                return True
+            return False
+        _sync_document_item(
             job_id=job_id,
-            file_id=file_id,
-            terminal_status=FileStatus.S1_FAILED.value,
-            error_message=str(exc),
+            doc_id=file_id,
+            new_status_name="FAILED",
+            extra_updates={"error_reason": str(exc)},
         )
-        return False
+        if transitioned:
+            return True
+        latest = files_repo.get_file(job_id, file_id)
+        return bool(latest and latest.is_terminal)
+
+
+def _sync_document_item(job_id: str, doc_id: str, new_status_name: str, extra_updates: Optional[Dict[str, Any]] = None) -> None:
+    """Keep DocumentItem synchronized with FileItem transitions when present (standalone upload sessions)."""
+    try:
+        from src.infrastructure.models.document import DocumentStatus
+        from src.infrastructure.repositories.documents_repository import DocumentsRepository
+
+        docs_repo = DocumentsRepository()
+        doc = docs_repo.get(job_id, doc_id)
+        if not doc or not hasattr(doc, "status"):
+            return
+        target_status = DocumentStatus(new_status_name)
+        docs_repo.update_status_conditional(
+            job_id=job_id,
+            document_id=doc_id,
+            new_status=target_status,
+            allowed_current_statuses=None,
+            extra_updates={k: v for k, v in (extra_updates or {}).items() if v is not None},
+        )
+    except Exception as sync_err:
+        logger.debug("DocumentItem sync skipped for %s/%s: %s", job_id, doc_id, sync_err)

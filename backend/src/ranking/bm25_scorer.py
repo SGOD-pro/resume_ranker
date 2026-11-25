@@ -28,6 +28,8 @@ def precompute_bm25_idf(jd_skills: List[str],
     """
     n_docs = len(all_candidates_skills) or 1
     avg_len = sum(len(s) for s in all_candidates_skills) / n_docs if n_docs else 1.0
+    if avg_len <= 0:
+        avg_len = 1.0
 
     idf = {}
     for jd_sk in jd_skills:
@@ -72,6 +74,7 @@ def bm25_skill_score(candidate_skills: List[str],
 
     # Score this candidate
     doc_len = len(candidate_skills) or 1
+    safe_avg_len = avg_len if avg_len and avg_len > 0 else 1.0
     score = 0.0
     max_possible = 0.0
 
@@ -85,11 +88,11 @@ def bm25_skill_score(candidate_skills: List[str],
         # BM25 score component
         idf_val = idf.get(jd_sk, 0.0)
         numerator = tf_val * (k1 + 1)
-        denominator = tf_val + k1 * (1 - b + b * doc_len / avg_len)
+        denominator = tf_val + k1 * (1 - b + b * doc_len / safe_avg_len)
         score += idf_val * (numerator / denominator)
         # Max possible (if candidate had all skills with weight 1.0)
         max_numerator = 1.0 * (k1 + 1)
-        max_denominator = 1.0 + k1 * (1 - b + b * doc_len / avg_len)
+        max_denominator = 1.0 + k1 * (1 - b + b * doc_len / safe_avg_len)
         max_possible += idf_val * (max_numerator / max_denominator)
 
     if max_possible <= 0:

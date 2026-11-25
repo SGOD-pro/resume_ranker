@@ -1,8 +1,12 @@
 import fitz
 import time
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Optional, List
+
+# PyMuPDF (fitz) C library is not thread-safe for concurrent execution inside one process.
+_fitz_lock = threading.Lock()
 
 from src.extraction import odl_client
 from src.extraction.odl_client import ODLParseError, DocDescriptor, parse_batch
@@ -169,29 +173,30 @@ class StructuralParsingService:
 
         # ── PyMuPDF fast-path + quality gate ──────────────────────────────────
         t0 = time.time()
-        doc = fitz.open(pdf_path)
         page_qualities: List[float] = []
         raw_pymupdf_text: List[str] = []
         hyperlinks: List[dict] = []
 
-        try:
-            for page in doc:
-                page_text = page.get_text()
-                words = page.get_text("words")
-                drawings_count = len(page.get_drawings())
-                page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
+        with _fitz_lock:
+            doc = fitz.open(pdf_path)
+            try:
+                for page in doc:
+                    page_text = page.get_text()
+                    words = page.get_text("words")
+                    drawings_count = len(page.get_drawings())
+                    page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
 
-                links_text = ""
-                for link in page.get_links():
-                    if 'uri' in link:
-                        hyperlinks.append({"uri": link['uri']})
-                        uri_lower = link['uri'].lower()
-                        if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
-                            links_text += f" {link['uri']} "
+                    links_text = ""
+                    for link in page.get_links():
+                        if 'uri' in link:
+                            hyperlinks.append({"uri": link['uri']})
+                            uri_lower = link['uri'].lower()
+                            if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                                links_text += f" {link['uri']} "
 
-                raw_pymupdf_text.append(page_text + links_text)
-        finally:
-            doc.close()
+                    raw_pymupdf_text.append(page_text + links_text)
+            finally:
+                doc.close()
 
         # Fix: Use min() instead of average. If ANY page is multi-column (score ~0.50),
         # averaging with 1-column pages (~0.95) pulls the score above 0.70 and skips ODL,
@@ -273,29 +278,30 @@ class StructuralParsingService:
             t0 = time.time()
 
             try:
-                fitz_doc = fitz.open(doc.pdf_path)
                 page_qualities: List[float] = []
                 raw_pymupdf_text: List[str] = []
                 hyperlinks: List[dict] = []
 
-                try:
-                    for page in fitz_doc:
-                        page_text = page.get_text()
-                        words = page.get_text("words")
-                        drawings_count = len(page.get_drawings())
-                        page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
+                with _fitz_lock:
+                    fitz_doc = fitz.open(doc.pdf_path)
+                    try:
+                        for page in fitz_doc:
+                            page_text = page.get_text()
+                            words = page.get_text("words")
+                            drawings_count = len(page.get_drawings())
+                            page_qualities.append(pymupdf_layout_quality(page, text=page_text, words=words, drawings_count=drawings_count))
 
-                        links_text = ""
-                        for link in page.get_links():
-                            if 'uri' in link:
-                                hyperlinks.append({"uri": link['uri']})
-                                uri_lower = link['uri'].lower()
-                                if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
-                                    links_text += f" {link['uri']} "
+                            links_text = ""
+                            for link in page.get_links():
+                                if 'uri' in link:
+                                    hyperlinks.append({"uri": link['uri']})
+                                    uri_lower = link['uri'].lower()
+                                    if uri_lower.startswith('mailto:') or uri_lower.startswith('tel:') or ('@' in uri_lower and not uri_lower.startswith('http')):
+                                        links_text += f" {link['uri']} "
 
-                        raw_pymupdf_text.append(page_text + links_text)
-                finally:
-                    fitz_doc.close()
+                            raw_pymupdf_text.append(page_text + links_text)
+                    finally:
+                        fitz_doc.close()
 
                 min_quality = (
                     min(page_qualities) if page_qualities else 0.0
@@ -412,4 +418,15 @@ class StructuralParsingService:
                     )
 
         return pymupdf_results
+
+
+def extract_pdf_text_sync(contents: bytes) -> str:
+    """Extract plain text from PDF bytes using PyMuPDF (serialized per process per HC-03)."""
+    with _fitz_lock:
+        doc = fitz.open(stream=contents, filetype="pdf")
+        try:
+            text_pages = [page.get_text() for page in doc]
+            return "\n\n".join(text_pages).strip()
+        finally:
+            doc.close()
 

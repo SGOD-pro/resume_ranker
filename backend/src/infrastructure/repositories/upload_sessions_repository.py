@@ -6,6 +6,7 @@ Uses optimistic locking via version + ConditionExpression.
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -342,20 +343,38 @@ class UploadSessionsRepository:
         self,
         job_id: str,
         session_id: str,
-        expected_version: int,
-    ) -> UploadSessionItem:
-        """Increment uploaded document count for a session."""
-        response = self._table.update_item(
-            Key={"PK": f"JOB#{job_id}", "SK": f"SESSION#{session_id}"},
-            UpdateExpression="SET uploaded_document_count = uploaded_document_count + :one, #v = #v + :one, updated_at = :now",
-            ConditionExpression="#v = :expected_version",
-            ExpressionAttributeNames={"#v": "version"},
-            ExpressionAttributeValues={
-                ":one": 1,
-                ":now": _utcnow_iso(),
-                ":expected_version": expected_version,
-            },
-            ReturnValues="ALL_NEW",
-        )
-        return UploadSessionItem.from_dynamodb_item(response["Attributes"])
+        expected_version: Optional[int] = None,
+        max_retries: int = 5,
+    ) -> Optional[UploadSessionItem]:
+        """Increment uploaded document count for a session atomically."""
+        for attempt in range(max_retries):
+            try:
+                update_expr = "SET uploaded_document_count = if_not_exists(uploaded_document_count, :zero) + :one, #v = if_not_exists(#v, :zero) + :one, updated_at = :now"
+                expr_vals: Dict[str, Any] = {
+                    ":one": 1,
+                    ":zero": 0,
+                    ":now": _utcnow_iso(),
+                }
+                update_kwargs: Dict[str, Any] = {
+                    "Key": {"PK": f"JOB#{job_id}", "SK": f"SESSION#{session_id}"},
+                    "UpdateExpression": update_expr,
+                    "ExpressionAttributeNames": {"#v": "version"},
+                    "ExpressionAttributeValues": expr_vals,
+                    "ReturnValues": "ALL_NEW",
+                }
+                if expected_version is not None:
+                    update_kwargs["ConditionExpression"] = "#v = :expected_version"
+                    expr_vals[":expected_version"] = expected_version
+
+                response = self._table.update_item(**update_kwargs)
+                return UploadSessionItem.from_dynamodb_item(response["Attributes"])
+            except Exception as e:
+                if "ConditionalCheckFailed" in str(e) and attempt < max_retries - 1:
+                    fresh = self.get(job_id, session_id)
+                    if fresh:
+                        expected_version = fresh.version
+                    time.sleep(0.02 * (2 ** attempt))
+                    continue
+                raise
+        return None
 

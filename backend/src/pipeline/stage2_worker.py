@@ -62,12 +62,20 @@ def merge_extracted_fields(
     - Fill null/empty experience and education from fallback.
     """
     merged = dict(base_fields)
+    provenance_keys = ("name", "skills", "experience", "education", "email", "phone", "linkedin", "github")
+    field_sources: Dict[str, str] = dict(base_fields.get("field_sources") or {})
+    for pk in provenance_keys:
+        if pk not in field_sources and base_fields.get(pk):
+            field_sources[pk] = "pymupdf"
+
+    providers: List[str] = list(base_fields.get("extraction_providers") or ["pymupdf"])
 
     # 1. Candidate Name: Preserve base name if already resolved with confidence
     base_name = (base_fields.get("name") or "").strip()
     fallback_name = (fallback_fields.get("name") or "").strip()
     if not base_name and fallback_name:
         merged["name"] = fallback_name
+        field_sources["name"] = source_name
         logger.info("Merged %s candidate name (resolved=%s)", source_name, bool(fallback_name))
 
     # 2. Skills: Merge distinct skills
@@ -80,42 +88,71 @@ def merge_extracted_fields(
     combined_skills = list(dict.fromkeys(list(base_skills) + list(fallback_skills)))
     if combined_skills:
         merged["skills"] = combined_skills
+        if fallback_skills and (not base_skills or len(combined_skills) > len(base_skills)):
+            field_sources["skills"] = f"{field_sources.get('skills', 'pymupdf')}+{source_name}" if base_skills else source_name
 
     # 3. Experience: Fill if base has no structured experience
     if not base_fields.get("experience") and fallback_fields.get("experience"):
         merged["experience"] = fallback_fields["experience"]
+        field_sources["experience"] = source_name
 
     # 4. Education: Fill if base has no education
     if not base_fields.get("education") and fallback_fields.get("education"):
         merged["education"] = fallback_fields["education"]
+        field_sources["education"] = source_name
 
     # 5. Contact fields: Fill if missing
     for contact_key in ("email", "phone", "linkedin", "github"):
         if not base_fields.get(contact_key) and fallback_fields.get(contact_key):
             merged[contact_key] = fallback_fields[contact_key]
+            field_sources[contact_key] = source_name
+
+    if source_name and source_name not in providers:
+        providers.append(source_name)
+    merged["field_sources"] = field_sources
+    merged["extraction_providers"] = providers
+    merged["extraction_source"] = "+".join(providers)
 
     return merged
 
 
-def _extract_job_file_id(message: Any) -> Tuple[Optional[str], Optional[str]]:
-    """Extract (job_id, file_id) from message object or dict."""
+def _extract_job_file_ids(message: Any) -> Tuple[Optional[str], List[str]]:
+    """Extract (job_id, [file_id, ...]) supporting both single-document and ODL_BATCH document_ids."""
     job_id = getattr(message, "job_id", None)
-    file_id = getattr(message, "document_id", None) or getattr(message, "file_id", None)
+    single_fid = getattr(message, "document_id", None) or getattr(message, "file_id", None)
+    doc_ids = getattr(message, "document_ids", None)
 
-    if not job_id or not file_id:
-        body = message.body if hasattr(message, "body") else message
-        if isinstance(body, dict) and "body" in body:
-            body = body["body"]
-        if isinstance(body, str):
-            try:
-                body = json.loads(body)
-            except Exception:
-                pass
-        if isinstance(body, dict):
+    body = message.body if hasattr(message, "body") else message
+    if isinstance(body, dict) and "body" in body:
+        body = body["body"]
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except Exception:
+            pass
+    if isinstance(body, dict):
+        if not job_id:
             job_id = body.get("job_id")
-            file_id = body.get("document_id") or body.get("file_id")
+        if not single_fid:
+            single_fid = body.get("document_id") or body.get("file_id")
+        if not doc_ids:
+            doc_ids = body.get("document_ids")
 
-    return job_id, file_id
+    file_ids: List[str] = []
+    if single_fid:
+        file_ids.append(str(single_fid))
+    if isinstance(doc_ids, list):
+        for fid in doc_ids:
+            if fid and str(fid) not in file_ids:
+                file_ids.append(str(fid))
+
+    return job_id, file_ids
+
+
+def _extract_job_file_id(message: Any) -> Tuple[Optional[str], Optional[str]]:
+    """Extract single (job_id, file_id) from message object or dict (backward compatibility)."""
+    job_id, file_ids = _extract_job_file_ids(message)
+    return job_id, (file_ids[0] if file_ids else None)
 
 
 def _extract_msg_id(msg: Any, fallback: str) -> str:
@@ -154,16 +191,25 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
     eligible_docs = []  # list of dicts with file context
     failed_items = []
     throttled_items = []
+    expanded_entries: List[Tuple[Optional[str], str, str]] = []
+    seen_job_files = set()
 
     for msg in messages:
-        job_id, file_id = _extract_job_file_id(msg)
-        msg_id = _extract_msg_id(msg, file_id or "")
+        job_id, fids = _extract_job_file_ids(msg)
+        msg_id = _extract_msg_id(msg, (fids[0] if fids else ""))
 
-        if not job_id or not file_id:
+        if not job_id or not fids:
             logger.error("Stage2Worker: invalid message without job_id/file_id: %s", msg)
             if msg_id:
                 failed_items.append(msg_id)
             continue
+
+        for fid in fids:
+            if (job_id, fid) not in seen_job_files:
+                seen_job_files.add((job_id, fid))
+                expanded_entries.append((job_id, fid, msg_id))
+
+    for job_id, file_id, msg_id in expanded_entries:
 
         file_item = files_repo.get_file(job_id, file_id)
         if not file_item:
@@ -183,6 +229,9 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 files_repo.create_files(job_id, [file_item])
                 logger.info("Stage2Worker: Materialized FileItem from DocumentItem for %s/%s", job_id, file_id)
             else:
+                if not JobsRepository().get(job_id):
+                    logger.warning("Stage2Worker: Job %s no longer exists (deleted); skipping %s/%s", job_id, job_id, file_id)
+                    continue
                 logger.error("Stage2Worker: Neither FileItem nor DocumentItem found for %s/%s", job_id, file_id)
                 failed_items.append(msg_id)
                 continue
@@ -281,12 +330,16 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
     if not eligible_docs:
         return {"processed": 0, "succeeded": 0, "failed_items": []}
 
+    settings = get_settings()
+    stage2_disabled = bool(getattr(settings, "DISABLE_STAGE2_FALLBACK", False))
+
     # Step 2: Separate documents needing ODL vs documents that can proceed directly to Nova/Done
     odl_candidates = []
-    for doc in eligible_docs:
-        q = doc["quality"]
-        if q.get("score", 1.0) < 0.90 or q.get("looks_tabular", False):
-            odl_candidates.append(doc)
+    if not stage2_disabled:
+        for doc in eligible_docs:
+            q = doc["quality"]
+            if q.get("score", 1.0) < 0.90 or q.get("looks_tabular", False):
+                odl_candidates.append(doc)
 
     # Step 3: Execute real bounded ODL microbatches (up to 20 documents AND 20 MB budget)
     if odl_candidates:
@@ -414,7 +467,10 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         low_confidence = False
         fallback_reason = None
 
-        if not (has_name and has_exp and has_skills):
+        if stage2_disabled:
+            low_confidence = True
+            fallback_reason = "STAGE2_FALLBACK_DISABLED"
+        elif not (has_name and has_exp and has_skills):
             # Atomically reserve per-job LLM budget slot
             allowed, cap_reason = files_repo.reserve_llm_slot(
                 job_id=job_id,
@@ -481,10 +537,24 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
             continue
 
 
-        # Propagate low-confidence flag and fallback reason
+        # Propagate low-confidence flag, quality, and extraction provenance
         fields["low_confidence_extraction"] = low_confidence
         if fallback_reason:
             fields["fallback_reason"] = fallback_reason
+        if "extraction_quality" not in fields or fields["extraction_quality"] is None:
+            q_score = (doc.get("quality") or {}).get("score")
+            if q_score is not None:
+                fields["extraction_quality"] = q_score
+        fields.setdefault("extraction_providers", ["pymupdf"])
+        fields.setdefault("extraction_source", "+".join(fields["extraction_providers"]))
+        fields.setdefault(
+            "field_sources",
+            {
+                k: "pymupdf"
+                for k in ("name", "skills", "experience", "education", "email", "phone", "linkedin", "github")
+                if fields.get(k)
+            },
+        )
 
         fields["document_id"] = file_id
         fields["file_id"] = file_id
@@ -493,10 +563,14 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
         # Upload final structured JSON to stage2/
         try:
             s3_stage2_key = storage.upload_stage2_json(job_id, file_id, fields)
+            try:
+                storage.upload_extracted_json(job_id, file_id, fields)
+            except Exception:
+                pass
             candidate_name = fields.get("name") or "Candidate"
 
             # Atomically transition to S2_DONE (terminal, decrements job.remaining)
-            files_repo.transition_file_terminal(
+            transitioned = files_repo.transition_file_terminal(
                 job_id=job_id,
                 file_id=file_id,
                 terminal_status=FileStatus.S2_DONE.value,
@@ -505,9 +579,34 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 low_confidence_extraction=low_confidence,
                 fallback_reason=fallback_reason,
             )
+            if not transitioned:
+                latest = files_repo.get_file(job_id, file_id)
+                if not (latest and latest.is_terminal):
+                    logger.warning("Stage2Worker: terminal transition did not stick for %s/%s; retrying", job_id, file_id)
+                    if doc.get("msg_id"):
+                        failed_items.append(doc["msg_id"])
+                    continue
+            try:
+                from src.pipeline.stage1_worker import _sync_document_item
+                _sync_document_item(
+                    job_id=job_id,
+                    doc_id=file_id,
+                    new_status_name="REVIEW_REQUIRED" if low_confidence else "STRUCTURED_PARSED",
+                    extra_updates={
+                        "candidate_name": candidate_name,
+                        "s3_extracted_key": s3_stage2_key,
+                        "fallback_reason": fallback_reason,
+                    },
+                )
+            except Exception:
+                pass
             logger.info("Stage2Worker: completed fallback for %s/%s -> S2_DONE (low_conf=%s)",
                         job_id, file_id, low_confidence)
             succeeded_count += 1
+        except ClientError as ce:
+            logger.warning("Stage2Worker: retryable DynamoDB/S3 error completing %s/%s: %s", job_id, file_id, ce)
+            if doc.get("msg_id"):
+                failed_items.append(doc["msg_id"])
         except Exception as term_exc:
             logger.error("Stage2Worker: failure completing %s/%s: %s", job_id, file_id, term_exc, exc_info=True)
             files_repo.transition_file_terminal(
@@ -516,6 +615,16 @@ def process_stage2_batch(messages: List[Any]) -> Dict[str, Any]:
                 terminal_status=FileStatus.S2_FAILED.value,
                 error_message=str(term_exc),
             )
+            try:
+                from src.pipeline.stage1_worker import _sync_document_item
+                _sync_document_item(
+                    job_id=job_id,
+                    doc_id=file_id,
+                    new_status_name="FAILED",
+                    extra_updates={"error_reason": str(term_exc)},
+                )
+            except Exception:
+                pass
 
     # Always ensure processed documents are removed from ODL buffer
     for doc in eligible_docs:

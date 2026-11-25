@@ -194,3 +194,31 @@ The SSE stream (`GET /extract`) emits the following events. The frontend `app-st
 - `event: complete\ndata: {"total": 10, "success": 9, "failed": 1}`
 
 **Frontend Transition:** Upon receiving `complete`, the frontend closes the `EventSource`, calls `POST /score`, and transitions `appPhase` to `scored`.
+
+---
+
+## 7. Consolidated Lambda Dispatcher & Transactional Outbox Schema
+
+In AWS serverless deployments (`resume-ranker-preprod` and `resume-ranking-api`), incoming events are routed by `src.lambda_handler.handler`:
+
+1. **HTTP Events:** Detected via `rawPath` or `requestContext.http`. Handled by FastAPI ASGI adapter (`src.handlers.api`).
+2. **SQS Events:** Detected via top-level `Records` list. Routed to specific pipeline workers based on queue ARN inspection:
+   - `resume-ranker-stage1-*`: Dispatched to `process_stage1_message` (batch size 10, concurrency 3).
+   - `resume-ranker-stage2-*`: Dispatched to `process_stage2_batch` (batch size 5, concurrency 2).
+   - `resume-ranker-scoring-*`: Dispatched to `process_scoring_message` (batch size 1, concurrency 2).
+   - `*dlq*`: Dispatched to `process_dlq_message` (barrier self-healing).
+3. **Scheduled Events:** Detected via `detail-type: "Scheduled Event"` or `action: "reconcile_outbox"`. Executes `src.handlers.recovery.handler`.
+
+### DynamoDB Outbox Schema
+- **PK:** `JOB#{job_id}`
+- **SK:** `OUTBOX#{stage}#{file_id}` (e.g. `OUTBOX#STAGE2#c4b8...` or `OUTBOX#SCORING`)
+- **Attributes:** `event_type`, `payload`, `created_at`, `status: "PENDING"`
+- **Concurrency Guard:** All terminal mutations use `TransactWriteItems`. On DynamoDB `TransactionConflict`, workers retry up to 6 times with exponential backoff and jitter before failing the batch record.
+
+---
+
+## 8. Candidate Identity & Confidence Policy (Sophia Bennett Case)
+
+- **Backend Extraction:** When structural layout parsing is ambiguous (e.g. two-pane header, right-aligned dates, or non-canonical name placement), the extractor populates `name` via Nova fallback while setting `identity_status: "UNRESOLVED"`.
+- **UI Policy Gating:** The frontend review workspace (`mapScoredCandidate.ts`) explicitly checks `candidate.identity_status`. If `identity_status === 'UNRESOLVED'`, the UI suppresses the raw string and displays `"Name needs review"`.
+- **Integrity Rule:** Identity verification policy MUST NOT be bypassed to force a name visible. The authoritative match score, document ID, and component breakdown remain 100% accurate and auditable.

@@ -27,14 +27,14 @@
 - Emit `StageTiming` records for instrumentation.
 - **Gate:** Upload 2-column PDF -> ODL triggers -> Score response includes `ats_score` and `bounding_boxes`. DynamoDB status transitions to `SCORED`.
 
-## Phase 4: 2-Lambda Production Infrastructure (Days 11–14)
-**Goal:** Containerize Lambda A and wire SQS for production deployment.
-- Create `Dockerfile.lambda_a` (Python 3.12 + JRE 17 + ODL + PyMuPDF).
-- Implement `ENVIRONMENT == 'production'` logic: Push to SQS `DocumentQueue` instead of `BackgroundTasks`.
-- Define SQS queues, DLQs, and Lambda event mappings in `template.yaml`. Include `OdlBatchQueue` event source mapping (`BatchSize=10, MaximumBatchingWindowInSeconds=60`).
-- Wire quality-gate-failed documents to `OdlBatchQueue` (send_message) instead of direct `parse()` invocation — per R-21.
-- Configure API Gateway HTTP API or Lambda Function URL with `RESPONSE_STREAM` for the SSE endpoint.
-- **Gate:** `sam build` succeeds. Deployment to AWS works without local code changes. Production SSE stream does not hit 29-second timeout. ODL Lambda timeout budget and Reserved Concurrency value are set from Phase 3 measured data, not estimated (ADR-09). **ODL batch deliverable gate: CloudWatch logs confirm exactly ONE `odl-parser-lambda` invocation per batch window flush (not N invocations for N quality-failed docs). Verify with a 15-resume upload where ~8 fail the quality gate.**
+## Phase 4: Serverless Infrastructure & Consolidated Lambda (Completed)
+**Goal:** Deploy consolidated Python Lambda architecture and wire separate SQS queues for production and preproduction deployment.
+- Consolidated single Lambda function (`src.lambda_handler.handler`) routing API Gateway HTTP API v2 requests, SQS stage queues, DLQ redrives, and EventBridge scheduled recovery rules.
+- Dedicated SQS queues with separate event source mappings: `Stage1Queue` (concurrency 3), `Stage2Queue` (concurrency 2), `ScoringQueue` (concurrency 2), and 3 DLQs.
+- Externalized shared JVM parser (`odl-parser-lambda-prod`) invoked synchronously via S3 pointer pattern.
+- Transactional outbox self healing and EventBridge recovery schedule every 5 minutes.
+- Verified in preproduction environment `resume-ranker-preprod` (`ap-south-1`).
+- **Gate:** Passed. Live AWS pipeline and browser acceptance verified with 100% test pass rate. Zero CloudWatch errors, zero Lambda throttles, and zero stranded DynamoDB records. Measured 100 resume clean path at 52.14s and mixed fallback path at 71.13s with peak memory of 288 MB.
 
 ## Phase 5: Frontend V2 Features & Polish (Days 15–17)
 **Goal:** Build V2 UI features (ATS overlays, standalone checker, client-side weight recompute).

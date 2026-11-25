@@ -86,8 +86,8 @@ def test_post_jobs_pagination_over_50_files(client):
         assert len(data["files"]) == 50
 
 
-def test_deleted_complete_and_finalize_endpoints_return_404(client):
-    """Verify /complete and /finalize endpoints are deleted and return 404."""
+def test_complete_and_finalize_nonexistent_job_returns_404(client):
+    """Verify /complete and /finalize endpoints return 404 when target job does not exist."""
     resp_complete = client.post("/api/v2/jobs/job-123/upload-sessions/sess-123/documents/doc-123/complete")
     assert resp_complete.status_code == 404
 

@@ -80,7 +80,24 @@
 **UX tradeoff:** In production, `MaximumBatchingWindowInSeconds=60` means a single quality-failed document on low-traffic periods may wait up to 60 seconds for its batch window to flush. This is an explicit, accepted tradeoff: ODL is used for layout-scrambled multi-column PDFs where the extra latency is preferable to garbled extraction output. The `/ats-check` path is exempt and uses `parse()` directly (synchronous, user-facing).
 **Consequences:** Substantially increases batch throughput and eliminates N-1 JVM cold starts. Requires callers to adapt to the batch API and explicitly handle partial failures returned in the `"failed"` list.
 
-## ADR-11: Nova Trigger Scoped to Critical Fields Only
+## ADR-12: Consolidated Python Lambda Event Dispatcher
+**Status:** Accepted  
+**Context:** Operating 5 separate Python Lambda worker functions (`api`, `stage1-worker`, `stage2-worker`, `scoring-worker`, `dlq-consumer`) across each environment created configuration drift, multiple deployment artifacts, redundant cold starts, and excessive infrastructure cost. PyMuPDF in Stage 1 and scoring math in Stage 4 consume under 288 MB peak memory, well within standard Lambda limits.  
+**Decision:** Consolidate all Python execution into a single Lambda function (`src.lambda_handler.handler`) routing API Gateway HTTP API v2 requests, SQS stage triggers (`Stage1Queue`, `Stage2Queue`, `ScoringQueue`), DLQ redrives, and EventBridge scheduled recovery. SQS queues, visibility timeouts, and concurrency caps remain strictly separated via dedicated AWS Event Source Mappings. The shared JVM OpenDataLoader container (`odl-parser-lambda-prod`) remains externalized and shared.  
+**Consequences:** Reduces deployment complexity to a single build artifact (`resume-ranker-preprod` in preproduction, `resume-ranking-api` in production). Guarantees consistent dependency trees across all worker stages. Peak observed memory is 288 MB of 1024 MB.  
+**Measured AWS Preproduction Benchmarks:**  
+- **Clean path (PyMuPDF only):**  
+  - 1 resume: 2.49s  
+  - 5 resumes: 3.77s  
+  - 47 resumes: 24.81s  
+  - 100 resumes: 52.14s (1.92 resumes/sec, $0.0037 compute cost)  
+- **Mixed fallback path (ODL + Nova):**  
+  - 1 resume: 3.13s  
+  - 5 resumes: 7.04s  
+  - 47 resumes: 29.11s  
+  - 100 resumes: 71.13s (1.41 resumes/sec, $0.0047 compute cost)  
+- **Peak observed Lambda memory:** 288 MB of 1024 MB. CloudWatch throttles: 0. CloudWatch errors: 0.  
+
 **Status:** Accepted  
 **Context:** Step 0 classification on 200 resumes showed 151 Nova invocations (75.5% fallback rate). Analysis of unresolved chunks showed Nova was being triggered by missing `education` entries and other non-critical fields even when `name`, `email`, `phone`, `experience`, and `skills` were all resolved. Every Nova call costs ~4s (rate-limit floor) and real Bedrock spend. Triggering it for `education` alone is a cost/latency regression with no product-quality upside for the ranking use-case.  
 **Decision:** Nova MUST only fire when at least one of the five **critical** fields (`name`, `email`, `phone`, `experience`, `skills`) is unresolved after deterministic parsing. `education`, `projects`, `github`, and `location` are **best-effort only** — they will remain null on regex-miss. This is a permanent product policy change (not an optimization tweak): these fields carry no scoring weight in the composite formula and are not part of the 93% composite target.  

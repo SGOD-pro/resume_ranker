@@ -285,7 +285,13 @@ class JobsRepository:
                     job_id=job_id,
                     outbox_sk="OUTBOX#SCORING",
                     event_type="SCORING_DISPATCH",
-                    payload={"job_id": job_id, "session_id": job_id, "stage": "FINAL_RANK"},
+                    payload={
+                        "job_id": job_id,
+                        "session_id": job_id,
+                        "org_id": getattr(fresh_job, "org_id", "org_default"),
+                        "job_version": getattr(fresh_job, "job_version", 1),
+                        "stage": "FINAL_RANK",
+                    },
                 )
                 files_repo.reconcile_outbox(job_id)
         else:

@@ -9,6 +9,7 @@ Guarantees idempotency and version consistency; prevents stale ranking overwrite
 import concurrent.futures
 import json
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from dataclasses import asdict

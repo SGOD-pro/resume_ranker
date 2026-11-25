@@ -30,6 +30,16 @@ This document preserves the institutional memory and architectural evolution of 
   ODL Buffer Lifecycle Purging (zero skip log spam)
   Magic Bytes Validation (%PDF header checks)
   Visible Knockouts by Default (showKnockouts: true)
+           │
+           ▼
+[V2.1 Consolidated Serverless Release]
+  Single Consolidated Python Lambda Dispatcher (API + SQS + DLQ + Recovery)
+  Dedicated SQS Event Source Mappings (concurrency caps: 3/2/2)
+  Shared External OpenDataLoader Container (odl-parser-lambda-prod)
+  DynamoDB TransactionConflict Exponential Backoff & Jitter
+  Ephemeral Browser Lifecycle (sessionStorage only, zero localStorage PII)
+  Sophia Bennett Identity Policy (unresolved confidence preserves integrity)
+  Live AWS Verified (100 resumes clean in 52.14s, mixed fallback in 71.13s, 288 MB peak RAM)
 ```
 
 ---

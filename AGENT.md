@@ -41,6 +41,10 @@ Assume operations can be interrupted at the worst moment: double submits, retrie
 - Mutations must be atomic and idempotent where required. Avoid check-then-write races. Process-local locks don't protect distributed state.
 - Backend work must not depend on the browser staying open. A disabled button is UX, not protection.
 - Don't add queues, locks, or coordination without demonstrated need.
+- DynamoDB state mutations and outbox records MUST use `TransactWriteItems` with exponential backoff and jitter on `TransactionConflict`.
+- Ephemeral browser session state is scoped strictly to `sessionStorage`. Never write resume text, files, or candidate PII to `localStorage`.
+- Architecture topology: in AWS, all Python endpoints, SQS workers, and recovery tasks run in a single consolidated Lambda function with dedicated event source mappings.
+- Edge boundary (ADR-07): Application endpoints contain no in-app authentication. Public deployments require an external edge reverse proxy or custom authorizer.
 
 ## Goal-driven execution
 Turn tasks into verifiable goals, then loop until verified. "Add validation" becomes "write tests for invalid inputs, make them pass". "Fix the bug" becomes "write a test that reproduces it, make it pass". "Refactor X" becomes "tests pass before and after". For multi-step work, state a short plan:

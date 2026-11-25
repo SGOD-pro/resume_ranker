@@ -21,6 +21,7 @@ import fitz
 from src.extraction.markdown_extraction_service import MarkdownExtractionService
 from src.extraction.structural_parsing_service import (
     QUALITY_THRESHOLD,
+    _fitz_lock,
     pymupdf_layout_quality,
 )
 from src.infrastructure.models.document import DocumentItem, DocumentStatus
@@ -113,54 +114,57 @@ def process_fast_parse_message(message: QueueMessage) -> None:
             )
             return
 
-        # 3. PyMuPDF in-memory inspection & layout quality calculation
+        # 3. PyMuPDF in-memory inspection & layout quality calculation (serialized per process)
         t_struct_0 = time.time()
-        try:
-            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            page_count = len(pdf_doc)
-            if page_count == 0:
-                raise ValueError("Corrupt PDF: 0 pages")
-        except Exception as open_err:
-            logger.warning("FastParseWorker: Failed to open PDF %s: %s", doc_id, open_err)
-            docs_repo.update_status_conditional(
-                job_id=job_id,
-                document_id=doc_id,
-                new_status=DocumentStatus.FAILED,
-                allowed_current_statuses=[DocumentStatus.FAST_PARSING],
-                extra_updates={
-                    "content_hash": file_hash,
-                    "error_reason": "Corrupt or unreadable PDF structure",
-                },
-            )
-            return
+        with _fitz_lock:
+            try:
+                pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                page_count = len(pdf_doc)
+                if page_count == 0:
+                    raise ValueError("Corrupt PDF: 0 pages")
+            except Exception as open_err:
+                logger.warning("FastParseWorker: Failed to open PDF %s: %s", doc_id, open_err)
+                docs_repo.update_status_conditional(
+                    job_id=job_id,
+                    document_id=doc_id,
+                    new_status=DocumentStatus.FAILED,
+                    allowed_current_statuses=[DocumentStatus.FAST_PARSING],
+                    extra_updates={
+                        "content_hash": file_hash,
+                        "error_reason": "Corrupt or unreadable PDF structure",
+                    },
+                )
+                return
 
-        from src.config.aws import get_settings
-        settings = get_settings()
-        if page_count > settings.MAX_PAGE_COUNT:
-            pdf_doc.close()
-            logger.warning("FastParseWorker: Doc %s page count %d > %d", doc_id, page_count, settings.MAX_PAGE_COUNT)
-            docs_repo.update_status_conditional(
-                job_id=job_id,
-                document_id=doc_id,
-                new_status=DocumentStatus.FAILED,
-                allowed_current_statuses=[DocumentStatus.FAST_PARSING],
-                extra_updates={
-                    "content_hash": file_hash,
-                    "page_count": page_count,
-                    "error_reason": f"Document exceeds {settings.MAX_PAGE_COUNT} page limit ({page_count} pages)",
-                },
-            )
-            return
+            from src.config.aws import get_settings
+            settings = get_settings()
+            if page_count > settings.MAX_PAGE_COUNT:
+                pdf_doc.close()
+                logger.warning("FastParseWorker: Doc %s page count %d > %d", doc_id, page_count, settings.MAX_PAGE_COUNT)
+                docs_repo.update_status_conditional(
+                    job_id=job_id,
+                    document_id=doc_id,
+                    new_status=DocumentStatus.FAILED,
+                    allowed_current_statuses=[DocumentStatus.FAST_PARSING],
+                    extra_updates={
+                        "content_hash": file_hash,
+                        "page_count": page_count,
+                        "error_reason": f"Document exceeds {settings.MAX_PAGE_COUNT} page limit ({page_count} pages)",
+                    },
+                )
+                return
 
-        scores = []
-        pymupdf_text_lines = []
-        for page in pdf_doc:
-            p_text = page.get_text()
-            p_words = page.get_text("words")
-            p_drawings = len(page.get_drawings())
-            scores.append(pymupdf_layout_quality(page, text=p_text, words=p_words, drawings_count=p_drawings))
-            pymupdf_text_lines.append(p_text)
-        pdf_doc.close()
+            scores = []
+            pymupdf_text_lines = []
+            try:
+                for page in pdf_doc:
+                    p_text = page.get_text()
+                    p_words = page.get_text("words")
+                    p_drawings = len(page.get_drawings())
+                    scores.append(pymupdf_layout_quality(page, text=p_text, words=p_words, drawings_count=p_drawings))
+                    pymupdf_text_lines.append(p_text)
+            finally:
+                pdf_doc.close()
         quality_score = round(sum(scores) / len(scores), 2) if scores else 0.0
         full_pymupdf_text = "\n".join(pymupdf_text_lines)
         t_struct_1 = time.time()

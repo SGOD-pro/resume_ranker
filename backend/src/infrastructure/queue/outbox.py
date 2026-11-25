@@ -64,7 +64,7 @@ def write_outbox_and_send(
     ttl = _utcnow_epoch() + _OUTBOX_TTL_SECONDS
     db_success = False
 
-    # 1. Write outbox record to DynamoDB
+    # 1. Write outbox record to DynamoDB (fail closed before SQS publish)
     try:
         dynamodb = get_client("dynamodb")
         dynamodb.put_item(
@@ -87,12 +87,13 @@ def write_outbox_and_send(
                 "ttl": {"N": str(ttl)},
             },
         )
-        db_success = True
     except Exception as db_err:
         logger.error("Outbox: failed to write outbox record for doc %s: %s", document_id, db_err)
+        raise RuntimeError(
+            f"Durable dispatch failed for document {document_id}: outbox persistence failed."
+        ) from db_err
 
-    # 2. Attempt immediate SQS dispatch
-    sqs_success = False
+    # 2. Attempt immediate SQS dispatch only after durable DB persistence succeeds
     try:
         enqueue_fast_parse(
             job_id=job_id,
@@ -103,20 +104,13 @@ def write_outbox_and_send(
             s3_key=s3_key,
             content_hash="",
         )
-        sqs_success = True
-        # 3. SQS send succeeded — mark outbox record as SENT and delete
-        if db_success:
-            _delete_outbox_record(job_id, event_id)
-            logger.debug("Outbox: doc %s dispatched to SQS and outbox record cleaned up", document_id)
+        # 3. SQS send succeeded — clean up outbox record immediately
+        _delete_outbox_record(job_id, event_id)
+        logger.debug("Outbox: doc %s dispatched to SQS and outbox record cleaned up", document_id)
     except Exception as sqs_err:
         logger.warning(
             "Outbox: SQS send failed for doc %s (event %s), record retained for relay: %s",
             document_id, event_id, sqs_err,
-        )
-
-    if not db_success and not sqs_success:
-        raise RuntimeError(
-            f"Durable dispatch failed for document {document_id}: DB persistence and SQS dispatch both failed."
         )
 
     return event_id
@@ -155,6 +149,7 @@ def commit_file_upload_with_outbox(
                     "SK": {"S": f"FILE#{file_id}"},
                 },
                 "UpdateExpression": "SET #st = :st, file_size = :fs, updated_at = :now, version = if_not_exists(version, :zero) + :one",
+                "ConditionExpression": "attribute_exists(PK)",
                 "ExpressionAttributeNames": {"#st": "status"},
                 "ExpressionAttributeValues": {
                     ":st": {"S": FileStatus.UPLOADED.value},
@@ -162,6 +157,27 @@ def commit_file_upload_with_outbox(
                     ":now": {"S": now_iso},
                     ":zero": {"N": "0"},
                     ":one": {"N": "1"},
+                },
+            }
+        },
+        {
+            "Update": {
+                "TableName": settings.dynamodb_table_name,
+                "Key": {
+                    "PK": {"S": f"JOB#{job_id}"},
+                    "SK": {"S": f"DOC#{file_id}"},
+                },
+                "UpdateExpression": "SET #st = :st, file_size = :fs, updated_at = :now, version = if_not_exists(version, :zero) + :one",
+                "ConditionExpression": "attribute_exists(PK) AND #st IN (:init_st, :pend_st)",
+                "ExpressionAttributeNames": {"#st": "status"},
+                "ExpressionAttributeValues": {
+                    ":st": {"S": "UPLOADED"},
+                    ":fs": {"N": str(actual_size)},
+                    ":now": {"S": now_iso},
+                    ":zero": {"N": "0"},
+                    ":one": {"N": "1"},
+                    ":init_st": {"S": "UPLOAD_INITIALIZED"},
+                    ":pend_st": {"S": "PENDING"},
                 },
             }
         },
@@ -244,32 +260,45 @@ def relay_pending_outbox(job_id: Optional[str] = None, max_records: int = 50) ->
     try:
         # Query for PENDING outbox records
         # If job_id provided, query for that job; otherwise scan (dev only)
+        items: List[Dict[str, Any]] = []
         if job_id:
-            resp = dynamodb.query(
-                TableName=settings.dynamodb_table_name,
-                KeyConditionExpression="PK = :pk AND begins_with(SK, :prefix)",
-                FilterExpression="#st = :pending",
-                ExpressionAttributeNames={"#st": "status"},
-                ExpressionAttributeValues={
+            query_kwargs: Dict[str, Any] = {
+                "TableName": settings.dynamodb_table_name,
+                "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+                "FilterExpression": "#st = :pending",
+                "ExpressionAttributeNames": {"#st": "status"},
+                "ExpressionAttributeValues": {
                     ":pk": {"S": f"OUTBOX#{job_id}"},
                     ":prefix": {"S": "OUTBOX#"},
                     ":pending": {"S": "PENDING"},
                 },
-                Limit=max_records,
-            )
+            }
+            while True:
+                resp = dynamodb.query(**query_kwargs)
+                items.extend(resp.get("Items", []))
+                lek = resp.get("LastEvaluatedKey")
+                if len(items) >= max_records or not lek:
+                    break
+                query_kwargs["ExclusiveStartKey"] = lek
         else:
-            resp = dynamodb.scan(
-                TableName=settings.dynamodb_table_name,
-                FilterExpression="entity_type = :et AND #st = :pending",
-                ExpressionAttributeNames={"#st": "status"},
-                ExpressionAttributeValues={
+            scan_kwargs: Dict[str, Any] = {
+                "TableName": settings.dynamodb_table_name,
+                "FilterExpression": "entity_type = :et AND #st = :pending",
+                "ExpressionAttributeNames": {"#st": "status"},
+                "ExpressionAttributeValues": {
                     ":et": {"S": "OUTBOX"},
                     ":pending": {"S": "PENDING"},
                 },
-                Limit=max_records,
-            )
+            }
+            while True:
+                resp = dynamodb.scan(**scan_kwargs)
+                items.extend(resp.get("Items", []))
+                lek = resp.get("LastEvaluatedKey")
+                if len(items) >= max_records or not lek:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = lek
 
-        for item in resp.get("Items", []):
+        for item in items[:max_records]:
             ev_id = item.get("event_id", {}).get("S", "")
             jid = item.get("job_id", {}).get("S", "")
             sid = item.get("session_id", {}).get("S", "")

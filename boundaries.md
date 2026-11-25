@@ -3,16 +3,22 @@
 
 ## 1. Execution & Module Boundaries (Strict)
 
-The system is decoupled into a Parsing Module (Lambda A / Local BackgroundTask) and an API/Evaluation Module (Lambda B / FastAPI). These boundaries are absolute and enforced by CI.
+The system deploys a single consolidated Python Lambda dispatcher in preproduction (`resume-ranker-preprod`) and production (`resume-ranking-api`), while isolating heavy JVM execution in the shared external parser (`odl-parser-lambda-prod`). Module boundaries inside the Python codebase are absolute:
 
-- **Parsing Module (Lambda A / BackgroundTask):**
-  - **Allowed:** `fitz` (PyMuPDF), `boto3` (S3/SQS/Lambda).
-  - **Forbidden:** `src.api`, `src.scoring`, `src.ats`. It MUST NOT know what a "Job" or a "Score" is. It only transforms PDF bytes into `StructuralParse` JSON.
-- **API/Evaluation Module (Lambda B / FastAPI):**
-  - **Allowed:** `fastapi`, `boto3` (S3/DynamoDB/Bedrock), `scikit-learn`, `rank_bm25`.
-  - **Forbidden:** `fitz`. It MUST NOT parse raw PDFs. It only reads the `StructuralParse` JSON from S3.
+- **Stage 1 Fast Parse Worker:**
+  - **Allowed:** `fitz` (PyMuPDF), in memory layout parsing, reading order analysis, and S3 raw key download.
+  - **Forbidden:** `src.ats`, `src.ranking`, `odl_client`. It MUST NOT score resumes or invoke external parsers. It converts raw PDF bytes into Stage 1 JSON and updates file status.
+- **Stage 2 Fallback Worker:**
+  - **Allowed:** `odl_client` (invoking `odl-parser-lambda-prod` via S3 pointer pattern), `nova_service` (Bedrock Amazon Nova Micro infill).
+  - **Forbidden:** Raw PDF geometry rendering, job scoring, or direct database mutations outside file status and outbox.
+- **Scoring & Evaluation Worker:**
+  - **Allowed:** BM25 scoring with fixed reference corpus, TF-IDF role matching, deterministic ATS geometry scoring, candidate decision persistence.
+  - **Forbidden:** `fitz`, Bedrock, or JVM imports. It strictly consumes standardized extraction JSON payloads from S3.
+- **External Network Boundary (ADR-07):**
+  - Application endpoints are open and standalone (no user logins, passwords, or JWT validation).
+  - Production deployments MUST sit behind an external reverse proxy (CloudFront, API Gateway authorizer, or VPC boundary) to prevent unauthorized public access.
 
-**Why?** Lambda B is a ZIP package. If it imports JVM or heavy PDF libraries, the deployment package will exceed 250MB and fail. Furthermore, mixing parsing and scoring logic creates God-classes that are impossible to test.
+**Why?** Consolidating the Python workers into a single Lambda function with separate SQS event source mappings simplifies deployment and keeps memory under 288 MB, while keeping the heavy JVM runtime strictly isolated in the shared ODL container.
 
 ## 2. Anti-Corruption Layers (ACLs)
 

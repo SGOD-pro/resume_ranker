@@ -9,6 +9,8 @@ Implements Amendment 2:
 """
 
 import logging
+import random
+import time
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -70,11 +72,18 @@ class FilesRepository:
         return FileItem.from_dynamodb_item(item)
 
     def list_files_for_job(self, job_id: str) -> List[FileItem]:
-        """Query all FILE# items for a given job."""
-        resp = self._table.query(
-            KeyConditionExpression=Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("FILE#")
-        )
-        items = resp.get("Items", [])
+        """Query all FILE# items for a given job across DynamoDB pages."""
+        items: List[Dict[str, Any]] = []
+        query_kwargs: Dict[str, Any] = {
+            "KeyConditionExpression": Key("PK").eq(f"JOB#{job_id}") & Key("SK").begins_with("FILE#"),
+        }
+        while True:
+            resp = self._table.query(**query_kwargs)
+            items.extend(resp.get("Items", []))
+            lek = resp.get("LastEvaluatedKey")
+            if not lek:
+                break
+            query_kwargs["ExclusiveStartKey"] = lek
         return [FileItem.from_dynamodb_item(item) for item in items]
 
     def update_file_non_terminal(
@@ -387,6 +396,23 @@ class FilesRepository:
             payload = item.get("payload", {})
             sk = item["SK"]
 
+            # Acquire short conditional dispatch lease to avoid duplicate SQS sends on concurrent polls
+            lease_until = (datetime.now(timezone.utc) + timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            try:
+                self._table.update_item(
+                    Key={"PK": f"JOB#{job_id}", "SK": sk},
+                    UpdateExpression="SET #dl = :lease, #upd = :now",
+                    ConditionExpression="(#d = :false OR attribute_not_exists(#d)) AND (attribute_not_exists(#dl) OR #dl < :now)",
+                    ExpressionAttributeNames={"#d": "dispatched", "#dl": "dispatch_lease_until", "#upd": "updated_at"},
+                    ExpressionAttributeValues={":false": False, ":lease": lease_until, ":now": now},
+                )
+            except ClientError as lease_err:
+                if lease_err.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                    continue
+                logger.warning("Outbox lease check skipped for %s/%s: %s", job_id, sk, lease_err)
+            except Exception:
+                pass
+
             try:
                 if event_type == "STAGE2_DISPATCH":
                     file_id = payload.get("file_id")
@@ -673,32 +699,62 @@ class FilesRepository:
             }
         ]
 
-        try:
-            self._execute_transact_write(transact_items)
-        except ClientError as e:
-            code = e.response.get("Error", {}).get("Code")
-            if code in ("TransactionCanceledException", "ConditionalCheckFailedException"):
-                reasons = e.response.get("CancellationReasons", [])
-                file_cancel = reasons[0].get("Code") if len(reasons) > 0 else None
-                job_cancel = reasons[1].get("Code") if len(reasons) > 1 else None
+        max_attempts = 6
+        retryable_codes = {
+            "TransactionConflict",
+            "TransactionConflictException",
+            "ProvisionedThroughputExceeded",
+            "ProvisionedThroughputExceededException",
+            "ThrottlingException",
+            "RequestLimitExceeded",
+        }
 
-                existing_file = self.get_file(job_id, file_id)
-                if existing_file and existing_file.is_terminal:
-                    logger.info("Idempotent skip: file %s/%s already terminal (%s)", job_id, file_id, existing_file.status)
+        for attempt in range(max_attempts):
+            try:
+                self._execute_transact_write(transact_items)
+                break
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code")
+                reasons = e.response.get("CancellationReasons", []) or []
+                has_retryable_reason = any(
+                    (r.get("Code") in retryable_codes) for r in reasons if isinstance(r, dict)
+                )
+                if code in retryable_codes or (code == "TransactionCanceledException" and has_retryable_reason):
+                    if attempt < max_attempts - 1:
+                        backoff = 0.04 * (2 ** attempt) + random.uniform(0.0, 0.04)
+                        logger.info(
+                            "Retrying terminal transition for %s/%s after %s (attempt %d/%d, sleep=%.3fs)",
+                            job_id, file_id, reasons or code, attempt + 1, max_attempts, backoff,
+                        )
+                        time.sleep(backoff)
+                        continue
+                    logger.error(
+                        "Exhausted retries for terminal transition %s/%s due to %s",
+                        job_id, file_id, reasons or code,
+                    )
+                    raise
+
+                if code in ("TransactionCanceledException", "ConditionalCheckFailedException"):
+                    file_cancel = reasons[0].get("Code") if len(reasons) > 0 else None
+                    job_cancel = reasons[1].get("Code") if len(reasons) > 1 else None
+
+                    existing_file = self.get_file(job_id, file_id)
+                    if existing_file and existing_file.is_terminal:
+                        logger.info("Idempotent skip: file %s/%s already terminal (%s)", job_id, file_id, existing_file.status)
+                        return False
+                    if not existing_file:
+                        raise ValueError(f"File {job_id}/{file_id} does not exist")
+
+                    if job_cancel == "ConditionalCheckFailed":
+                        existing_job = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"}).get("Item")
+                        if not existing_job:
+                            raise ValueError(f"Job {job_id} does not exist")
+                        logger.warning("Job %s remaining is already 0, cannot decrement", job_id)
+                        return False
+
+                    logger.warning("Transaction or condition canceled for %s/%s: %s", job_id, file_id, reasons or code)
                     return False
-                if not existing_file:
-                    raise ValueError(f"File {job_id}/{file_id} does not exist")
-
-                if job_cancel == "ConditionalCheckFailed":
-                    existing_job = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"}).get("Item")
-                    if not existing_job:
-                        raise ValueError(f"Job {job_id} does not exist")
-                    logger.warning("Job %s remaining is already 0, cannot decrement", job_id)
-                    return False
-
-                logger.warning("Transaction or condition canceled for %s/%s: %s", job_id, file_id, reasons or code)
-                return False
-            raise
+                raise
 
         # Step 3: Fetch updated job state and handle zero remaining
         job_resp = self._table.get_item(Key={"PK": f"JOB#{job_id}", "SK": "METADATA"})

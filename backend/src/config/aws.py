@@ -41,13 +41,24 @@ class AWSSettings(BaseSettings):
     SQS_FINAL_RANK_QUEUE_URL: str = ""
     SQS_FINAL_RANK_DLQ_URL: str = ""
 
-    # Aliases matching template.dev.yaml
+    # Aliases matching template.dev.yaml / template.preprod.yaml
     SQS_STAGE1_QUEUE_URL: str = ""
     SQS_STAGE1_DLQ_URL: str = ""
     SQS_STAGE2_QUEUE_URL: str = ""
     SQS_STAGE2_DLQ_URL: str = ""
     SQS_SCORING_QUEUE_URL: str = ""
     SQS_SCORING_DLQ_URL: str = ""
+    SQS_STAGE1_QUEUE_ARN: str = ""
+    SQS_STAGE2_QUEUE_ARN: str = ""
+    SQS_SCORING_QUEUE_ARN: str = ""
+    SQS_STAGE1_DLQ_ARN: str = ""
+    SQS_STAGE2_DLQ_ARN: str = ""
+    SQS_SCORING_DLQ_ARN: str = ""
+
+    # Stage 2 kill switch and isolated ODL staging bucket
+    DISABLE_STAGE2_FALLBACK: bool = False
+    ODL_STAGING_BUCKET: str = ""
+    ODL_STAGING_PREFIX: str = "preprod-staging"
 
     # SNS Topic ARN for pub/sub events
     SNS_EVENTS_TOPIC_ARN: str = ""

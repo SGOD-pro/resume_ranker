@@ -82,8 +82,10 @@ def process_nova_message(message: QueueMessage) -> None:
                 try:
                     pdf_bytes = storage.get_resume(job_id, doc_id, s3_key=doc.s3_pdf_key)
                     import fitz
-                    with fitz.open(stream=pdf_bytes, filetype="pdf") as pdoc:
-                        unresolved_chunks = [page.get_text() for page in pdoc if page.get_text().strip()]
+                    from src.extraction.structural_parsing_service import _fitz_lock
+                    with _fitz_lock:
+                        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdoc:
+                            unresolved_chunks = [page.get_text() for page in pdoc if page.get_text().strip()]
                 except Exception as ex:
                     logger.warning("Could not extract raw text for Nova infill: %s", ex)
 

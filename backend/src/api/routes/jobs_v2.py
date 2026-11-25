@@ -195,6 +195,15 @@ class CreateJobRequest(BaseModel):
     })
     files: List[FileUploadSpec] = Field(default_factory=list)
 
+    @field_validator("org_id")
+    @classmethod
+    def validate_org_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if v and not re.match(r"^[a-zA-Z0-9_-]{1,64}$", v):
+                raise ValueError("org_id must be alphanumeric with hyphens or underscores, up to 64 chars")
+        return v
+
 
 class CreateJobResponse(BaseModel):
     job_id: str
@@ -336,7 +345,9 @@ class DecisionUpdateRequest(BaseModel):
     decision: Optional[str] = None
     reason: Optional[str] = None
     note: Optional[str] = None
-    tags: List[str] = Field(default_factory=list)
+    tags: Optional[List[str]] = None
+    expected_version: Optional[int] = None
+    client_timestamp: Optional[str] = None
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -372,7 +383,7 @@ async def create_job(
 
     job_id = str(uuid.uuid4())
     total_files = len(body.files)
-    job_org_id = body.org_id or f"org_{job_id[:8]}"
+    job_org_id = body.org_id if body.org_id else f"job_{job_id}"
 
     job = JobItem(
         job_id=job_id,
@@ -472,13 +483,15 @@ async def check_ats_endpoint(
     contents = await file.read()
     if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File size exceeds 10MB limit.")
+    if not contents.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Corrupted file: invalid PDF header.")
 
     import tempfile
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(contents)
         tmp_path = tmp.name
 
-    s3_key = f"ats_check/{uuid.uuid4().hex[:8]}_{file.filename}"
+    s3_key = f"ats_check/{uuid.uuid4().hex}.pdf"
     _storage._client.put_object(
         Bucket=_storage._bucket,
         Key=s3_key,
@@ -493,7 +506,7 @@ async def check_ats_endpoint(
         return result
     except Exception as e:
         logger.error("ATS check failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"ATS check failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="ATS check failed.")
     finally:
         try:
             _storage._client.delete_object(Bucket=_storage._bucket, Key=s3_key)
@@ -517,17 +530,16 @@ async def parse_jd_endpoint(
     contents = await file.read()
     if len(contents) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File size exceeds 10MB limit.")
+    if not contents.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Corrupted file: invalid PDF header.")
 
     try:
-        import fitz
-        doc = fitz.open(stream=contents, filetype="pdf")
-        text_pages = [page.get_text() for page in doc]
-        doc.close()
-        full_text = "\n\n".join(text_pages).strip()
+        from src.extraction.structural_parsing_service import extract_pdf_text_sync
+        full_text = await asyncio.to_thread(extract_pdf_text_sync, contents)
         return {"text": full_text, "filename": file.filename}
     except Exception as e:
         logger.error("Parse JD PDF failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to parse JD PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to parse JD PDF.")
 
 
 @router.get("/{job_id}/presigned-posts", response_model=PaginatedPresignedPostsResponse)
@@ -1002,12 +1014,22 @@ async def complete_document_upload(
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_session_ownership(job, request)
 
-    job_org_id = getattr(job, "org_id", "org_default")
+    job_org_id = getattr(job, "org_id", f"job_{job_id}")
     doc = _docs_repo.get(job_id, document_id)
-    resolved_session_id = session_id or (doc.session_id if doc else None) or getattr(job, "session_id", "default_session")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found for this job")
+
+    if session_id:
+        sess = _sessions_repo.get(job_id, session_id)
+        if not sess:
+            raise HTTPException(status_code=404, detail="Upload session not found")
+        if doc.session_id != session_id:
+            raise HTTPException(status_code=400, detail="Document does not belong to specified upload session")
+
+    resolved_session_id = session_id or doc.session_id or getattr(job, "session_id", "default_session")
 
     # Idempotency: If already UPLOADED or past that state, return success immediately
-    if doc and doc.status not in (DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING):
+    if doc.status not in (DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING):
         return CompleteDocumentUploadResponse(
             document_id=document_id,
             session_id=resolved_session_id,
@@ -1015,7 +1037,7 @@ async def complete_document_upload(
             status=doc.status.value,
         )
 
-    s3_key = (doc.s3_pdf_key if doc else None) or f"jobs/{job_id}/resumes/{document_id}.pdf"
+    s3_key = doc.s3_pdf_key or f"jobs/{job_id}/resumes/{document_id}.pdf"
     settings = get_settings()
 
     # 1. HEAD request to verify object exists and check size
@@ -1041,25 +1063,8 @@ async def complete_document_upload(
             raise
         raise HTTPException(status_code=400, detail="Failed to verify PDF header bytes")
 
-    # 3. Update DocumentItem and FileItem in DynamoDB to UPLOADED
-    if doc:
-        updated = _docs_repo.update_status_conditional(
-            job_id=job_id,
-            document_id=document_id,
-            new_status=DocumentStatus.UPLOADED,
-            allowed_current_statuses=[DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING],
-            extra_updates={"file_size": actual_size},
-        )
-        if updated and resolved_session_id:
-            fresh_sess = _sessions_repo.get(job_id, resolved_session_id)
-            if fresh_sess:
-                _sessions_repo.increment_uploaded_count(job_id, resolved_session_id, expected_version=fresh_sess.version)
-
+    # 3. Atomically commit FileItem and DocumentItem status transition, plus outbox record in DynamoDB, then attempt SQS
     fresh_job = _jobs_repo.get(job_id)
-    if fresh_job:
-        _jobs_repo.increment_document_count(job_id, expected_version=fresh_job.version)
-
-    # 4. Atomically commit FileItem status transition and outbox record in DynamoDB, then attempt SQS
     job_version = getattr(fresh_job, "job_version", 1) if fresh_job else 1
     try:
         commit_file_upload_with_outbox(
@@ -1073,22 +1078,27 @@ async def complete_document_upload(
             stage="FAST_PARSE",
         )
     except Exception as outbox_err:
-        logger.debug("commit_file_upload_with_outbox direct fallback: %s", outbox_err)
-        _files_repo.update_file_non_terminal(
-            job_id=job_id,
-            file_id=document_id,
-            status=FileStatus.UPLOADED,
-            file_size=actual_size,
+        fresh_doc = _docs_repo.get(job_id, document_id)
+        if fresh_doc and fresh_doc.status not in (DocumentStatus.UPLOAD_INITIALIZED, DocumentStatus.PENDING):
+            logger.info("Outbox transaction condition already committed for doc %s (%s)", document_id, fresh_doc.status)
+            return CompleteDocumentUploadResponse(
+                document_id=document_id,
+                session_id=resolved_session_id,
+                job_id=job_id,
+                status=fresh_doc.status.value,
+            )
+        logger.error("Outbox transaction failed for document %s: %s", document_id, outbox_err)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to durably commit upload transaction. Please retry.",
         )
-        enqueue_fast_parse(
-            job_id=job_id,
-            session_id=resolved_session_id,
-            document_id=document_id,
-            org_id=job_org_id,
-            job_version=job_version,
-            s3_key=s3_key,
-            content_hash="",
-        )
+
+    # 4. Increment session uploaded counter atomically ONLY after durable atomic commit succeeds
+    if resolved_session_id:
+        try:
+            _sessions_repo.increment_uploaded_count(job_id, resolved_session_id)
+        except Exception as e:
+            logger.warning("Failed to increment session uploaded count: %s", e)
 
     return CompleteDocumentUploadResponse(
         document_id=document_id,
@@ -1255,6 +1265,8 @@ async def analyze_job(
         updates["job_version"] = current_job_version
         job = _jobs_repo.update(job_id, updates, expected_version=job.version)
 
+    all_files = _files_repo.list_files_for_job(job_id)
+
     # Advance upload session if present
     target_session = None
     sessions = _sessions_repo.list_for_job(job_id)
@@ -1270,6 +1282,7 @@ async def analyze_job(
                 new_status=UploadSessionStatus.ANALYSIS_REQUESTED,
                 job_version=current_job_version,
             )
+            # Progress upload session if documents are tracked under this session
             check_and_progress_session(job_id, target_session.session_id)
         except Exception as e:
             logger.warning("Could not set analysis_requested on session: %s", e)
@@ -1277,15 +1290,16 @@ async def analyze_job(
     job_org_id = getattr(job, "org_id", "org_default")
 
     # Determine explicit file IDs
-    all_files = _files_repo.list_files_for_job(job_id)
     if req.file_ids is not None:
         selected_file_ids = req.file_ids
     else:
         selected_file_ids = [f.file_id for f in all_files if f.status != FileStatus.REMOVED]
 
-    # Ensure any selected files not yet in S1_DONE or terminal state are enqueued for Stage 1
+    # Ensure any selected files not yet active/done in Stage 1 or terminal state are durably enqueued via outbox
     for f in all_files:
-        if f.file_id in selected_file_ids and not f.is_terminal and f.status not in (FileStatus.S1_DONE, FileStatus.S2_DONE):
+        if f.file_id in selected_file_ids and not f.is_terminal and f.status not in (
+            FileStatus.S1_PROCESSING, FileStatus.S1_DONE, FileStatus.S2_PROCESSING, FileStatus.S2_DONE
+        ):
             try:
                 write_outbox_and_send(
                     job_id=job_id,
@@ -1296,19 +1310,12 @@ async def analyze_job(
                     s3_key=f.s3_raw_key,
                     stage="FAST_PARSE",
                 )
-            except Exception:
-                try:
-                    enqueue_fast_parse(
-                        job_id=job_id,
-                        session_id=(target_session.session_id if target_session else None) or job.session_id or "default",
-                        document_id=f.file_id,
-                        org_id=job_org_id,
-                        job_version=current_job_version,
-                        s3_key=f.s3_raw_key,
-                        content_hash="",
-                    )
-                except Exception:
-                    pass
+            except Exception as outbox_err:
+                logger.error("Outbox dispatch failed during analyze_job for file %s: %s", f.file_id, outbox_err)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to durably enqueue resume processing. Please retry.",
+                )
 
     # Execute request_analysis (conditionally marks REMOVED, advances fallback, triggers scoring if remaining == 0)
     updated_job = _jobs_repo.request_analysis(job_id, selected_file_ids)
@@ -1353,7 +1360,12 @@ async def get_job_status(
     # 2. Reconcile any pending outbox events only after ownership is validated
     try:
         reconciled_count = _files_repo.reconcile_outbox(job_id)
-        if isinstance(reconciled_count, int) and reconciled_count > 0:
+        try:
+            from src.infrastructure.queue.outbox import relay_pending_outbox
+            relayed_uploads = relay_pending_outbox(job_id=job_id)
+        except Exception:
+            relayed_uploads = 0
+        if (isinstance(reconciled_count, int) and reconciled_count > 0) or relayed_uploads > 0:
             # Re-fetch after reconciliation in case status or files advanced
             job, files = _jobs_repo.get_job_with_files(job_id)
     except Exception as exc:
@@ -1756,16 +1768,49 @@ async def delete_job(
         raise HTTPException(status_code=404, detail="Job not found")
     enforce_session_ownership(job, request)
 
-    _jobs_repo.delete(job_id)
+    job_org_id = getattr(job, "org_id", f"job_{job_id}")
+
+    # Purge S3 prefixes: both standard and org-scoped prefixes
+    prefixes = [f"jobs/{job_id}/", f"{job_org_id}/jobs/{job_id}/"]
+    for pfx in dict.fromkeys(prefixes):
+        try:
+            paginator = _storage._client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=_storage._bucket, Prefix=pfx):
+                contents = page.get("Contents", [])
+                if contents:
+                    delete_keys = [{"Key": obj["Key"]} for obj in contents]
+                    for i in range(0, len(delete_keys), 1000):
+                        _storage._client.delete_objects(
+                            Bucket=_storage._bucket,
+                            Delete={"Objects": delete_keys[i:i + 1000]}
+                        )
+        except Exception as e:
+            logger.warning("Error purging S3 prefix %s for job %s: %s", pfx, job_id, e)
+
+    # Clean up DynamoDB active session and outbox items if present
+    try:
+        _jobs_repo._client.delete_item(
+            TableName=_jobs_repo._table_name,
+            Key={"PK": {"S": f"ORG#{job_org_id}"}, "SK": {"S": f"ACTIVE_SESSION#{job_id}"}},
+        )
+    except Exception as e:
+        logger.debug("Failed cleaning active session pointer for job %s: %s", job_id, e)
 
     try:
-        prefix = f"jobs/{job_id}/"
-        resp = _storage._client.list_objects_v2(Bucket=_storage._bucket, Prefix=prefix)
-        if "Contents" in resp:
-            delete_objects = [{"Key": obj["Key"]} for obj in resp["Contents"]]
-            _storage._client.delete_objects(Bucket=_storage._bucket, Delete={"Objects": delete_objects})
+        resp = _jobs_repo._client.query(
+            TableName=_jobs_repo._table_name,
+            KeyConditionExpression="PK = :pk",
+            ExpressionAttributeValues={":pk": {"S": f"OUTBOX#{job_id}"}},
+        )
+        for item in resp.get("Items", []):
+            _jobs_repo._client.delete_item(
+                TableName=_jobs_repo._table_name,
+                Key={"PK": item["PK"], "SK": item["SK"]},
+            )
     except Exception as e:
-        logger.warning("Error purging S3 prefix for job %s: %s", job_id, e)
+        logger.debug("Failed cleaning outbox items for job %s: %s", job_id, e)
+
+    _jobs_repo.delete(job_id)
 
     audit_logger.record(getattr(job, "org_id", "org_default"), "anonymous", "JOB_DELETED", "job", job_id)
     return {"status": "deleted", "message": f"Job {job_id} and all related data deleted."}
@@ -1803,16 +1848,40 @@ async def delete_resume(
         terminal_status=FileStatus.REMOVED.value,
         error_message="User deleted resume",
     )
-    try:
-        from src.infrastructure.models.document import DocumentStatus
-        _docs_repo.update_status(job_id, document_id, DocumentStatus.FAILED, error_message="User deleted resume")
-    except Exception as doc_err:
-        logger.debug("DocumentItem sync on delete: %s", doc_err)
 
-    try:
-        _storage._client.delete_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/raw/{document_id}.pdf")
-    except Exception as e:
-        logger.warning("Error deleting S3 raw key for doc %s: %s", document_id, e)
+    doc_item = _docs_repo.get(job_id, document_id)
+    if doc_item:
+        try:
+            from src.infrastructure.models.document import DocumentStatus
+            _docs_repo.update_status_conditional(
+                job_id,
+                document_id,
+                DocumentStatus.FAILED,
+                allowed_current_statuses=None,
+                extra_updates={"error_reason": "User deleted resume"},
+            )
+        except Exception as doc_err:
+            logger.debug("DocumentItem sync on delete: %s", doc_err)
+
+    file_item = _files_repo.get_file(job_id, document_id)
+
+    s3_keys_to_delete = {
+        f"jobs/{job_id}/raw/{document_id}.pdf",
+        f"jobs/{job_id}/resumes/{document_id}.pdf",
+    }
+    if doc_item and doc_item.s3_pdf_key:
+        s3_keys_to_delete.add(doc_item.s3_pdf_key)
+    if file_item:
+        if getattr(file_item, "s3_raw_key", None):
+            s3_keys_to_delete.add(file_item.s3_raw_key)
+        if getattr(file_item, "s3_clean_key", None):
+            s3_keys_to_delete.add(file_item.s3_clean_key)
+
+    for s3_k in s3_keys_to_delete:
+        try:
+            _storage._client.delete_object(Bucket=_storage._bucket, Key=s3_k)
+        except Exception as e:
+            logger.warning("Error deleting S3 key %s for doc %s: %s", s3_k, document_id, e)
 
     audit_logger.record(getattr(job, "org_id", "org_default"), "anonymous", "DOCUMENT_DELETED", "document", document_id, {"job_id": job_id})
     return {"status": "deleted", "message": f"Document {document_id} removed."}
@@ -1832,9 +1901,12 @@ async def update_candidate_decision(
     enforce_session_ownership(job, request)
 
     valid_decisions = ("new", "reviewing", "shortlisted", "rejected", "interview", "archived")
-    raw_decision = (body.decision or "").strip().lower()
-    if raw_decision and raw_decision not in valid_decisions:
-        raise HTTPException(status_code=400, detail=f"Invalid decision state. Must be one of: {valid_decisions}")
+    raw_decision = None
+    if body.decision is not None:
+        cleaned = body.decision.strip().lower()
+        if not cleaned or cleaned not in valid_decisions:
+            raise HTTPException(status_code=400, detail=f"Invalid decision state. Must be one of: {valid_decisions}")
+        raw_decision = cleaned
 
     if raw_decision == "rejected" and not (body.reason or "").strip():
         raise HTTPException(
@@ -1849,49 +1921,31 @@ async def update_candidate_decision(
         else ("assessment-sent" if raw_decision in ("interview", "assessment-sent") else "under-review"))
     ) if raw_decision else None
 
-    decision_payload = {
-        "decision": raw_decision,
-        "human_decision": raw_decision.upper() if raw_decision else None,
-        "status": status_mapped,
-        "decision_reason": body.reason,
-        "note": body.note,
-        "tags": body.tags,
-        "updated_by": "recruiter",
-    }
-    _scoring_repo.save_candidate_decision(job_id, document_id, decision_payload)
+    decision_payload: Dict[str, Any] = {"updated_by": "recruiter"}
+    if raw_decision is not None:
+        decision_payload["decision"] = raw_decision
+        decision_payload["human_decision"] = raw_decision.upper()
+        decision_payload["status"] = status_mapped
+    if body.reason is not None:
+        decision_payload["decision_reason"] = body.reason
+    if body.note is not None:
+        decision_payload["note"] = body.note
+    if body.tags is not None:
+        decision_payload["tags"] = body.tags
 
-    # 2. Best-effort sync to S3 results.json if it exists
     try:
-        resp = _storage._client.get_object(Bucket=_storage._bucket, Key=f"jobs/{job_id}/results.json")
-        body_content = resp["Body"].read().decode("utf-8")
-        results_data = json.loads(body_content)
-        candidates = results_data.get("candidates", [])
-        updated = False
-        for c in candidates:
-            c_doc_id = c.get("document_id") or c.get("_document_id") or c.get("candidate_id")
-            if c_doc_id == document_id or c.get("id") == document_id:
-                if raw_decision:
-                    c["decision"] = raw_decision
-                    c["human_decision"] = raw_decision.upper()
-                    c["status"] = status_mapped
-                if body.reason is not None:
-                    c["decision_reason"] = body.reason
-                if body.note is not None:
-                    c["note"] = body.note
-                if body.tags is not None:
-                    c["tags"] = body.tags
-                updated = True
-                break
-        if updated:
-            _storage._client.put_object(
-                Bucket=_storage._bucket,
-                Key=f"jobs/{job_id}/results.json",
-                Body=json.dumps(results_data, indent=2).encode("utf-8"),
-                ContentType="application/json",
-            )
-            logger.info("Updated decision for candidate %s in job %s results.json", document_id, job_id)
+        updated_attrs = _scoring_repo.save_candidate_decision(
+            job_id,
+            document_id,
+            decision_payload,
+            expected_version=body.expected_version,
+            client_timestamp=body.client_timestamp,
+        )
     except Exception as e:
-        logger.debug("S3 results.json sync fallback for job %s: %s", job_id, e)
+        if "ConditionalCheckFailedException" in type(e).__name__ or "ConditionalCheckFailed" in str(e):
+            raise HTTPException(status_code=409, detail="Concurrent decision update conflict. Please retry.")
+        logger.error("Failed to save candidate decision: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to persist candidate decision.")
 
     audit_logger.record(
         getattr(job, "org_id", "org_default"),
@@ -1904,9 +1958,10 @@ async def update_candidate_decision(
     return {
         "job_id": job_id,
         "document_id": document_id,
-        "decision": raw_decision,
-        "reason": body.reason,
-        "note": body.note,
+        "decision": updated_attrs.get("decision", raw_decision),
+        "reason": updated_attrs.get("decision_reason", body.reason),
+        "note": updated_attrs.get("note", body.note),
+        "tags": updated_attrs.get("tags", body.tags),
         "status": "updated",
     }
 
@@ -1928,7 +1983,15 @@ async def export_job_csv(
         body = resp["Body"].read().decode("utf-8")
         candidates = json.loads(body).get("candidates", [])
     except Exception:
-        candidates = []
+        try:
+            scoring_item = _scoring_repo.get_latest(job_id)
+            if scoring_item and scoring_item.s3_result_key:
+                resp = _storage._client.get_object(Bucket=_storage._bucket, Key=scoring_item.s3_result_key)
+                body = resp["Body"].read().decode("utf-8")
+                candidates = json.loads(body).get("candidates", [])
+        except Exception as e:
+            logger.warning("Error fetching results for CSV export: %s", e)
+            candidates = []
 
     import csv
     import io

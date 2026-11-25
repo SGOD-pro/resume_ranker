@@ -6,18 +6,19 @@
 
 ## 1. Current Project State
 
-- **Architecture Version:** V2.2 — Modular Monolith with Durable Worker Pipeline, DynamoDB Outbox Pattern, and PyMuPDF Fast-Path In-Memory.
+- **Architecture Version:** V2.1 — Consolidated Single Lambda Event Dispatcher, Dedicated SQS Event Source Mappings, Transactional Outbox Pattern, and Shared External ODL Parser.
 - **Active Branch:** `v2.1`
 - **Application Status:**
-  - Backend and Frontend fully implemented, hardened, and verified.
-  - All test suites passing (`test_phase1_6_durability.py`: 12/12, `test_v2_acceptance.py`: 11/11, `test_endpoints.py`: 1/1).
-  - Frontend production build verified (`npm run build`: 0 errors).
-  - Background processes: All local servers (`uvicorn`, `vite`) are **STOPPED** as requested.
+  - Backend and Frontend fully verified against live AWS preproduction environment (`resume-ranker-preprod` in `ap-south-1`).
+  - Unit test suite: 163 passed. Guardrail & merge rule suites: 14 passed. Integration test suite: 32 passed (Total backend: 209 passed).
+  - Playwright E2E suite: 24 passed. Frontend lint and production build: 0 errors (built in 991ms).
+  - Clean path and mixed fallback path live benchmarks verified on AWS up to 100 resumes.
+  - Zero CloudWatch throttles, zero stranded outbox records, zero DLQ messages.
 - **Deployment & Runtime Mode:**
-  - Localhost development environment (`127.0.0.1:8000` / `localhost:5173`).
-  - S3 (`resume-ranker-documents-local`) & DynamoDB (`resume_ranker_v2_local`) backed by AWS / LocalStack.
-  - SQS adapter: In-memory queues for local dev (`FAST_PARSE_QUEUE`, `ODL_BATCH_QUEUE`, `NOVA_QUEUE`, `FINAL_RANK_QUEUE`), pluggable to real SQS for cloud deployment.
-  - Worker execution: Managed by `BackgroundWorkerDaemon` (`src/pipeline/worker_runner.py`) running sub-second worker loops and outbox reconciliation.
+  - Consolidated Lambda deployment artifact (`CodeSha256 = UnL09DRRwGNky/tDTlKSjGgDvoedxGUEMuzwna4x7ZE=`, 59.8 MB).
+  - Preproduction AWS resources: HTTP API Gateway (`2el52dse7a`), DynamoDB table (`ResumePlatformPreprod-445567096027`), S3 bucket (`resume-ranker-preprod-445567096027`), and dedicated SQS queues (`stage1`, `stage2`, `scoring` + 3 DLQs).
+  - External shared parser: `odl-parser-lambda-prod` (unmodified, container-backed).
+  - Standalone engine without in-app authentication (ADR-07 requires external edge reverse proxy).
 
 ---
 
@@ -102,6 +103,30 @@ Empirical benchmark conducted on **1,000 real-world PDF resumes** (2,729 total p
 ### Scoring Engine Performance
 - **Pool Size:** 1,000 candidates scored against job criteria.
 - **Total Scoring Wall-Clock:** **11.37 seconds (11,374 ms)**.
+
+---
+
+## 5. Live AWS Preproduction Benchmark Results (November 2026)
+
+Evaluated directly against deployed AWS preproduction infrastructure (`resume-ranker-preprod` in `ap-south-1`):
+
+### Clean Path (PyMuPDF Fast Pass)
+- **1 resume:** 2.49s
+- **5 resumes:** 3.77s
+- **47 resumes:** 24.81s (1.89 resumes/sec, $0.0017 compute cost)
+- **100 resumes:** 52.14s (1.92 resumes/sec, $0.0037 compute cost)
+
+### Mixed Fallback Path (PyMuPDF + ODL + Nova)
+- **1 resume:** 3.13s
+- **5 resumes:** 7.04s
+- **47 resumes:** 29.11s (1.61 resumes/sec, $0.0022 compute cost)
+- **100 resumes:** 71.13s (1.41 resumes/sec, $0.0047 compute cost)
+
+### Resource Footprint & Reliability
+- **Peak Observed Lambda Memory:** 288 MB of 1024 MB (28.1% of allocated memory).
+- **Lambda Throttles:** 0 across all benchmark loads.
+- **Dead Letter Queue Accumulation:** 0 messages.
+- **Stranded Outbox Records:** 0 records (all reconciled autonomously).
 - **Per-Candidate Scoring Latency:** **11.37 ms / candidate**.
 - **Scoring Throughput:** **88 candidates / second**.
 

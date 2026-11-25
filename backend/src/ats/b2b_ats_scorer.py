@@ -1,7 +1,7 @@
 import fitz
 from typing import Dict, Any, List
 from dataclasses import dataclass
-from src.extraction.structural_parsing_service import StructuralParsingService, pymupdf_layout_quality_signals
+from src.extraction.structural_parsing_service import StructuralParsingService, pymupdf_layout_quality_signals, _fitz_lock
 from src.extraction.markdown_extraction_service import MarkdownExtractionService
 
 @dataclass
@@ -38,53 +38,56 @@ class B2BAtsScorer:
         layout_flags = []
         bounding_boxes = []
         
-        # Analyze layout flags with heuristics
+        # Analyze layout flags with heuristics (serialized per process for PyMuPDF safety)
         try:
-            doc = fitz.open(pdf_path)
-            for page_idx, page in enumerate(doc):
-                page_num = page_idx + 1
-                signals = pymupdf_layout_quality_signals(page)
-                if signals.get("n_x_clusters", 1) > 1:
-                    if "Multi-column layout detected" not in layout_flags:
-                        layout_flags.append("Multi-column layout detected")
-                        breakdown["Column Penalty"] = -5
-                        score -= 5
-                    # Highlight right-column block for recruiter visual feedback
-                    blocks = page.get_text("blocks")
-                    for b in blocks:
-                        if b[0] > page.rect.width * 0.45 and len(b) >= 4:
-                            bounding_boxes.append(BoundingBox(
-                                page=page_num, x0=float(b[0]), y0=float(b[1]), x1=float(b[2]), y1=float(b[3]),
-                                severity="warning", reason="Multi-column layout element"
-                            ))
-                            break
-                if signals.get("not_table_heavy", 1.0) == 0.0:
-                    if "Tables detected" not in layout_flags:
-                        layout_flags.append("Tables detected")
-                        breakdown["Table Penalty"] = -10
-                        score -= 10
-                    drawings = page.get_drawings()
-                    for d in drawings[:3]:
-                        r = d.get("rect")
-                        if r:
-                            bounding_boxes.append(BoundingBox(
-                                page=page_num, x0=float(r.x0), y0=float(r.y0), x1=float(r.x1), y1=float(r.y1),
-                                severity="warning", reason="Table or graphic border detected"
-                            ))
-                            break
-                if signals.get("char_density", 1.0) < 0.2:
-                    image_count = len(page.get_images())
-                    drawing_count = signals.get("n_drawings", 0)
-                    if image_count > 0:
-                        if "Images used instead of text" not in layout_flags:
-                            layout_flags.append("Images used instead of text")
-                    elif drawing_count > 100:
-                        if "Text converted to vector shapes (Unparseable)" not in layout_flags:
-                            layout_flags.append("Text converted to vector shapes (Unparseable)")
-                    else:
-                        if "Very sparse text (Low word count)" not in layout_flags:
-                            layout_flags.append("Very sparse text (Low word count)")
-            doc.close()
+            with _fitz_lock:
+                doc = fitz.open(pdf_path)
+                try:
+                    for page_idx, page in enumerate(doc):
+                        page_num = page_idx + 1
+                        signals = pymupdf_layout_quality_signals(page)
+                        if signals.get("n_x_clusters", 1) > 1:
+                            if "Multi-column layout detected" not in layout_flags:
+                                layout_flags.append("Multi-column layout detected")
+                                breakdown["Column Penalty"] = -5
+                                score -= 5
+                            # Highlight right-column block for recruiter visual feedback
+                            blocks = page.get_text("blocks")
+                            for b in blocks:
+                                if b[0] > page.rect.width * 0.45 and len(b) >= 4:
+                                    bounding_boxes.append(BoundingBox(
+                                        page=page_num, x0=float(b[0]), y0=float(b[1]), x1=float(b[2]), y1=float(b[3]),
+                                        severity="warning", reason="Multi-column layout element"
+                                    ))
+                                    break
+                        if signals.get("not_table_heavy", 1.0) == 0.0:
+                            if "Tables detected" not in layout_flags:
+                                layout_flags.append("Tables detected")
+                                breakdown["Table Penalty"] = -10
+                                score -= 10
+                            drawings = page.get_drawings()
+                            for d in drawings[:3]:
+                                r = d.get("rect")
+                                if r:
+                                    bounding_boxes.append(BoundingBox(
+                                        page=page_num, x0=float(r.x0), y0=float(r.y0), x1=float(r.x1), y1=float(r.y1),
+                                        severity="warning", reason="Table or graphic border detected"
+                                    ))
+                                    break
+                        if signals.get("char_density", 1.0) < 0.2:
+                            image_count = len(page.get_images())
+                            drawing_count = signals.get("n_drawings", 0)
+                            if image_count > 0:
+                                if "Images used instead of text" not in layout_flags:
+                                    layout_flags.append("Images used instead of text")
+                            elif drawing_count > 100:
+                                if "Text converted to vector shapes (Unparseable)" not in layout_flags:
+                                    layout_flags.append("Text converted to vector shapes (Unparseable)")
+                            else:
+                                if "Very sparse text (Low word count)" not in layout_flags:
+                                    layout_flags.append("Very sparse text (Low word count)")
+                finally:
+                    doc.close()
         except Exception:
             pass
             
