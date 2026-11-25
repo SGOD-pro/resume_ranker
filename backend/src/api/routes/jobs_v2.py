@@ -1282,8 +1282,9 @@ async def analyze_job(
                 new_status=UploadSessionStatus.ANALYSIS_REQUESTED,
                 job_version=current_job_version,
             )
-            # Progress upload session if documents are tracked under this session
-            check_and_progress_session(job_id, target_session.session_id)
+            # Progress upload session if documents are tracked without FileItems
+            if not all_files:
+                check_and_progress_session(job_id, target_session.session_id)
         except Exception as e:
             logger.warning("Could not set analysis_requested on session: %s", e)
 

@@ -307,8 +307,10 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              S3BucketName=${{ secrets.S3_BUCKET_NAME }} \
-              DynamoDBTableName=ResumePlatform
+              S3BucketName=${{ secrets.S3_BUCKET_NAME || 'resume-ranker-prod-storage' }} \
+              DynamoDBTableName=${{ secrets.DYNAMODB_TABLE_NAME || 'ResumePlatform' }} \
+              Environment=prod \
+              EnableSchedule=true
 
       # ── 10. Print API Gateway URL ─────────────────────────────────────────
       # Read the ApiUrl CloudFormation output and print it in the logs.

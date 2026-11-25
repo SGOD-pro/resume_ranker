@@ -253,10 +253,26 @@ class JobsRepository:
         fresh_job = self.get(job_id) or updated_job
 
         effective_total = fresh_job.total_files or len(all_files)
-        effective_remaining = fresh_job.remaining if fresh_job.total_files > 0 else sum(1 for f in all_files if not f.is_terminal)
+        effective_remaining = (
+            sum(1 for f in all_files if not f.is_terminal)
+            if all_files
+            else fresh_job.remaining
+        )
+        effective_usable = (
+            sum(1 for f in all_files if f.status == FileStatus.S2_DONE)
+            if all_files
+            else fresh_job.usable_files
+        )
+        if effective_usable == 0:
+            from src.infrastructure.repositories.documents_repository import DocumentsRepository
+            from src.infrastructure.models.document import DocumentStatus
+            effective_usable = sum(
+                1 for d in DocumentsRepository().list_for_job(job_id)
+                if d.status in (DocumentStatus.STRUCTURED_PARSED, DocumentStatus.REVIEW_REQUIRED, DocumentStatus.PARSED, DocumentStatus.SCORED)
+            )
 
         if effective_total > 0 and effective_remaining == 0:
-            if fresh_job.usable_files == 0:
+            if effective_usable == 0:
                 logger.warning("Job %s analyze requested but 0 usable files -> DONE_WITH_ERRORS", job_id)
                 self._table.update_item(
                     Key={"PK": f"JOB#{job_id}", "SK": "METADATA"},
