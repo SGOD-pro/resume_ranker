@@ -1,180 +1,287 @@
-# SWYRA Sortlist — Explainable Candidate Review Workspace (v2.2)
+# SWYRA Sortlist (Resume Ranker v2.1)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.x-61DAFB.svg?style=flat&logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6.svg?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Status: v2.2](https://img.shields.io/badge/Release-v2.2.0-blue.svg)](docs/DOCUMENTATION_INDEX.md)
+**GitHub About:** *Standalone, evidence-based resume ranking and ATS analysis engine powered by PyMuPDF, OpenDataLoader PDF, Amazon Bedrock Nova, and deterministic scoring on AWS Lambda.*
 
-> **Core Promise:** Every recommendation is evidence-linked, configurable, reviewable, and reversible by a human recruiter.
+SWYRA Sortlist is a standalone, evidence-based resume ranking and ATS analysis engine. It processes bulk PDF resumes through a multi-stage serverless pipeline, using AI selectively for low-confidence field recovery rather than as the final ranking decision-maker.
 
-SWYRA Sortlist is **NOT** an autonomous hiring system and **NOT** a generic enterprise ATS. It is a focused, explainable candidate-review workspace built for small hiring teams (2–15 recruiters) and boutique agencies who need transparent, audit-ready screening assistance.
+## Core Capabilities
 
----
-
-## 📚 Authoritative Engineering & Release Specifications
-
-All architectural, operational, scoring, and performance decisions are governed by authoritative specifications:
-
-| Specification | Description |
-| :--- | :--- |
-| [**DOCUMENTATION_INDEX.md**](docs/DOCUMENTATION_INDEX.md) | Authoritative documentation registry mapping every tracked document to its topic owner, status, and reviewed commit. |
-| [**CLEANUP_INVENTORY.md**](docs/CLEANUP_INVENTORY.md) | Architectural code inventory tracking canonical handlers, compatibility adapters, and pruning rules. |
-| [**CLAIM_LEDGER.md**](docs/CLAIM_LEDGER.md) | Binding claim registry linking empirical benchmarks, memory measurements, and verification statuses. |
-| [**architecture.md**](architecture.md) | Serverless architecture, SQS queue topologies, direct S3 upload flows, and compact lifecycle Mermaid diagrams. |
-| [**docs/v2-release/ARCHITECTURE.md**](docs/v2-release/ARCHITECTURE.md) | Monolith-to-serverless transition guide, SQS worker topologies, and provider adapter specifications. |
-| [**docs/v2-release/PRODUCT.md**](docs/v2-release/PRODUCT.md) | Product identity, target users, human decision workflows, core capabilities, and scope boundaries. |
-| [**docs/v2-release/API-CONTRACTS.md**](docs/v2-release/API-CONTRACTS.md) | Complete REST API reference, direct S3 presigned upload sessions, SSE streams, and rate limits. |
-| [**docs/v2-release/SCORING-POLICY.md**](docs/v2-release/SCORING-POLICY.md) | Binding scoring mathematics, allowed vs. prohibited inputs, knockout rules, and factor ledger schema. |
-| [**docs/v2-release/TRUST-SAFETY-PRIVACY.md**](docs/v2-release/TRUST-SAFETY-PRIVACY.md) | Non-negotiable fairness policy, tenant data isolation, audit logging, and ATS checker privacy. |
-| [**docs/v2-release/EVALUATION.md**](docs/v2-release/EVALUATION.md) | Evaluation methodology, gold-set validation, benchmark protocol, and audit of legacy claims. |
+- **High-Throughput PDF Processing**: Native PyMuPDF (`fitz`) extraction for clean, single-column PDFs.
+- **Confidence-Based Fallback**: Automatic routing to shared OpenDataLoader PDF (`odl-parser-lambda-prod`) for complex/multi-column layouts and Amazon Bedrock Nova for unresolved critical fields.
+- **Deterministic Candidate Ranking**: Explainable, reproducible scoring using BM25 keyword matching, skills matching, experience/education evaluation, and configurable score weights.
+- **Standalone ATS Analysis**: Dedicated `/api/v2/ats-check` endpoint evaluating section detection, formatting, layout quality, extraction warnings, and contact info.
+- **Independent Job Execution**: Standalone engine without in-app user accounts or authentication (`HC-01`, `ADR-07`).
+- **Transactional Outbox Durability**: Atomic `transact_write_items` outbox commits in DynamoDB preventing lost SQS dispatches, paired with job-version pinning (`job_version`).
+- **Recruiter Review & Export**: Shortlisting, rejection with mandatory reason, notes, and CSV export.
 
 ---
 
-## ⚖️ Non-Negotiable Fairness Policy
+## Technology Stack
 
-Sortlist is built on strict algorithmic transparency and fairness:
-
-1. **Prohibited Ranking Inputs:** The system **never** uses, infers, ranks, filters, or exposes as a recommendation factor:
-   - Age, date of birth, gender, race, caste, religion, nationality, disability, marital status, photo, or address beyond city level.
-   - Name-based or location-based demographic proxies.
-   - **University prestige** (degrees are evaluated by accredited educational level, not institutional elitism).
-   - **Employer prestige** (all past employers are evaluated equally; FAANG/Fortune 500 bonuses are disabled).
-   - **Career gaps** (employment gaps are not scored or penalized).
-   - Inferred "culture fit" or subjective traits.
-2. **Separation of Concerns:** System recommendations (`SCORED`, `REVIEW_REQUIRED`, `ABSTAIN`) and Human Decisions (`NEW`, `REVIEWING`, `SHORTLISTED`, `REJECTED`, `INTERVIEW`, `ARCHIVED`) are stored as strictly separate fields. The system cannot auto-reject candidates.
-3. **Mandatory Rejection Rationale:** Recruiters documenting a candidate rejection must provide an evidence-based rationale, ensuring human accountability.
+| Layer | Technologies & Verified Versions |
+|---|---|
+| **Frontend** | React `19.2.6`, TypeScript `~6.0.2`, Vite `8.0.12`, Tailwind CSS `4.3.1`, Zustand `5.0.14`, React Router `7.18.2`, `react-pdf` `10.4.1`, `pdfjs-dist` `6.2.108`, `shadcn` `4.11.0`, `lucide-react` `1.21.0` |
+| **Backend** | Python `>=3.13`, FastAPI `>=0.115.0`, Mangum `>=0.19.0`, Pydantic Settings `>=2.14.2`, `boto3` `>=1.43.36`, Uvicorn `>=0.34.0` |
+| **PDF & AI Extraction** | PyMuPDF (`pymupdf>=1.27.2.3`), OpenDataLoader PDF (external JVM Lambda `odl-parser-lambda-prod`), Amazon Bedrock Nova (`amazon.nova-*`) |
+| **Ranking Algorithms** | Deterministic BM25, TF-IDF role matching, rule-based experience/education/skill evaluators, ATS geometry scoring |
+| **AWS Infrastructure** | AWS Lambda (`python3.13`, 1024 MB), API Gateway HTTP API v2, Amazon S3, Amazon DynamoDB (Single-Table), Amazon SQS (3 stage queues + 3 DLQs), Amazon EventBridge |
+| **Testing & CI/CD** | `pytest` `>=9.1.1`, Playwright (`@playwright/test` `1.62.1`), ESLint `10.3.0`, AWS SAM CLI, GitHub Actions (`workflow_dispatch`), Vercel |
 
 ---
 
-## 🔬 Note on Legacy Metrics (Truthful Reporting)
+## Architecture Diagrams
 
-Previous prototype documents cited unvalidated claims, including a "97.8% domain classification accuracy" and an "86/100 production readiness score" on 3,856 resumes. **These metrics are unvalidated prototype claims** and are superseded by the empirical gold-set evaluation methodology detailed in [docs/v2-release/EVALUATION.md](docs/v2-release/EVALUATION.md) and [docs/CLAIM_LEDGER.md](docs/CLAIM_LEDGER.md).
+### Diagram A: High-Level System Architecture
 
----
-
-## ⚡ Empirical Benchmark Results (1,000 Resumes)
-
-Fresh empirical benchmark conducted on **1,000 real-world PDF resumes** using isolated processes (capped at 6 workers; PyMuPDF executed strictly single-threaded per process). Memory sampled concurrently every 50ms via `/proc/[pid]/statm` across parent and active workers.
-
-### 1. Stage 1 Extraction Performance (6 Isolated Worker Processes)
-
-| Metric | Measured Value | Measurement Details & Rigor |
-| :--- | :--- | :--- |
-| **Evaluated Corpus** | **1,000 Resumes** | 2,729 total pages (avg **2.73 pages/resume**), avg **118.5 KB/file** |
-| **Wall-Clock Duration** | **6.76 seconds** | In-process extraction across 6 isolated OS processes |
-| **Effective Throughput** | **147.94 resumes / sec** | **8,877 resumes / minute** sustained extraction rate |
-| **Speedup vs. Baseline** | **5.53x speedup ratio** | **81.9% wall-clock time reduction** from ~37.40s sequential baseline |
-| **Median (P50) Latency** | **32.95 ms** | Standard single/dual-page resume parse time |
-| **Mean Latency per Doc** | **39.81 ms** | Average per-doc processing time across all pages |
-| **P90 / P95 / P99 Latency** | **63.48 ms / 81.33 ms / 136.26 ms** | Dense multi-column and heavy tabular layouts |
-| **Concurrent Peak RSS** | **618.3 MB** | Concurrent parent + 6 child workers sampled simultaneously |
-| **Corpus Parity / Failures**| **0 parse failures (1,000/1,000)** | 100% completion accounting across full corpus |
-
-
-> [!NOTE]
-> **Scope Clarification:** The 6.76s result measures local in-memory Stage 1 parsing. It excludes network S3 transfer, DynamoDB round trips, and SQS serialization.
-
-### 2. Candidate Scoring Performance (1,000 Candidates)
-
-| Metric | Measured Value | Measurement Details |
-| :--- | :--- | :--- |
-| **Candidates Scored** | **1,000 candidates** | Multi-cohort ranking across 3 distinct job profiles (SWE, DevOps, Data Science) |
-| **Scoring Wall-Clock** | **67.62 milliseconds** | Full BM25 cohort calculation, TF-IDF role matching, and factor ledger generation |
-| **Scoring Peak RSS** | **139.0 MB** | In-process peak memory during full 1,000 candidate ranking run |
-| **Observed Eligibility** | **100% on qualified fixtures** | Scorer-valid date ranges eliminate false knockout rejections |
-
-### 3. Stage 1 Fallback Routing Decisions
-
-```text
-Total Resumes: 1,000
-├── Clean Fast-Path (S2_DONE): 171 (17.1%) — Direct single-pass PyMuPDF completion
-└── Fallback Required: 829 (82.9%) — Overlapping routing policy decisions
-    ├── needs_odl = True: 688 (68.8%) — Multi-column / non-linear layout repair
-    └── needs_nova = True: 440 (44.0%) — Name or critical section infill
+```mermaid
+flowchart LR
+    FE["React Frontend (Vite / Vercel)"] --> APIGW["API Gateway HTTP API v2"]
+    APIGW --> LAMBDA["Consolidated Python Lambda"]
+    LAMBDA --> DDB["DynamoDB (Single Table + Outbox)"]
+    LAMBDA --> S3["Amazon S3 (PDFs & Extracted JSON)"]
+    LAMBDA --> SQS["Amazon SQS (Stage 1 / 2 / Scoring + DLQs)"]
+    SQS --> LAMBDA
+    LAMBDA -.->|"Slow Path"| ODL["odl-parser-lambda-prod (JVM)"]
+    LAMBDA -.->|"Field Recovery"| NOVA["Amazon Bedrock Nova"]
+    LAMBDA -->|"Deterministic Scoring"| DDB
+    LAMBDA -->|"Ranked Results & CSV"| FE
 ```
 
-> [!IMPORTANT]
-> **Routing Decisions vs. Provider Calls:** The fallback counts (`829 total`, `688 needs_odl`, `440 needs_nova`) reflect **overlapping routing policy evaluations**, not disjoint counts and **not live cloud API calls**. A single document with complex layout and missing skills triggers both flags. In local runs without `ENABLE_ODL` or `ENABLE_NOVA`, no remote provider calls are made.
+### Diagram B: PDF Processing Pipeline
+
+```mermaid
+flowchart TD
+    UP["PDF Upload to S3"] --> VAL["Magic Bytes & Size Validation"]
+    VAL --> S1["Stage 1: PyMuPDF Extraction"]
+    S1 --> EVAL{"Layout Quality >= 0.70 & Critical Fields Present?"}
+    EVAL -->|"Yes (High Confidence)"| READY["Scoring Readiness (S2_DONE)"]
+    EVAL -->|"No (Complex / Scanned)"| ODL["Stage 2: ODL Fallback (odl-parser-lambda-prod)"]
+    ODL --> NOVA_CHK{"Critical Fields Unresolved?"}
+    NOVA_CHK -->|"Yes"| NOVA["Amazon Bedrock Nova Field Recovery"]
+    NOVA_CHK -->|"No"| PROV["Provenance & Confidence Evaluation"]
+    NOVA --> PROV
+    PROV --> READY
+    READY --> RANK["Stage 3: Deterministic BM25 & Rule Scoring"]
+    RANK --> PERSIST["Persist Scoring JSON to S3 & Metadata to DynamoDB"]
+    PERSIST --> REVIEW["Recruiter Review & CSV Export"]
+```
+
+### Diagram C: Consolidated Lambda Event Dispatcher
+
+```mermaid
+flowchart TD
+    subgraph Triggers["AWS Event Sources"]
+        HTTP["API Gateway HTTP API v2"]
+        Q1["SQS Stage 1 Queue"]
+        Q2["SQS Stage 2 Queue"]
+        Q3["SQS Scoring Queue"]
+        DLQ["SQS Stage 1 / 2 / Scoring DLQs"]
+        EB["EventBridge Schedule (reconcile_outbox)"]
+    end
+
+    LAMBDA["Consolidated Python Lambda (src.lambda_handler.handler)"]
+
+    HTTP --> LAMBDA
+    Q1 --> LAMBDA
+    Q2 --> LAMBDA
+    Q3 --> LAMBDA
+    DLQ --> LAMBDA
+    EB --> LAMBDA
+
+    LAMBDA -->|"rawPath / httpMethod"| H_API["src.handlers.api (FastAPI + Mangum)"]
+    LAMBDA -->|"Stage 1 ARN"| H_S1["src.handlers.stage1"]
+    LAMBDA -->|"Stage 2 ARN"| H_S2["src.handlers.stage2"]
+    LAMBDA -->|"Scoring ARN"| H_SC["src.handlers.scoring"]
+    LAMBDA -->|"DLQ ARNs"| H_DLQ["src.handlers.dlq"]
+    LAMBDA -->|"Scheduled Event"| H_REC["src.handlers.recovery"]
+```
+
+### Diagram D: Upload and Analysis Sequence
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant API as Lambda (API Handler)
+    participant S3 as Amazon S3
+    participant DDB as DynamoDB
+    participant SQS as SQS Queues
+    participant W as Lambda (Worker Handlers)
+
+    B->>API: POST /api/v2/jobs (Create Job)
+    B->>API: POST /api/v2/jobs/{id}/upload-sessions
+    API-->>B: Presigned S3 PUT URLs
+    B->>S3: PUT PDF directly to S3
+    B->>API: POST .../documents/{doc_id}/complete
+    API->>S3: Verify %PDF- header & size
+    API->>DDB: TransactWrite (File + Doc + Pending Outbox)
+    API->>SQS: Dispatch Stage 1 message (delete outbox on success)
+    SQS->>W: Trigger Stage 1 (PyMuPDF)
+    opt Low Confidence / Scanned
+        SQS->>W: Trigger Stage 2 (ODL / Nova)
+    end
+    B->>API: POST /api/v2/jobs/{id}/analyze
+    API->>DDB: Check terminal barrier (remaining == 0)
+    API->>SQS: Enqueue Scoring message
+    SQS->>W: Trigger Stage 3 (Deterministic Ranking)
+    W->>S3: Write Scoring JSON
+    W->>DDB: Update Job Status (READY)
+    B->>API: GET /api/v2/jobs/{id}/status & /results
+    API-->>B: Ranked Candidates & Evidence
+```
+
+### Diagram E: Production and Preproduction Isolation
+
+```mermaid
+flowchart TB
+    subgraph PROD["Production Environment (resume-ranker)"]
+        P_API["API Gateway (1j6l8fgq86)"] --> P_L["Lambda: resume-ranking-api"]
+        P_L --> P_S3["S3: resume-ranker-prod-storage"]
+        P_L --> P_DDB["DynamoDB: ResumePlatform"]
+        P_L --> P_SQS["SQS: *-prod queues & DLQs"]
+    end
+
+    subgraph PREPROD["Preproduction Environment (resume-ranker-preprod)"]
+        PP_API["API Gateway (2el52dse7a)"] --> PP_L["Lambda: resume-ranker-preprod"]
+        PP_L --> PP_S3["S3: resume-ranker-preprod-445567096027"]
+        PP_L --> PP_DDB["DynamoDB: ResumePlatformPreprod-445567096027"]
+        PP_L --> PP_SQS["SQS: *-preprod queues & DLQs"]
+    end
+
+    ODL["Shared ODL Container: odl-parser-lambda-prod"]
+    P_L -->|"prod-staging/"| ODL
+    PP_L -->|"preprod-staging/"| ODL
+```
+
+### Diagram F: Transactional Outbox and Recovery
+
+```mermaid
+flowchart TD
+    TX["DynamoDB TransactWrite (State + OUTBOX# Record)"] --> PUB{"Immediate SQS Publish"}
+    PUB -->|"Success"| DEL["Delete OUTBOX# Record"]
+    PUB -->|"Failure"| PEND["Pending OUTBOX# Record Remains"]
+    PEND --> REC1["Verified: /status Poll Reconciliation"]
+    PEND --> REC2["Verified: Worker Loop & Unit Recovery Handler"]
+    PEND -.->|"Awaiting Live IAM-Authorized Verification"| REC3["Scheduled: EventBridge rate(5 minutes)"]
+    REC1 --> RETRY["Idempotent SQS Re-dispatch"]
+    REC2 --> RETRY
+    REC3 -.-> RETRY
+```
 
 ---
 
-## ☁️ Live AWS Preproduction Benchmarks & Architecture (November 2026)
+## 5. Benchmarks & Measured Performance
 
-Evaluated directly against the deployed AWS preproduction environment (`resume-ranker-preprod` in `ap-south-1`):
+### Local Fast-Path Benchmark (47 Resumes)
+Measured on local Stage 1 (PyMuPDF) + Stage 3 (Deterministic Scoring) fast-path:
 
-### 1. Consolidated Serverless Event Dispatcher
-- **Unified Function:** All Python execution (FastAPI HTTP API, Stage 1 PyMuPDF, Stage 2 Fallback, Scoring Worker, DLQ consumer, and Scheduled Outbox Recovery) runs inside a single Lambda function (`src.lambda_handler.handler`).
-- **Decoupled SQS ESMs:** Queues remain strictly segregated with bounded concurrency caps (Stage 1: 3, Stage 2: 2, Scoring: 2) to prevent downstream API and database throttling.
-- **Shared JVM Parser:** Complex multi-column layouts are routed to the unmodified external container `odl-parser-lambda-prod` via presigned S3 pointer pattern.
-- **Autonomous Outbox Recovery:** Transactional DynamoDB outbox pattern and EventBridge schedule (rate 5 minutes) guarantee zero stranded records or dropped files.
-- **Standalone Engine Boundary (ADR-07):** Application endpoints operate standalone without in-app user logins or passwords. External reverse proxy (CloudFront, API Gateway custom authorizer, or VPC boundary) required for public exposure.
+| Metric | Measured Result |
+|---|---:|
+| Resume count | 47 |
+| Stage 1 extraction | 1.18s |
+| Stage 3 scoring | 0.34s |
+| Combined duration | 1.52s |
+| Throughput | 31.02 resumes/s |
 
-### 2. Measured AWS Performance Results
+*Note: Local fast-path benchmarks exclude network upload latency and paid external fallback execution (ODL/Nova). Default local worker concurrency is 4 (configurable up to 6 for bulk runs).*
 
-| Workload Path | Resumes | Duration | Throughput | Compute Cost |
-| :--- | :--- | :--- | :--- | :--- |
-| **Clean Path (PyMuPDF Fast-Pass)** | 1 resume | **2.49s** | 0.40 res/s | $0.0001 |
-| **Clean Path (PyMuPDF Fast-Pass)** | 5 resumes | **3.77s** | 1.33 res/s | $0.0004 |
-| **Clean Path (PyMuPDF Fast-Pass)** | 47 resumes | **24.81s** | 1.89 res/s | $0.0017 |
-| **Clean Path (PyMuPDF Fast-Pass)** | 100 resumes | **52.14s** | 1.92 res/s | $0.0037 |
-| **Mixed Fallback Path (ODL + Nova)** | 1 resume | **3.13s** | 0.32 res/s | $0.0002 |
-| **Mixed Fallback Path (ODL + Nova)** | 5 resumes | **7.04s** | 0.71 res/s | $0.0007 |
-| **Mixed Fallback Path (ODL + Nova)** | 47 resumes | **29.11s** | 1.61 res/s | $0.0022 |
-| **Mixed Fallback Path (ODL + Nova)** | 100 resumes | **71.13s** | 1.41 res/s | $0.0047 |
+### Live AWS Preproduction Benchmarks (`resume-ranker-preprod`)
+Measured end-to-end in `ap-south-1` (`python3.13`, 1024 MB allocated, **288 MB peak observed memory**, 0 Lambda throttles):
 
-- **Peak Observed Lambda Memory:** 288 MB of 1024 MB (28.1% of ceiling).
-- **CloudWatch Error Count:** 0.
-- **CloudWatch Throttles:** 0.
-- **DLQ Poison Accumulation:** 0 messages.
+| Resumes | Clean Path Duration | Mixed Fallback Path Duration | Clean Throughput | Mixed Throughput |
+|---:|---:|---:|---:|---:|
+| 1 | 2.49s | 3.13s | 0.40 res/s | 0.32 res/s |
+| 5 | 3.77s | 7.04s | 1.33 res/s | 0.71 res/s |
+| 47 | 24.81s | 29.11s | 1.89 res/s | 1.61 res/s |
+| 100 | 52.14s | 71.13s | 1.92 res/s | 1.41 res/s |
 
-> [!NOTE]
-> Performance metrics reflect end-to-end wall-clock time from upload initiation through S3 extraction, stage queues, and scoring publication. Field coverage (e.g. 96.9% skills) reflects parser extraction success, distinct from candidate suitability matching.
+*Methodology Note: End-to-end timings include client-to-S3 network upload latency. For the 100-resume mixed fallback workload, S3 upload accounted for 58.02s of the 71.13s total duration, making network upload the dominant bottleneck. Field coverage metrics are not represented as semantic extraction accuracy.*
 
 ---
+
+## 6. Scoring & Engineering Policy
+
+- **Deterministic Ranking**: Final candidate scores are computed deterministically from extracted skills, experience duration, education, BM25/keyword relevance, and ATS health signals.
+- **No Prestige Bias**: Employer names and university prestige are excluded from scoring to prevent bias.
+- **Identity Confidence**: Unresolved candidate identities are surfaced as `Name needs review` rather than guessing, even when partial name text is present.
+- **Human-in-the-Loop**: AI (Bedrock Nova) is restricted to recovering missing fields on low-confidence PDFs; it never assigns final candidate rankings.
+
+---
+
+## 7. Installation & Developer Experience
 
 ### Prerequisites
-- Python 3.13+ (managed via `uv`)
-- Node.js 18+ and npm
-- AWS LocalStack or AWS credentials (S3 & DynamoDB)
+- Python `>=3.13` and `uv`
+- Node.js `>=24` and `npm`
+- AWS CLI & AWS SAM CLI (for cloud deployments)
 
-### 1. Backend Setup
+### Local Setup
+
 ```bash
+# 1. Clone repository
+git clone https://github.com/SGOD-pro/resume_ranker.git
+cd resume_ranker
+
+# 2. Backend setup
 cd backend
+uv sync --frozen
+cd ..
 
-# Install dependencies with uv
-uv sync
-
-# Configure environment variables
-cp ../.env.example ../.env
-
-# Start development server
-uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+# 3. Frontend setup
+cd frontend
+npm ci
+cd ..
 ```
 
-### 2. Frontend Setup
+### Running Locally
+
 ```bash
-cd frontend
-npm install
+# Start Backend (from backend/)
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Start Frontend (from frontend/)
 npm run dev
 ```
-Open `http://localhost:5173` to access the workspace.
 
-### 3. Running Verification Tests & Benchmark
-```bash
-cd backend
+### Connecting Local Frontend to AWS Preproduction
 
-# Run all unit tests
-uv run pytest tests/unit/
-
-# Run integration tests
-uv run pytest tests/integration/
-
-# Run 1,000 resume empirical benchmark
-uv run python scripts/run_1k_benchmark.py --workers 6
+Set `frontend/.env`:
+```env
+VITE_API_BASE_URL=https://2el52dse7a.execute-api.ap-south-1.amazonaws.com
 ```
 
----
+### Testing & Verification
 
-## 📄 License
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+```bash
+# Backend unit, guardrail, and integration tests
+cd backend && uv run pytest
+
+# Frontend lint & production build
+cd frontend && npm run lint && npm run build
+
+# Playwright E2E suite
+cd frontend && npx playwright test
+```
+
+### Environment Variables Reference
+
+| Variable | Scope | Description |
+|---|---|---|
+| `ENVIRONMENT` | Required | `local`, `preprod`, or `prod` |
+| `S3_BUCKET_NAME` | Required (AWS) | Target S3 bucket for PDFs and JSON artifacts |
+| `DYNAMODB_TABLE_NAME` | Required (AWS) | Single-table DynamoDB name |
+| `USE_REAL_SQS` | Optional | `"true"` in AWS, `"false"` for local in-memory queues |
+| `ODL_STAGING_BUCKET` | Required (AWS) | Shared ODL staging bucket (`pdf-test-bucket-09`) |
+| `ODL_STAGING_PREFIX` | Required (AWS) | `preprod-staging` or `prod-staging` |
+| `FRONTEND_URL` | Required (Prod) | Comma-separated allowed CORS/CSRF origins |
+| `VITE_API_BASE_URL` | Frontend | Backend API URL |
+
+### SAM Build & Deployment
+
+```bash
+# Validate templates
+sam validate -t infra/template.yaml --region ap-south-1
+sam validate -t backend/deploy/template.yaml --region ap-south-1
+
+# Build production package
+sam build -t infra/template.yaml
+```

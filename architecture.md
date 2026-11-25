@@ -359,3 +359,52 @@ aws lambda update-function-code \
   --region ap-south-1 \
   --profile aws
 ```
+
+
+---
+
+## 8. Architecture Diagrams
+
+### High-Level System Architecture
+```mermaid
+flowchart LR
+    FE["React Frontend"] --> APIGW["API Gateway HTTP API v2"]
+    APIGW --> LAMBDA["Consolidated Python Lambda"]
+    LAMBDA --> DDB["DynamoDB (Single Table + Outbox)"]
+    LAMBDA --> S3["Amazon S3 (PDFs & Extracted JSON)"]
+    LAMBDA --> SQS["Amazon SQS (Stage 1 / 2 / Scoring + DLQs)"]
+    SQS --> LAMBDA
+    LAMBDA -.->|"Slow Path"| ODL["odl-parser-lambda-prod (JVM)"]
+    LAMBDA -.->|"Field Recovery"| NOVA["Amazon Bedrock Nova"]
+```
+
+### Consolidated Lambda Event Dispatcher
+```mermaid
+flowchart TD
+    HTTP["API Gateway HTTP API v2"] --> LAMBDA["src.lambda_handler.handler"]
+    Q1["SQS Stage 1 / 2 / Scoring / DLQs"] --> LAMBDA
+    EB["EventBridge Schedule (reconcile_outbox)"] --> LAMBDA
+    LAMBDA --> H_API["src.handlers.api"]
+    LAMBDA --> H_WRK["src.handlers.stage1 / stage2 / scoring / dlq"]
+    LAMBDA --> H_REC["src.handlers.recovery"]
+```
+
+### Minimum EventBridge IAM Policy Required for `EnableSchedule=true`
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "events:PutRule",
+        "events:DescribeRule",
+        "events:DeleteRule",
+        "events:PutTargets",
+        "events:RemoveTargets"
+      ],
+      "Resource": "arn:aws:events:ap-south-1:445567096027:rule/resume-ranker-recovery-*"
+    }
+  ]
+}
+```

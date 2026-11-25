@@ -49,6 +49,9 @@ _1k_extracted_cache.json
 backend/import_times.log
 backend/stats
 frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+*.log
 *.report.json
 concurrency_matrix_report.json
 audit_*.json
